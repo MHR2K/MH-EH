@@ -41,6 +41,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -197,6 +198,8 @@ public class DownloadsScene extends ToolbarScene
 
     private AlertDialog mSearchDialog;
     private SearchBar mSearchBar;
+    private CheckBox mFuzzySearchCheckbox;
+    private CheckBox mCaseSensitiveCheckbox;
     @Nullable
     private PaginationIndicator mPaginationIndicator;
 
@@ -736,6 +739,11 @@ public class DownloadsScene extends ToolbarScene
         }
 
         mSearchBar.setRightDrawable(DrawableManager.getVectorDrawable(context, R.drawable.v_magnify_x24));
+        
+        // 初始化复选框
+        mFuzzySearchCheckbox = linearLayout.findViewById(R.id.fuzzy_search_checkbox);
+        mCaseSensitiveCheckbox = linearLayout.findViewById(R.id.case_sensitive_checkbox);
+        
         mSearchBarMover = new SearchBarMover(this, mSearchBar);
         mSearchDialog = new AlertDialog.Builder(context)
                 .setMessage(R.string.download_search_gallery)
@@ -1243,7 +1251,12 @@ public class DownloadsScene extends ToolbarScene
 
         updateForLabel();
 
-        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey);
+        // 读取用户选择的搜索选项
+        boolean fuzzySearch = mFuzzySearchCheckbox != null && mFuzzySearchCheckbox.isChecked();
+        boolean caseSensitive = mCaseSensitiveCheckbox != null && mCaseSensitiveCheckbox.isChecked();
+
+        // 使用用户选择的搜索选项
+        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey, fuzzySearch, caseSensitive);
 
         executor.setDownloadSearchingListener(this);
 

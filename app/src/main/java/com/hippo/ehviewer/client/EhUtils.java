@@ -25,6 +25,7 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.util.AppHelper;
 
+import java.util.Arrays;
 import java.util.regex.Pattern;
 
 public class EhUtils {
@@ -148,9 +149,138 @@ public class EhUtils {
         }
     }
 
-    public static boolean judgeSuitableTitle(GalleryInfo gi,String key) {
-        String titleB = gi.titleJpn+""+gi.title;
-        return titleB.contains(key);
+    public static boolean judgeSuitableTitle(GalleryInfo gi, String key) {
+        return judgeSuitableTitle(gi, key, false, true);
+    }
+
+    public static boolean judgeSuitableTitle(GalleryInfo gi, String key, boolean fuzzySearch, boolean caseSensitive) {
+        String titleB = gi.titleJpn + "" + gi.title;
+        
+        if (!caseSensitive) {
+            titleB = titleB.toLowerCase();
+            key = key.toLowerCase();
+        }
+        
+        if (fuzzySearch) {
+            return fuzzyContains(titleB, key, 0.7);
+        } else {
+            return titleB.contains(key);
+        }
+    }
+
+    /**
+     * 模糊匹配算法，使用Jaro-Winkler相似度
+     * @param text 文本内容
+     * @param query 查询关键词
+     * @param threshold 相似度阈值 (0-1)
+     * @return 是否匹配
+     */
+    public static boolean fuzzyContains(String text, String query, double threshold) {
+        if (text == null || query == null || query.isEmpty()) {
+            return false;
+        }
+        
+        // 如果查询词很短，使用精确匹配
+        if (query.length() <= 2) {
+            return text.contains(query);
+        }
+        
+        // 计算Jaro-Winkler相似度
+        double similarity = calculateJaroWinklerSimilarity(text, query);
+        return similarity >= threshold;
+    }
+
+    /**
+     * 计算Jaro-Winkler相似度
+     */
+    public static double calculateJaroWinklerSimilarity(String s1, String s2) {
+        if (s1.equals(s2)) {
+            return 1.0;
+        }
+        
+        int[] matches = getMatches(s1.toCharArray(), s2.toCharArray());
+        int m = matches[0];
+        
+        if (m == 0) {
+            return 0.0;
+        }
+        
+        double jaro = ((double) m / s1.length() + (double) m / s2.length() + (double) (m - matches[1]) / m) / 3.0;
+        
+        // 计算Jaro-Winkler相似度
+        int prefix = 0;
+        int maxPrefix = Math.min(4, Math.min(s1.length(), s2.length()));
+        for (int i = 0; i < maxPrefix; i++) {
+            if (s1.charAt(i) == s2.charAt(i)) {
+                prefix++;
+            } else {
+                break;
+            }
+        }
+        
+        return jaro + (prefix * 0.1 * (1 - jaro));
+    }
+
+    private static int[] getMatches(char[] s1, char[] s2) {
+        char[] max, min;
+        if (s1.length > s2.length) {
+            max = s1;
+            min = s2;
+        } else {
+            max = s2;
+            min = s1;
+        }
+        
+        int range = Math.max(max.length / 2 - 1, 0);
+        int[] matchIndexes = new int[min.length];
+        Arrays.fill(matchIndexes, -1);
+        boolean[] matchFlags = new boolean[max.length];
+        int matches = 0;
+        
+        for (int mi = 0; mi < min.length; mi++) {
+            char c1 = min[mi];
+            for (int xi = Math.max(mi - range, 0), xn = Math.min(mi + range + 1, max.length); xi < xn; xi++) {
+                if (!matchFlags[xi] && c1 == max[xi]) {
+                    matchIndexes[mi] = xi;
+                    matchFlags[xi] = true;
+                    matches++;
+                    break;
+                }
+            }
+        }
+        
+        char[] ms1 = new char[matches];
+        char[] ms2 = new char[matches];
+        for (int i = 0, si = 0; i < min.length; i++) {
+            if (matchIndexes[i] != -1) {
+                ms1[si] = min[i];
+                si++;
+            }
+        }
+        for (int i = 0, si = 0; i < max.length; i++) {
+            if (matchFlags[i]) {
+                ms2[si] = max[i];
+                si++;
+            }
+        }
+        
+        int transpositions = 0;
+        for (int mi = 0; mi < ms1.length; mi++) {
+            if (ms1[mi] != ms2[mi]) {
+                transpositions++;
+            }
+        }
+        
+        int prefix = 0;
+        for (int mi = 0; mi < min.length; mi++) {
+            if (s1[mi] == s2[mi]) {
+                prefix++;
+            } else {
+                break;
+            }
+        }
+        
+        return new int[]{matches, transpositions / 2, prefix};
     }
 
     @Nullable
