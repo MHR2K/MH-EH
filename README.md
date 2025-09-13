@@ -2,8 +2,6 @@
 
 # EhViewer
 
-![Icon](fastlane/metadata/android/en-US/images/icon.png)
-
 这是一个 E-Hentai Android 平台的浏览器。
 
 An E-Hentai Application for Android.
