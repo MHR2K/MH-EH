@@ -44,16 +44,30 @@ public class DownloadListInfosExecutor {
     private final String mSearchKey;
 
     private DownloadManager mDownloadManager;
+    private boolean mFuzzySearch = false;
+    private boolean mCaseSensitive = true;
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey) {
         this.mList = mList;
         this.mSearchKey = searchKey;
     }
 
+    public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey, boolean fuzzySearch, boolean caseSensitive) {
+        this.mList = mList;
+        this.mSearchKey = searchKey;
+        this.mFuzzySearch = fuzzySearch;
+        this.mCaseSensitive = caseSensitive;
+    }
+
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, DownloadManager downloadManager) {
         this.mList = mList;
         this.mSearchKey = "";
         mDownloadManager = downloadManager;
+    }
+
+    public void setSearchOptions(boolean fuzzySearch, boolean caseSensitive) {
+        this.mFuzzySearch = fuzzySearch;
+        this.mCaseSensitive = caseSensitive;
     }
 
     public void setDownloadSearchingListener(DownloadSearchCallback downloadSearchCallback) {
@@ -242,7 +256,7 @@ public class DownloadListInfosExecutor {
 
         for (int i = 0; i < mList.size(); i++) {
             DownloadInfo info = mList.get(i);
-            if (EhUtils.judgeSuitableTitle(info, mSearchKey)) {
+            if (EhUtils.judgeSuitableTitle(info, mSearchKey, mFuzzySearch, mCaseSensitive)) {
                 cache.add(info);
             } else if (matchTag(mSearchKey, info)) {
                 cache.add(info);
