@@ -464,6 +464,7 @@
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
 
+    <!-- Download search options -->
     <string name="fuzzy_search">Fuzzy search</string>
     <string name="case_sensitive">Case sensitive</string>
 
