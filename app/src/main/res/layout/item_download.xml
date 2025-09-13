@@ -122,6 +122,16 @@
 
             </FrameLayout>
 
+            <ImageView
+                android:id="@+id/edit"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:padding="8dp"
+                android:layout_alignBottom="@+id/actions"
+                android:layout_toLeftOf="@+id/actions"
+                android:layout_marginRight="8dp"
+                app:srcCompat="@drawable/v_pencil_dark_x24"/>
+
             <TextView
                 android:id="@+id/state"
                 android:layout_width="wrap_content"
