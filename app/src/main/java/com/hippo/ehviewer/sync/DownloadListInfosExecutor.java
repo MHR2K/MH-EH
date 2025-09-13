@@ -44,7 +44,7 @@ public class DownloadListInfosExecutor {
     private final String mSearchKey;
 
     private DownloadManager mDownloadManager;
-    private boolean mFuzzySearch = false;
+    private boolean mFuzzySearch = true;
     private boolean mCaseSensitive = true;
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey) {

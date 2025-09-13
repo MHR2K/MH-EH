@@ -487,7 +487,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         editUploader.setText(info.uploader);
         editRating.setRating(info.rating);
         editPosted.setText(info.posted);
-        editPages.setText(String.valueOf(info.pages));
+        editPages.setText("");
 
         // 设置按钮
         builder.setPositiveButton(R.string.edit_download_save_changes, (dialog, which) -> {

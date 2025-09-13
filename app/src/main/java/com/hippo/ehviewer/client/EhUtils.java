@@ -150,7 +150,7 @@ public class EhUtils {
     }
 
     public static boolean judgeSuitableTitle(GalleryInfo gi, String key) {
-        return judgeSuitableTitle(gi, key, false, true);
+        return judgeSuitableTitle(gi, key, true, true);
     }
 
     public static boolean judgeSuitableTitle(GalleryInfo gi, String key, boolean fuzzySearch, boolean caseSensitive) {
