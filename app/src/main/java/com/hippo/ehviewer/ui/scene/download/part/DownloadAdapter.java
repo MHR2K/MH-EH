@@ -228,6 +228,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         holder.category.setVisibility(View.VISIBLE);
         holder.readProgress.setVisibility(View.VISIBLE);
         holder.state.setVisibility(View.VISIBLE);
+        holder.edit.setVisibility(View.VISIBLE);
         holder.progressBar.setVisibility(View.GONE);
         holder.percent.setVisibility(View.GONE);
         holder.speed.setVisibility(View.GONE);
@@ -249,6 +250,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         holder.category.setVisibility(View.GONE);
         holder.readProgress.setVisibility(View.GONE);
         holder.state.setVisibility(View.GONE);
+        holder.edit.setVisibility(View.VISIBLE);
         holder.progressBar.setVisibility(View.VISIBLE);
         holder.percent.setVisibility(View.VISIBLE);
         holder.speed.setVisibility(View.VISIBLE);
@@ -286,6 +288,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         public final TextView readProgress;
         public final View start;
         public final View stop;
+        public final View edit;
         public final TextView state;
         public final android.widget.ProgressBar progressBar;
         public final TextView percent;
@@ -302,6 +305,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             readProgress = itemView.findViewById(R.id.read_progress);
             start = itemView.findViewById(R.id.start);
             stop = itemView.findViewById(R.id.stop);
+            edit = itemView.findViewById(R.id.edit);
             state = itemView.findViewById(R.id.state);
             progressBar = itemView.findViewById(R.id.progress_bar);
             percent = itemView.findViewById(R.id.percent);
@@ -311,10 +315,12 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             thumb.setOnClickListener(this);
             start.setOnClickListener(this);
             stop.setOnClickListener(this);
+            edit.setOnClickListener(this);
 
             boolean isDarkTheme = !AttrResources.getAttrBoolean(mScene.getEHContext(), androidx.appcompat.R.attr.isLightTheme);
             Ripple.addRipple(start, isDarkTheme);
             Ripple.addRipple(stop, isDarkTheme);
+            Ripple.addRipple(edit, isDarkTheme);
         }
 
         @Override
@@ -352,6 +358,9 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                 if (null != downloadManager) {
                     downloadManager.stopDownload(list.get(mCallback.positionInList(index)).gid);
                 }
+            } else if (edit == v) {
+                final DownloadInfo info = list.get(mCallback.positionInList(index));
+                showEditDialog(info);
             }
         }
     }
@@ -447,6 +456,96 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         } catch (Exception e) {
             // 忽略硬件位图相关错误
             android.util.Log.e("DownloadAdapter", "Error in onItemDragFinished: " + e.getMessage());
+        }
+    }
+
+    private void showEditDialog(DownloadInfo info) {
+        Context context = mScene.getEHContext();
+        if (context == null) {
+            return;
+        }
+
+        // 创建编辑对话框
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(context);
+        builder.setTitle(R.string.edit_download_info_title);
+
+        // 加载布局
+        View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_edit_download_info, null);
+        builder.setView(dialogView);
+
+        // 获取视图引用
+        com.google.android.material.textfield.TextInputEditText editTitle = dialogView.findViewById(R.id.edit_title);
+        com.google.android.material.textfield.TextInputEditText editTitleJpn = dialogView.findViewById(R.id.edit_title_jpn);
+        com.google.android.material.textfield.TextInputEditText editUploader = dialogView.findViewById(R.id.edit_uploader);
+        com.hippo.ehviewer.widget.SimpleRatingView editRating = dialogView.findViewById(R.id.edit_rating);
+        com.google.android.material.textfield.TextInputEditText editPosted = dialogView.findViewById(R.id.edit_posted);
+        com.google.android.material.textfield.TextInputEditText editPages = dialogView.findViewById(R.id.edit_pages);
+
+        // 设置当前值
+        editTitle.setText(info.title);
+        editTitleJpn.setText(info.titleJpn);
+        editUploader.setText(info.uploader);
+        editRating.setRating(info.rating);
+        editPosted.setText(info.posted);
+        editPages.setText(String.valueOf(info.pages));
+
+        // 设置按钮
+        builder.setPositiveButton(R.string.edit_download_save_changes, (dialog, which) -> {
+            // 保存修改
+            saveDownloadInfoChanges(info, editTitle.getText().toString(), 
+                    editTitleJpn.getText().toString(), editUploader.getText().toString(),
+                    editRating.getRating(), editPosted.getText().toString(),
+                    editPages.getText().toString());
+        });
+
+        builder.setNegativeButton(android.R.string.cancel, null);
+
+        // 显示对话框
+        builder.create().show();
+    }
+
+    private void saveDownloadInfoChanges(DownloadInfo oldInfo, String newTitle, String newTitleJpn, 
+                                       String newUploader, float newRating, String newPosted,
+                                       String newPages) {
+        Context context = mScene.getEHContext();
+        if (context == null) {
+            return;
+        }
+
+        // 创建新的DownloadInfo对象，复制所有字段
+        DownloadInfo newInfo = new DownloadInfo();
+        newInfo.gid = oldInfo.gid;
+        newInfo.token = oldInfo.token;
+        newInfo.title = newTitle != null ? newTitle : "";
+        newInfo.titleJpn = newTitleJpn != null ? newTitleJpn : "";
+        newInfo.thumb = oldInfo.thumb;
+        newInfo.category = oldInfo.category;
+        newInfo.posted = newPosted != null ? newPosted : "";
+        newInfo.uploader = newUploader != null ? newUploader : "";
+        newInfo.rating = newRating;
+        newInfo.simpleLanguage = oldInfo.simpleLanguage;
+        newInfo.state = oldInfo.state;
+        newInfo.legacy = oldInfo.legacy;
+        newInfo.time = oldInfo.time;
+        newInfo.label = oldInfo.label;
+        newInfo.speed = oldInfo.speed;
+        newInfo.remaining = oldInfo.remaining;
+        newInfo.finished = oldInfo.finished;
+        newInfo.downloaded = oldInfo.downloaded;
+        newInfo.total = oldInfo.total;
+        
+        // 处理页数字段
+        try {
+            newInfo.pages = Integer.parseInt(newPages);
+        } catch (NumberFormatException e) {
+            newInfo.pages = oldInfo.pages; // 如果解析失败，保持原值
+        }
+
+        // 使用DownloadManager更新信息
+        DownloadManager downloadManager = mCallback.getDownloadManager();
+        if (downloadManager != null) {
+            downloadManager.replaceInfo(newInfo, oldInfo);
+            Toast.makeText(context, R.string.edit_download_info_updated, Toast.LENGTH_SHORT).show();
         }
     }
 }
