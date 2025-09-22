@@ -130,7 +130,7 @@
                 android:layout_alignBottom="@+id/actions"
                 android:layout_toLeftOf="@+id/actions"
                 android:layout_marginRight="8dp"
-                app:srcCompat="@drawable/v_pencil_dark_x24"/>
+                app:srcCompat="@drawable/v_pencil_x24"/>
 
             <TextView
                 android:id="@+id/state"
