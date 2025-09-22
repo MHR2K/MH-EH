@@ -993,6 +993,15 @@ class ScrollLayoutManager extends GalleryView.LayoutManager {
 
     @Override
     public int getCurrentIndex() {
+        // 检查第一页
+        if (!mPages.isEmpty() && isInScreen(mPages.get(0))) {
+            return mPages.get(0).getIndex();
+        }
+        // 检查最后一页
+        if (!mPages.isEmpty() && isInScreen(mPages.get(mPages.size() - 1))) {
+            return mPages.get(mPages.size() - 1).getIndex();
+        }
+        // 遍历其他页面
         for (GalleryPageView page : mPages) {
             if (isInScreen(page)) {
                 return page.getIndex();
