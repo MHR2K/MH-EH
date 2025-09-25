@@ -241,6 +241,76 @@ public class EhApplication extends RecordingApplication {
         }
 
         initialized = true;
+        
+        // 检查并执行自动备份
+        checkAndPerformAutoBackup();
+    }
+    
+    private void checkAndPerformAutoBackup() {
+        if (!Settings.getAutoBackupEnabled()) {
+            return;
+        }
+        
+        long lastBackupTime = Settings.getLastBackupTime();
+        long currentTime = System.currentTimeMillis();
+        
+        // 检查是否超过24小时未备份
+        if (currentTime - lastBackupTime > 24 * 60 * 60 * 1000) {
+            performAutoBackup();
+        }
+    }
+    
+    private void performAutoBackup() {
+        executorService.execute(() -> {
+            try {
+                File backupDir = AppConfig.getDirInExternalAppDir("backup");
+                if (backupDir == null) {
+                    Log.e(TAG, "Backup directory creation failed");
+                    return;
+                }
+                
+                // 确保备份目录存在
+                if (!backupDir.exists() && !backupDir.mkdirs()) {
+                    Log.e(TAG, "Failed to create backup directory: " + backupDir.getAbsolutePath());
+                    return;
+                }
+                
+                String filename = "backup_" + ReadableTime.getFilenamableTime(System.currentTimeMillis()) + ".db";
+                File backupFile = new File(backupDir, filename);
+                
+                if (EhDB.exportDB(this, backupFile)) {
+                    Settings.putLastBackupTime(System.currentTimeMillis());
+                    // 清理旧备份文件
+                    cleanupOldBackups(backupDir);
+                    Log.i(TAG, "Auto backup successful: " + backupFile.getAbsolutePath());
+                } else {
+                    Log.e(TAG, "Auto backup failed: exportDB returned false");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Auto backup failed with exception", e);
+            }
+        });
+    }
+    
+    private void cleanupOldBackups(File backupDir) {
+        try {
+            File[] backupFiles = backupDir.listFiles((dir, name) -> name.startsWith("backup_") && name.endsWith(".db"));
+            if (backupFiles == null || backupFiles.length <= Settings.getBackupRetentionDays()) {
+                return;
+            }
+            
+            // 按修改时间排序，最新的在前面
+            Arrays.sort(backupFiles, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
+            
+            // 删除超过保留天数的旧备份
+            for (int i = Settings.getBackupRetentionDays(); i < backupFiles.length; i++) {
+                if (!backupFiles[i].delete()) {
+                    Log.w(TAG, "Failed to delete old backup: " + backupFiles[i].getAbsolutePath());
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error cleaning up old backups", e);
+        }
     }
 
     private void clearTempDir() {
@@ -756,4 +826,3 @@ public class EhApplication extends RecordingApplication {
     }
 
 }
-
