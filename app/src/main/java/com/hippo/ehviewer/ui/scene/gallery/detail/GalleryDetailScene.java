@@ -1294,6 +1294,9 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                         request();
                     }
                     break;
+                case R.id.action_goto_download:
+                    gotoDownloadList();
+                    break;
             }
             return true;
         });
@@ -1674,6 +1677,23 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                         .setPositiveButton(android.R.string.ok, (dialog1, which1) -> EhApplication.getDownloadManager(mContext).deleteDownload(galleryInfo.gid))
                         .show();
             }
+        }
+    }
+
+    private void gotoDownloadList() {
+        GalleryInfo galleryInfo = getGalleryInfo();
+        if (galleryInfo != null && mDownloadState != DownloadInfo.STATE_INVALID) {
+            Bundle args = new Bundle();
+            args.putLong(DownloadsScene.KEY_GID, galleryInfo.gid);
+            startScene(new Announcer(DownloadsScene.class).setArgs(args));
+            // 延迟再次跳转，确保页面加载后滚动到目标
+            new Handler().postDelayed(() -> {
+                Bundle args2 = new Bundle();
+                args2.putLong(DownloadsScene.KEY_GID, galleryInfo.gid);
+                startScene(new Announcer(DownloadsScene.class).setArgs(args2));
+            }, 500); // 500ms 可根据实际情况调整
+        } else {
+            showTip(R.string.not_in_download_list, LENGTH_SHORT);
         }
     }
 
