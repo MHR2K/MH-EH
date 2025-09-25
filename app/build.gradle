@@ -83,6 +83,7 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig = true  // 启用BuildConfig
     }
 
 }
