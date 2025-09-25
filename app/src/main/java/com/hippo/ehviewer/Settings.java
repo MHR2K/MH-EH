@@ -1474,4 +1474,40 @@ public class Settings {
     public static void putUpdateTime(long updateTime) {
         putLong(KEY_LAST_UPDATE_TIME,updateTime);
     }
+
+    /********************
+     ****** Backup
+     ********************/
+    public static final String KEY_LAST_BACKUP_TIME = "last_backup_time";
+    private static final long DEFAULT_LAST_BACKUP_TIME = 0L;
+
+    public static long getLastBackupTime() {
+        return getLong(KEY_LAST_BACKUP_TIME, DEFAULT_LAST_BACKUP_TIME);
+    }
+
+    public static void putLastBackupTime(long backupTime) {
+        putLong(KEY_LAST_BACKUP_TIME, backupTime);
+    }
+
+    public static final String KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled";
+    private static final boolean DEFAULT_AUTO_BACKUP_ENABLED = true;
+
+    public static boolean getAutoBackupEnabled() {
+        return getBoolean(KEY_AUTO_BACKUP_ENABLED, DEFAULT_AUTO_BACKUP_ENABLED);
+    }
+
+    public static void putAutoBackupEnabled(boolean enabled) {
+        putBoolean(KEY_AUTO_BACKUP_ENABLED, enabled);
+    }
+
+    public static final String KEY_BACKUP_RETENTION_DAYS = "backup_retention_days";
+    private static final int DEFAULT_BACKUP_RETENTION_DAYS = 7;
+
+    public static int getBackupRetentionDays() {
+        return getInt(KEY_BACKUP_RETENTION_DAYS, DEFAULT_BACKUP_RETENTION_DAYS);
+    }
+
+    public static void putBackupRetentionDays(int days) {
+        putInt(KEY_BACKUP_RETENTION_DAYS, days);
+    }
 }
