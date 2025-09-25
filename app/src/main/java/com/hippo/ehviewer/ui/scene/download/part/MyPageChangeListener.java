@@ -53,6 +53,7 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
 
     @Override
     public void onPageSelectedChanged(int currentPagePos, int lastPagePos, int totalPageCount, int total) {
+        /*
         if (indexPage == currentPagePos) {
             needInitPage = false;
         }
@@ -61,6 +62,7 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
             // 或者通过回调方法处理
             return;
         }
+        */
         if (indexPage == currentPagePos) {
             return;
         }
