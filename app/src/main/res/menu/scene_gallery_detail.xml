@@ -26,4 +26,8 @@
         android:id="@+id/action_open_in_other_app"
         android:title="@string/open_in_other_app"/>
 
+    <item
+        android:id="@+id/action_goto_download"
+        android:title="@string/goto_download_list"/>
+
 </menu>
