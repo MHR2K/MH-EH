@@ -199,7 +199,9 @@ public class DownloadsScene extends ToolbarScene
     private AlertDialog mSearchDialog;
     private SearchBar mSearchBar;
     private CheckBox mFuzzySearchCheckbox;
-    private CheckBox mCaseSensitiveCheckbox;
+    private CheckBox mIgnoreCaseCheckbox;
+    private CheckBox mChineseConversionCheckbox;
+    private CheckBox mSortByRelevanceCheckbox;
     @Nullable
     private PaginationIndicator mPaginationIndicator;
 
@@ -742,7 +744,23 @@ public class DownloadsScene extends ToolbarScene
         
         // 初始化复选框
         mFuzzySearchCheckbox = linearLayout.findViewById(R.id.fuzzy_search_checkbox);
-        mCaseSensitiveCheckbox = linearLayout.findViewById(R.id.case_sensitive_checkbox);
+        mIgnoreCaseCheckbox = linearLayout.findViewById(R.id.case_sensitive_checkbox);
+        mChineseConversionCheckbox = linearLayout.findViewById(R.id.chinese_conversion_checkbox);
+        mSortByRelevanceCheckbox = linearLayout.findViewById(R.id.sort_by_relevance_checkbox);
+        
+        // 初始化当前设置状态，从 Settings 加载所有搜索相关设置
+        mFuzzySearchCheckbox.setChecked(Settings.getEnableFuzzySearch());
+        mIgnoreCaseCheckbox.setChecked(Settings.getEnableIgnoreCase());
+        mChineseConversionCheckbox.setChecked(Settings.getEnableChineseConversion());
+        mSortByRelevanceCheckbox.setChecked(Settings.getEnableSortByRelevance());
+        
+        // 设置"按相关性排序"复选框的启用状态，只有在模糊搜索启用时才可用
+        updateSortByRelevanceState();
+        
+        // 添加模糊搜索复选框的点击监听器
+        mFuzzySearchCheckbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            updateSortByRelevanceState();
+        });
         
         mSearchBarMover = new SearchBarMover(this, mSearchBar);
         mSearchDialog = new AlertDialog.Builder(context)
@@ -765,6 +783,22 @@ public class DownloadsScene extends ToolbarScene
 
     private void onSearchDialogDismiss(DialogInterface dialog) {
         mSearchMode = false;
+    }
+    
+    /**
+     * 更新"按相关性排序"复选框的启用状态
+     * 只有当"模糊搜索"复选框被选中时，"按相关性排序"复选框才可用
+     */
+    private void updateSortByRelevanceState() {
+        if (mFuzzySearchCheckbox != null && mSortByRelevanceCheckbox != null) {
+            boolean fuzzySearchEnabled = mFuzzySearchCheckbox.isChecked();
+            mSortByRelevanceCheckbox.setEnabled(fuzzySearchEnabled);
+            
+            // 如果模糊搜索被禁用，则自动取消勾选"按相关性排序"
+            if (!fuzzySearchEnabled) {
+                mSortByRelevanceCheckbox.setChecked(false);
+            }
+        }
     }
 
     private void enterSearchMode(boolean animation) {
@@ -1253,10 +1287,33 @@ public class DownloadsScene extends ToolbarScene
 
         // 读取用户选择的搜索选项
         boolean fuzzySearch = mFuzzySearchCheckbox != null && mFuzzySearchCheckbox.isChecked();
-        boolean caseSensitive = mCaseSensitiveCheckbox != null && mCaseSensitiveCheckbox.isChecked();
+        // 忽略大小写复选框选中表示不区分大小写
+        boolean ignoreCase = mIgnoreCaseCheckbox != null && mIgnoreCaseCheckbox.isChecked();
+        boolean caseSensitive = !ignoreCase;
+        boolean enableChineseConversion = mChineseConversionCheckbox != null && mChineseConversionCheckbox.isChecked();
+        // "按相关性排序"选项只有在"模糊搜索"启用时才有效
+        boolean sortByRelevance = fuzzySearch && mSortByRelevanceCheckbox != null && mSortByRelevanceCheckbox.isChecked();
+        
+        // 保存所有搜索设置以供全局使用
+        Settings.putEnableFuzzySearch(fuzzySearch);
+        Settings.putEnableIgnoreCase(ignoreCase);
+        Settings.putEnableChineseConversion(enableChineseConversion);
+        Settings.putEnableSortByRelevance(sortByRelevance);
+
+        // 记录搜索选项状态
+        android.util.Log.d("EhSearchOptions", "开始下载列表搜索: " + 
+                      "关键词=" + searchKey + ", " + 
+                      "模糊搜索=" + fuzzySearch + ", " + 
+                      "区分大小写=" + caseSensitive + ", " + 
+                      "简繁体转换=" + enableChineseConversion);
 
         // 使用用户选择的搜索选项
-        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey, fuzzySearch, caseSensitive);
+        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey, fuzzySearch, caseSensitive, enableChineseConversion);
+        
+        // 只有当模糊搜索启用并且按相关性排序选项被勾选时，才启用排序
+        if (fuzzySearch && sortByRelevance) {
+            executor.enableSortByRelevance(true);
+        }
 
         executor.setDownloadSearchingListener(this);
 
