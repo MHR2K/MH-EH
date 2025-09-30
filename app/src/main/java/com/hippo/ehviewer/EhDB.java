@@ -82,6 +82,10 @@ public class EhDB {
     public static int MAX_HISTORY_COUNT = 100;
 
     private static DaoSession sDaoSession;
+    
+    // 添加数据库初始化状态标志
+    private static volatile boolean sInitialized = false;
+    private static final Object sInitializeLock = new Object();
 
     private static boolean sHasOldDB;
     private static boolean sNewDB;
@@ -191,17 +195,66 @@ public class EhDB {
         }
     }
 
+    /**
+     * 初始化数据库
+     * 使用双重检查锁定模式确保线程安全
+     */
     public static void initialize(Context context) {
-        sHasOldDB = context.getDatabasePath("data").exists();
+        if (sInitialized) {
+            return; // 已经初始化，不需要再次执行
+        }
+        
+        synchronized (sInitializeLock) {
+            if (sInitialized) {
+                return; // 双重检查
+            }
+            
+            try {
+                android.util.Log.d(TAG, "开始初始化数据库");
+                sHasOldDB = context.getDatabasePath("data").exists();
 
-        DBOpenHelper helper = new DBOpenHelper(
-                context.getApplicationContext(), "eh.db", null);
+                DBOpenHelper helper = new DBOpenHelper(
+                        context.getApplicationContext(), "eh.db", null);
 
-        SQLiteDatabase db = helper.getWritableDatabase();
-        DaoMaster daoMaster = new DaoMaster(db);
+                SQLiteDatabase db = helper.getWritableDatabase();
+                DaoMaster daoMaster = new DaoMaster(db);
 
-        sDaoSession = daoMaster.newSession();
-        MAX_HISTORY_COUNT = Settings.getHistoryInfoSize();
+                sDaoSession = daoMaster.newSession();
+                MAX_HISTORY_COUNT = Settings.getHistoryInfoSize();
+                
+                // 标记数据库已初始化
+                sInitialized = true;
+                android.util.Log.d(TAG, "数据库初始化完成");
+            } catch (Exception e) {
+                android.util.Log.e(TAG, "数据库初始化失败", e);
+                // 初始化失败，保持sInitialized为false
+            }
+        }
+    }
+    
+    /**
+     * 检查数据库是否已经初始化
+     * @return 如果数据库已初始化返回true
+     */
+    public static boolean isInitialized() {
+        return sInitialized;
+    }
+    
+    /**
+     * 等待数据库初始化完成，最多等待指定的时间
+     * @param timeoutMillis 超时时间（毫秒）
+     * @return 如果在超时前初始化完成返回true，否则返回false
+     */
+    public static boolean waitForInitialization(long timeoutMillis) {
+        long endTime = System.currentTimeMillis() + timeoutMillis;
+        while (!sInitialized && System.currentTimeMillis() < endTime) {
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                return false;
+            }
+        }
+        return sInitialized;
     }
 
     public static boolean needMerge() {
@@ -880,6 +933,16 @@ public class EhDB {
     }
 
     public static synchronized boolean exportDB(Context context, File file) {
+        // 检查数据库是否已初始化
+        if (!sInitialized) {
+            android.util.Log.e(TAG, "导出数据库失败：数据库尚未初始化");
+            // 尝试初始化数据库
+            initialize(context);
+            if (!sInitialized) {
+                return false;
+            }
+        }
+        
         final String ehExportName = "eh.export.db";
 
         // Delete old export db
@@ -941,6 +1004,16 @@ public class EhDB {
      * @return error string, null for no error
      */
     public static synchronized String importDB(Context context, File file, Handler handler) {
+        // 检查数据库是否已初始化
+        if (!sInitialized) {
+            android.util.Log.e(TAG, "导入数据库失败：数据库尚未初始化");
+            // 尝试初始化数据库
+            initialize(context);
+            if (!sInitialized) {
+                return context.getString(R.string.database_not_initialized);
+            }
+        }
+        
         try {
             SQLiteDatabase db = SQLiteDatabase.openDatabase(
                     file.getPath(), null, SQLiteDatabase.NO_LOCALIZED_COLLATORS);

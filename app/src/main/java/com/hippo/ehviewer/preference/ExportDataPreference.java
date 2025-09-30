@@ -55,11 +55,50 @@ public class ExportDataPreference extends TaskPreference {
 
     @Override
     protected Object doInBackground(Void... voids) {
+      // 确保应用完全初始化
+      try {
+        if (!((com.hippo.ehviewer.EhApplication)getApplication()).isInitialized()) {
+          // 等待应用初始化完成，最多等待3秒
+          android.util.Log.d("ExportDataTask", "应用尚未初始化，等待初始化完成");
+          for (int i = 0; i < 6; i++) {
+            Thread.sleep(500);
+            if (((com.hippo.ehviewer.EhApplication)getApplication()).isInitialized()) {
+              android.util.Log.d("ExportDataTask", "应用已完成初始化");
+              break;
+            }
+          }
+        }
+      } catch (Exception e) {
+        android.util.Log.e("ExportDataTask", "等待应用初始化时出错", e);
+      }
+      
+      // 确保数据库已初始化
+      if (!EhDB.isInitialized()) {
+        android.util.Log.d("ExportDataTask", "数据库尚未初始化，等待数据库初始化完成");
+        // 等待数据库初始化完成，最多等待5秒
+        if (!EhDB.waitForInitialization(5000)) {
+          // 如果超时仍未初始化，尝试手动初始化
+          android.util.Log.d("ExportDataTask", "等待超时，尝试手动初始化数据库");
+          EhDB.initialize(getApplication());
+          
+          if (!EhDB.isInitialized()) {
+            // 数据库初始化失败
+            android.util.Log.e("ExportDataTask", "数据库初始化失败");
+            return null;
+          }
+        }
+        android.util.Log.d("ExportDataTask", "数据库已初始化完成");
+      }
+      
       File dir = AppConfig.getExternalDataDir();
       if (dir != null) {
         File file = new File(dir, ReadableTime.getFilenamableTime(System.currentTimeMillis()) + ".db");
+        android.util.Log.d("ExportDataTask", "开始导出数据库到：" + file.getAbsolutePath());
         if (EhDB.exportDB(getApplication(), file)) {
+          android.util.Log.d("ExportDataTask", "数据库导出成功");
           return file;
+        } else {
+          android.util.Log.e("ExportDataTask", "数据库导出失败");
         }
       }
       return null;

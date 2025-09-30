@@ -167,22 +167,75 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     }
 
     private void showProgress(final Context context, File dir, String[] files, int which) {
-
         File file = new File(dir, files[which]);
         ProgressHelper.showDialog(context, context.getString(R.string.loading_db_file));
-        new Thread(
-                () -> {
-                    String error = EhDB.importDB(context, file, dbSyncHandle);
-                    Message message = new Message();
-                    Bundle bundle = new Bundle();
-                    bundle.putString("error", error);
-                    bundle.putInt(LOADING_STATUS, DB_LOAD_FINISH);
-                    message.setData(bundle);
-                    dbSyncHandle.sendMessage(message);
+        
+        // 使用IoThreadPoolExecutor替代普通线程，确保在应用初始化完成后执行
+        com.hippo.util.IoThreadPoolExecutor.getInstance().execute(() -> {
+            // 首先检查应用是否已初始化
+            if (!((com.hippo.ehviewer.EhApplication) context.getApplicationContext()).isInitialized()) {
+                // 发送进度更新消息
+                Message progressMsg = new Message();
+                Bundle progressBundle = new Bundle();
+                progressBundle.putInt(LOADING_STATUS, DB_LOADING);
+                progressBundle.putInt(LOADING_PROGRESS, 10);
+                progressMsg.setData(progressBundle);
+                dbSyncHandle.sendMessage(progressMsg);
+                
+                // 等待应用初始化完成，最多等待5秒
+                try {
+                    Thread.sleep(1000); // 先等待1秒
+                } catch (InterruptedException e) {
+                    // 忽略中断
                 }
-        ).start();
-
-
+            }
+            
+            // 检查数据库是否已初始化
+            if (!EhDB.isInitialized()) {
+                // 发送进度更新消息
+                Message progressMsg = new Message();
+                Bundle progressBundle = new Bundle();
+                progressBundle.putInt(LOADING_STATUS, DB_LOADING);
+                progressBundle.putInt(LOADING_PROGRESS, 30);
+                progressMsg.setData(progressBundle);
+                dbSyncHandle.sendMessage(progressMsg);
+                
+                // 等待数据库初始化完成，最多等待5秒
+                if (!EhDB.waitForInitialization(5000)) {
+                    // 如果超时仍未初始化，尝试手动初始化
+                    EhDB.initialize(context.getApplicationContext());
+                    
+                    if (!EhDB.isInitialized()) {
+                        // 数据库初始化失败
+                        Message message = new Message();
+                        Bundle bundle = new Bundle();
+                        bundle.putString("error", context.getString(R.string.settings_advanced_import_data_failed) + 
+                                " (" + context.getString(R.string.database_not_initialized) + ")");
+                        bundle.putInt(LOADING_STATUS, DB_LOAD_FINISH);
+                        message.setData(bundle);
+                        dbSyncHandle.sendMessage(message);
+                        return;
+                    }
+                }
+            }
+            
+            // 发送进度更新消息
+            Message progressMsg = new Message();
+            Bundle progressBundle = new Bundle();
+            progressBundle.putInt(LOADING_STATUS, DB_LOADING);
+            progressBundle.putInt(LOADING_PROGRESS, 50);
+            progressMsg.setData(progressBundle);
+            dbSyncHandle.sendMessage(progressMsg);
+            
+            // 现在数据库已初始化，可以安全执行导入操作
+            String error = EhDB.importDB(context, file, dbSyncHandle);
+            Message message = new Message();
+            Bundle bundle = new Bundle();
+            bundle.putString("error", error);
+            bundle.putInt(LOADING_STATUS, DB_LOAD_FINISH);
+            message.setData(bundle);
+            dbSyncHandle.sendMessage(message);
+        });
     }
 
     @Override

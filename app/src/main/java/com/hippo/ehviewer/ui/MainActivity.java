@@ -381,6 +381,7 @@ public final class MainActivity extends StageActivity
         }
         setContentView(R.layout.activity_main);
 
+        // 初始化主要UI元素
         mDrawerLayout = (EhDrawerLayout) ViewUtils.$$(this, R.id.draw_view);
         mDrawerLayout.setDrawerListener(this);
         mNavView = (NavigationView) ViewUtils.$$(this, R.id.nav_view);
@@ -390,26 +391,25 @@ public final class MainActivity extends StageActivity
         mAvatar.setOnClickListener(l -> onAvatarChange());
         mHeaderBackground = (ImageView) ViewUtils.$$(headerLayout, R.id.header_background);
         mHeaderBackground.setOnClickListener(l -> onBackgroundChange());
+        
+        // 确保关键UI元素立即初始化
         initUserImage();
         updateProfile();
+        
         mDisplayName = (TextView) ViewUtils.$$(headerLayout, R.id.display_name);
         TextView mChangeTheme = (TextView) ViewUtils.$$(this, R.id.change_theme);
 
         limitsCountView = (LimitsCountView) ViewUtils.$$(this, R.id.limits_count_view);
 
         mDrawerLayout.setStatusBarColor(ResourcesUtils.getAttrColor(this, androidx.appcompat.R.attr.colorPrimaryDark));
-//        mDrawerLayout.setStatusBarColor(0);
-
+        
         if (mNavView != null) {
-//            if (Settings.isLogin()){
-//                MenuItem newsItem = mNavView.getMenu().findItem(R.id.nav_eh_news);
-//                newsItem.setVisible(true);
-//            }
             mNavView.setNavigationItemSelectedListener(this);
         }
+        
+        // 主题设置
         if (Settings.getTheme() == 0) {
             mChangeTheme.setTextColor(getColor(R.color.theme_change_light));
-
             mChangeTheme.setBackgroundColor(getColor(R.color.white));
         } else if (Settings.getTheme() == 1) {
             mChangeTheme.setTextColor(getColor(R.color.theme_change_other));
@@ -418,13 +418,13 @@ public final class MainActivity extends StageActivity
             mChangeTheme.setTextColor(getColor(R.color.theme_change_other));
             mChangeTheme.setBackgroundColor(getColor(R.color.black));
         }
-
         mChangeTheme.setText(getThemeText());
         mChangeTheme.setOnClickListener(v -> {
             Settings.putTheme(getNextTheme());
             ((EhApplication) getApplication()).recreate();
         });
 
+        // 必要的初始化操作
         if (savedInstanceState == null) {
             onInit();
             checkDownloadLocation();
@@ -434,14 +434,21 @@ public final class MainActivity extends StageActivity
         } else {
             onRestore(savedInstanceState);
         }
-        EhTagDatabase.update(this);
+        
+        // 延迟执行非必要的后台任务
+        SimpleHandler.postOnBackgroundThread(() -> {
+            EhTagDatabase.update(this);
+        });
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        if (!Settings.getCloseAutoUpdate()){
-            AppUpdater.update(this,false);
+        // 延迟检查更新操作，避免影响应用启动速度
+        if (!Settings.getCloseAutoUpdate()) {
+            SimpleHandler.postDelayedOnMainThread(() -> {
+                AppUpdater.update(this, false);
+            }, 3000); // 延迟3秒进行更新检查
         }
     }
 
@@ -452,20 +459,39 @@ public final class MainActivity extends StageActivity
 
     private void initBackgroundImageData(File file) {
         if (file != null) {
-            String name = file.getName();
-            String[] ns = name.split("\\.");
-            if (ns[1].equals("gif") || ns[1].equals("GIF")) {
-                gifHandler = new GifHandler(file.getAbsolutePath());
-                int width = gifHandler.getWidth();
-                int height = gifHandler.getHeight();
-                backgroundBit = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-                int nextFrame = gifHandler.updateFrame(backgroundBit);
-                handlerB.sendEmptyMessageDelayed(1, nextFrame);
-            } else {
-                backgroundBit = BitmapFactory.decodeFile(file.getPath());
-                assert mHeaderBackground != null;
-                mHeaderBackground.setImageBitmap(backgroundBit);
-            }
+            // 将图像加载操作放到后台线程
+            SimpleHandler.postOnBackgroundThread(() -> {
+                String name = file.getName();
+                String[] ns = name.split("\\.");
+                if (ns.length > 1 && (ns[1].equals("gif") || ns[1].equals("GIF"))) {
+                    // GIF 处理
+                    gifHandler = new GifHandler(file.getAbsolutePath());
+                    int width = gifHandler.getWidth();
+                    int height = gifHandler.getHeight();
+                    backgroundBit = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                    int nextFrame = gifHandler.updateFrame(backgroundBit);
+                    
+                    // 在UI线程中设置图像并开始GIF动画
+                    SimpleHandler.postOnMainThread(() -> {
+                        if (mHeaderBackground != null) {
+                            mHeaderBackground.setImageBitmap(backgroundBit);
+                            handlerB.sendEmptyMessageDelayed(1, nextFrame);
+                        }
+                    });
+                } else {
+                    // 普通图像处理，设置缩小的采样率以减少内存使用
+                    BitmapFactory.Options options = new BitmapFactory.Options();
+                    options.inSampleSize = 2; // 采样率为2，减少内存占用
+                    backgroundBit = BitmapFactory.decodeFile(file.getPath(), options);
+                    
+                    // 在UI线程中设置图像
+                    SimpleHandler.postOnMainThread(() -> {
+                        if (mHeaderBackground != null && backgroundBit != null) {
+                            mHeaderBackground.setImageBitmap(backgroundBit);
+                        }
+                    });
+                }
+            });
         }
     }
 
@@ -596,7 +622,7 @@ public final class MainActivity extends StageActivity
     }
 
     private void checkClipboardUrl() {
-        SimpleHandler.getInstance().postDelayed(() -> {
+        SimpleHandler.postDelayedOnMainThread(() -> {
             if (!isSolid()) {
                 checkClipboardUrlInternal();
             }

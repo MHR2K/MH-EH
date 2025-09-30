@@ -35,20 +35,28 @@ class SplashActivity : EhActivity() {
 //        Distribute.setEnabled(!Settings.getCloseAutoUpdate())
         super.onCreate(savedInstanceState)
         setContentView(R.layout.splash_layout)
+        
+        // 使用短延迟确保初始化有时间完成
         Thread(Runnable {
-            //耗时任务，比如加载网络数据
+            try {
+                // 给EhApplication一些时间进行基础初始化
+                Thread.sleep(500)
+            } catch (e: InterruptedException) {
+                // 忽略中断
+            }
+            
             runOnUiThread(Runnable {
                 val intentIn = intent
                 val restart = intentIn.getBooleanExtra(KEY_RESTART, false)
-                //跳转至 MainActivity
+                // 跳转至 MainActivity
                 val intent = Intent(this@SplashActivity, MainActivity::class.java)
                 if (restart) {
                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
                     intent.putExtra(KEY_RESTART, true)
                 }
                 startActivity(intent)
-                //结束当前的 Activity
-                this@SplashActivity.finish()
+                // 结束当前的 Activity
+                finish()
             })
         }).start()
         if (!openNews && Settings.getShowEhEvents()) {

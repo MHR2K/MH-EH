@@ -32,6 +32,7 @@ import com.hippo.content.ContextLocalWrapper;
 import com.hippo.ehviewer.Analytics;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.Settings;
+import com.hippo.lib.yorozuya.SimpleHandler;
 import java.util.Locale;
 
 public abstract class EhActivity extends AppCompatActivity {
@@ -41,15 +42,18 @@ public abstract class EhActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
-
-//        setTheme(getThemeResId(Settings.getTheme(context)));
+        // 设置主题必须在 super.onCreate 之前，这部分不能延迟
         setTheme(getThemeResId(Settings.getTheme()));
         super.onCreate(savedInstanceState);
 
+        // 注册 Activity
         ((EhApplication) getApplication()).registerActivity(this);
 
+        // 延迟初始化分析组件，避免影响启动速度
         if (Analytics.isEnabled()) {
-            FirebaseAnalytics.getInstance(this);
+            SimpleHandler.postOnBackgroundThread(() -> {
+                FirebaseAnalytics.getInstance(this);
+            });
         }
     }
 

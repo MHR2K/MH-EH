@@ -531,6 +531,7 @@
     <string name="edit_host_delete">Delete</string>
     <string name="invalid_host">Invalid host</string>
     <string name="invalid_ip">Invalid IP</string>
+    <string name="database_not_initialized">Database is not initialized yet</string>
 
     <!-- DirPickerActivity -->
     <string name="preset">Preset</string>
@@ -710,6 +711,7 @@
     <string name="settings_advanced_import_data">Import data</string>
     <string name="settings_advanced_import_data_summary">Load data which were previously saved</string>
     <string name="settings_advanced_import_data_successfully">Data imported successfully</string>
+    <string name="settings_advanced_import_data_failed">Failed to import data</string>
     <string name="settings_advanced_wifi_sender">WiFi data migration</string>
     <string name="settings_advanced_wifi_sander_summary">Data Migration via Wi-Fi Hotspot</string>
     <string name="settings_advanced_wifi_client">WiFi migration data reception</string>

@@ -144,6 +144,14 @@ public class EhApplication extends RecordingApplication {
     private final List<String> torrentList = new ArrayList<>();
 
     private boolean initialized = false;
+    
+    /**
+     * 检查应用是否已经完成初始化
+     * @return 如果应用已初始化，返回true
+     */
+    public boolean isInitialized() {
+        return initialized;
+    }
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -176,33 +184,52 @@ public class EhApplication extends RecordingApplication {
 //            TooLargeTool.startLogging(this);
 //        }
 
-        GetText.initialize(this);
-        StatusCodeException.initialize(this);
+        // 首先初始化必要组件，确保数据库可以初始化
+        android.util.Log.d(TAG, "开始初始化关键组件");
         Settings.initialize(this);
         ReadableTime.initialize(this);
-        Html.initialize(this);
         AppConfig.initialize(this);
+        
+        // 优先初始化数据库，这是最关键的部分
+        android.util.Log.d(TAG, "开始初始化数据库");
+        EhDB.initialize(this);
+        
+        // 如果需要合并数据库，立即执行
+        if (EhDB.needMerge()) {
+            android.util.Log.d(TAG, "执行数据库合并");
+            EhDB.mergeOldDB(this);
+        }
+        
+        // 初始化其他组件
+        android.util.Log.d(TAG, "初始化其他组件");
+        GetText.initialize(this);
+        StatusCodeException.initialize(this);
+        Html.initialize(this);
         SpiderDen.initialize(this);
         
         // 初始化中文简繁体转换辅助类
         ChineseConverterHelper.init();
-        EhDB.initialize(this);
         EhEngine.initialize();
         BitmapUtils.initialize(this);
         Image.initialize(this);
         Native.initialize();
-        // 实际作用不确定，但是与64位应用有冲突
-//        A7Zip.loadLibrary(A7ZipExtractLite.LIBRARY, libname -> ReLinker.loadLibrary(EhApplication.this, libname));
         // 64位适配
         A7Zip.initialize(this);
-        if (EhDB.needMerge()) {
-            EhDB.mergeOldDB(this);
-        }
 
         if (Settings.getEnableAnalytics()) {
             Analytics.start(this);
         }
+        
+        // 设置 ID 生成器
+        mIdGenerator.setNextId(Settings.getInt(KEY_GLOBAL_STUFF_NEXT_ID, 0));
 
+        if (DEBUG_PRINT_NATIVE_MEMORY || DEBUG_PRINT_IMAGE_COUNT) {
+            debugPrint();
+        }
+
+        // 标记初始化已完成
+        initialized = true;
+        
         // Do io tasks in new thread
         new AsyncTask<Void, Void, Void>() {
             @Override
@@ -225,32 +252,26 @@ public class EhApplication extends RecordingApplication {
                 } catch (Throwable t) {
                     ExceptionUtils.throwIfFatal(t);
                 }
+                
+                // 执行自动备份 - 在IO线程上直接执行而不是延迟
+                checkAndPerformAutoBackup();
 
                 return null;
             }
         }.executeOnExecutor(IoThreadPoolExecutor.getInstance());
 
-        // Check app update
-        update();
-
-        // Update version code
-        try {
-            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
-            Settings.putVersionCode(pi.versionCode);
-        } catch (PackageManager.NameNotFoundException e) {
-            // Ignore
-        }
-
-        mIdGenerator.setNextId(Settings.getInt(KEY_GLOBAL_STUFF_NEXT_ID, 0));
-
-        if (DEBUG_PRINT_NATIVE_MEMORY || DEBUG_PRINT_IMAGE_COUNT) {
-            debugPrint();
-        }
-
-        initialized = true;
-        
-        // 检查并执行自动备份
-        checkAndPerformAutoBackup();
+        // 检查应用更新 - 放回原位置但使用延迟执行
+        SimpleHandler.postDelayedOnMainThread(() -> {
+            update();
+            
+            // 更新版本代码
+            try {
+                PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                Settings.putVersionCode(pi.versionCode);
+            } catch (PackageManager.NameNotFoundException e) {
+                // Ignore
+            }
+        }, 3000);
     }
     
     private void checkAndPerformAutoBackup() {
@@ -268,7 +289,8 @@ public class EhApplication extends RecordingApplication {
     }
     
     private void performAutoBackup() {
-        executorService.execute(() -> {
+        // 使用IoThreadPoolExecutor而不是executorService来执行备份任务
+        IoThreadPoolExecutor.getInstance().execute(() -> {
             try {
                 File backupDir = AppConfig.getDirInExternalAppDir("backup");
                 if (backupDir == null) {
@@ -371,7 +393,7 @@ public class EhApplication extends RecordingApplication {
                     Log.i(TAG, "Native memory: " + FileUtils.humanReadableByteCount(
                             Debug.getNativeHeapAllocatedSize(), false));
                 }
-                SimpleHandler.getInstance().postDelayed(this, DEBUG_PRINT_INTERVAL);
+                SimpleHandler.postDelayedOnMainThread(this, DEBUG_PRINT_INTERVAL);
             }
         }.run();
     }

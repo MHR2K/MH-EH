@@ -18,10 +18,13 @@ package com.hippo.lib.yorozuya;
 
 import android.os.Handler;
 import android.os.Looper;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class SimpleHandler extends Handler {
 
     private static Handler sInstance;
+    private static ExecutorService sExecutorService = Executors.newCachedThreadPool();
 
     private SimpleHandler(Looper mainLooper) {
         super(mainLooper);
@@ -29,8 +32,29 @@ public final class SimpleHandler extends Handler {
 
     public static Handler getInstance() {
         if (sInstance == null) {
-            sInstance = new Handler(Looper.getMainLooper());
+            sInstance = new SimpleHandler(Looper.getMainLooper());
         }
         return sInstance;
+    }
+    
+    /**
+     * 在主线程上发布一个Runnable
+     */
+    public static void postOnMainThread(Runnable r) {
+        getInstance().post(r);
+    }
+    
+    /**
+     * 在主线程上延迟发布一个Runnable
+     */
+    public static void postDelayedOnMainThread(Runnable r, long delayMillis) {
+        getInstance().postDelayed(r, delayMillis);
+    }
+    
+    /**
+     * 在后台线程上执行一个任务
+     */
+    public static void postOnBackgroundThread(Runnable r) {
+        sExecutorService.execute(r);
     }
 }
