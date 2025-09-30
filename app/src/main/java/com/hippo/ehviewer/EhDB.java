@@ -531,10 +531,20 @@ public class EhDB {
         // Reset id
         raw.setId(null);
         DownloadLabelDao dao = sDaoSession.getDownloadLabelDao();
-        DownloadLabel label = dao.load(raw.getId());
-        if (label != null) {
-            return label;
+        
+        // 检查标签是否已存在
+        QueryBuilder<DownloadLabel> queryBuilder = dao.queryBuilder()
+                .where(DownloadLabelDao.Properties.Label.eq(raw.getLabel()));
+        List<DownloadLabel> result = queryBuilder.list();
+        if (!result.isEmpty()) {
+            return result.get(0);
         }
+        
+        // 保留原始时间戳
+        if (raw.getTime() <= 0) {
+            raw.setTime(System.currentTimeMillis());
+        }
+        
         raw.setId(dao.insert(raw));
         return raw;
     }
@@ -542,6 +552,25 @@ public class EhDB {
     public static synchronized void updateDownloadLabel(DownloadLabel raw) {
         DownloadLabelDao dao = sDaoSession.getDownloadLabelDao();
         dao.update(raw);
+    }
+    
+    public static synchronized void removeAllDownloadLabels() {
+        DownloadLabelDao dao = sDaoSession.getDownloadLabelDao();
+        dao.deleteAll();
+    }
+    
+    public static synchronized DownloadLabel addDownloadLabelWithTime(DownloadLabel raw) {
+        // Reset id
+        raw.setId(null);
+        DownloadLabelDao dao = sDaoSession.getDownloadLabelDao();
+        
+        // 确保保留原始时间戳
+        if (raw.getTime() <= 0) {
+            raw.setTime(System.currentTimeMillis());
+        }
+        
+        raw.setId(dao.insert(raw));
+        return raw;
     }
 
     public static synchronized void moveDownloadLabel(int fromPosition, int toPosition) {
@@ -957,8 +986,8 @@ public class EhDB {
             DaoSession session = daoMaster.newSession();
             sendImportProgress(handler, 10);
             DownloadManager manager = EhApplication.getDownloadManager(context);
-            // Download label
-            List<DownloadLabel> downloadLabelList = session.getDownloadLabelDao().queryBuilder().list();
+            // Download label - 确保按照time字段排序，保持标签顺序
+            List<DownloadLabel> downloadLabelList = session.getDownloadLabelDao().queryBuilder().orderAsc(DownloadLabelDao.Properties.Time).list();
             manager.addDownloadLabel(downloadLabelList);
             // Downloads
             List<DownloadInfo> downloadInfoList = session.getDownloadsDao().queryBuilder().list();
