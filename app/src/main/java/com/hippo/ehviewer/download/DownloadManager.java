@@ -683,11 +683,41 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void addDownloadLabel(List<DownloadLabel> downloadLabelList) {
+        if (downloadLabelList == null || downloadLabelList.isEmpty()) {
+            return;
+        }
+        
+        // 保存现有标签对应的下载列表
+        Map<String, LinkedList<DownloadInfo>> tempMap = new HashMap<>(mMap);
+        
+        // 清除现有标签
+        mLabelList.clear();
+        mMap.clear();
+        EhDB.removeAllDownloadLabels();
+        
+        // 按导入标签的顺序添加标签
         for (DownloadLabel label : downloadLabelList) {
             String labelString = label.getLabel();
-            if (!containLabel(labelString)) {
-                mMap.put(labelString, new LinkedList<>());
-                mLabelList.add(EhDB.addDownloadLabel(label));
+            // 使用原始时间戳添加标签，保证排序
+            DownloadLabel newLabel = EhDB.addDownloadLabelWithTime(label);
+            // 恢复原有标签对应的下载列表，或创建新的空列表
+            LinkedList<DownloadInfo> infoList = tempMap.get(labelString);
+            if (infoList == null) {
+                infoList = new LinkedList<>();
+            }
+            mMap.put(labelString, infoList);
+            mLabelList.add(newLabel);
+        }
+        
+        // 处理没有对应标签的下载项，移动到默认列表
+        for (Map.Entry<String, LinkedList<DownloadInfo>> entry : tempMap.entrySet()) {
+            if (!mMap.containsKey(entry.getKey())) {
+                // 如果原标签不再存在，将其对应的下载项移动到默认列表
+                for (DownloadInfo info : entry.getValue()) {
+                    info.label = null;
+                    mDefaultInfoList.add(info);
+                    EhDB.putDownloadInfo(info);
+                }
             }
         }
     }
