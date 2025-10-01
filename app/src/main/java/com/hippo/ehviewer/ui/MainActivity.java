@@ -70,6 +70,7 @@ import com.hippo.ehviewer.ui.main.UserImageChange;
 import com.hippo.ehviewer.ui.scene.AnalyticsScene;
 import com.hippo.ehviewer.ui.scene.BaseScene;
 import com.hippo.ehviewer.ui.scene.CookieSignInScene;
+import com.hippo.ehviewer.ui.scene.ImportComicScene;
 import com.hippo.ehviewer.ui.scene.download.DownloadLabelsScene;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.FavoritesScene;
@@ -137,6 +138,7 @@ public final class MainActivity extends StageActivity
     private NavigationView mNavView;
     @Nullable
     private FrameLayout mRightDrawer;
+    // MainActivity本身就是StageActivity，无需额外的mSceneDelegate
     @Nullable
     private AvatarImageView mAvatar;
     @Nullable
@@ -163,6 +165,9 @@ public final class MainActivity extends StageActivity
         }
     };
 
+    // 确保 ImportComicScene 类被加载
+    private static final Class<?> IMPORT_COMIC_SCENE_CLASS = ImportComicScene.class;
+    
     static {
         registerLaunchMode(SecurityScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(WarningScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
@@ -184,6 +189,7 @@ public final class MainActivity extends StageActivity
         registerLaunchMode(FavoritesScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
         registerLaunchMode(HistoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TOP);
         registerLaunchMode(ProgressScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
+        registerLaunchMode(ImportComicScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
     }
 
     @Override
@@ -901,6 +907,9 @@ public final class MainActivity extends StageActivity
             case R.id.nav_downloads:
                 startScene(new Announcer(DownloadsScene.class));
                 break;
+            case R.id.nav_import_comic:
+                startScene(new Announcer(ImportComicScene.class));
+                break;
             case R.id.nav_settings:
                 Intent intent = new Intent(this, SettingsActivity.class);
                 startActivityForResult(intent, REQUEST_CODE_SETTINGS);
@@ -917,6 +926,17 @@ public final class MainActivity extends StageActivity
             limitsCountView.hide();
         }
         return true;
+    }
+
+    @Override
+    public void refreshTopScene() {
+        // 直接调用父类的方法
+        super.refreshTopScene();
+    }
+    
+    public void navtoDownloadsScene() {
+        // 直接调用自己的startScene方法
+        startScene(new Announcer(DownloadsScene.class));
     }
 
     @Override
