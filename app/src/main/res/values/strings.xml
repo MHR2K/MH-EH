@@ -475,6 +475,9 @@
     <string name="added_to_download_list">Added to download list</string>
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
+    <string name="find_same_author">Find same author</string>
+    <string name="searching_author">Searching for author: %s</string>
+    <string name="author_not_found">Author not found in title</string>
 
     <!-- Download search options -->
     <string name="fuzzy_search">Fuzzy search</string>

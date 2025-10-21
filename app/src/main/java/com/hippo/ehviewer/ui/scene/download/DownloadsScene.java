@@ -118,9 +118,11 @@ import org.greenrobot.eventbus.ThreadMode;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class DownloadsScene extends ToolbarScene
         implements DownloadManager.DownloadInfoListener, DownloadSearchCallback,
@@ -894,13 +896,210 @@ public class DownloadsScene extends ToolbarScene
         if (recyclerView == null) {
             return false;
         }
-
+        
         if (!recyclerView.isInCustomChoice()) {
             recyclerView.intoCustomChoiceMode();
         }
         recyclerView.toggleItemChecked(position);
 
         return true;
+    }
+    
+    /**
+     * 处理编辑按钮的长按菜单
+     * @param position 项目位置
+     * @param view 被长按的视图
+     * @return 如果处理了菜单操作返回true，否则返回false
+     */
+    public boolean handleItemLongClickMenuOnEditButton(int position, View anchorView) {
+        Context context = getEHContext();
+        if (context == null || mList == null) {
+            return false;
+        }
+        
+        int posInList = positionInList(position);
+        if (posInList < 0 || posInList >= mList.size()) {
+            return false;
+        }
+        
+        // 获取下载项信息
+        DownloadInfo info = mList.get(posInList);
+        
+        // 创建弹出菜单，如果提供了锚点视图，则使用它；否则使用RecyclerView中的项目视图
+        View menuAnchor = (anchorView != null) ? anchorView : mRecyclerView.getChildAt(position);
+        android.widget.PopupMenu popupMenu = new android.widget.PopupMenu(context, menuAnchor);
+        android.view.MenuInflater inflater = popupMenu.getMenuInflater();
+        inflater.inflate(R.menu.download_item_menu, popupMenu.getMenu());
+        
+        // 设置菜单项点击事件
+        popupMenu.setOnMenuItemClickListener(item -> {
+            int itemId = item.getItemId();
+            if (itemId == R.id.menu_find_same_author) {
+                // 尝试从英文标题和日文标题中提取作者名称
+                String englishAuthor = extractAuthorFromTitle(info.title);
+                String japaneseAuthor = extractAuthorFromTitle(info.titleJpn);
+                
+                if ((englishAuthor != null && !englishAuthor.isEmpty()) || 
+                    (japaneseAuthor != null && !japaneseAuthor.isEmpty())) {
+                    // 设置搜索选项：非模糊搜索，不区分大小写
+                    if (mFuzzySearchCheckbox != null) mFuzzySearchCheckbox.setChecked(false);
+                    // 启用不区分大小写，提高搜索效果
+                    if (mIgnoreCaseCheckbox != null) mIgnoreCaseCheckbox.setChecked(true);
+                    // 启用简繁体转换，提高中文作者名搜索效果
+                    if (mChineseConversionCheckbox != null) mChineseConversionCheckbox.setChecked(true);
+                    
+                    // 分别搜索英文和日文作者名，然后合并结果
+                    List<DownloadInfo> combinedResults = new ArrayList<>();
+                    boolean hasResults = false;
+                    
+                    // 先搜索英文作者名
+                    if (englishAuthor != null && !englishAuthor.isEmpty()) {
+                        searchKey = englishAuthor;
+                        hasResults = searchForAuthorAndCollectResults(combinedResults);
+                    }
+                    
+                    // 再搜索日文作者名（如果与英文不同）
+                    if (japaneseAuthor != null && !japaneseAuthor.isEmpty() && 
+                        (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
+                        searchKey = japaneseAuthor;
+                        boolean japaneseResults = searchForAuthorAndCollectResults(combinedResults);
+                        hasResults = hasResults || japaneseResults;
+                    }
+                    
+                    // 显示合并后的结果
+                    if (hasResults) {
+                        // 构建显示用的作者名字符串
+                        StringBuilder searchBuilder = new StringBuilder();
+                        if (englishAuthor != null && !englishAuthor.isEmpty()) {
+                            searchBuilder.append(englishAuthor);
+                        }
+                        if (japaneseAuthor != null && !japaneseAuthor.isEmpty() && 
+                            (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
+                            if (searchBuilder.length() > 0) {
+                                searchBuilder.append(" 或 "); // 使用更清晰的分隔符
+                            }
+                            searchBuilder.append(japaneseAuthor);
+                        }
+                        
+                        String authorSearch = searchBuilder.toString();
+                        // 保存最后一次搜索关键词
+                        searchKey = authorSearch;
+                        
+                        // 设置搜索状态
+                        searching = true;
+                        
+                        // 直接更新UI显示结果
+                        mList = combinedResults;
+                        
+                        // 更新UI
+                        mProgressView.setVisibility(View.GONE);
+                        if (mRecyclerView != null) {
+                            mRecyclerView.setVisibility(View.VISIBLE);
+                        }
+                        
+                        // 更新适配器
+                        updateAdapter();
+                        
+                        // 显示搜索成功提示
+                        android.widget.Toast.makeText(context, 
+                            getString(R.string.searching_author, authorSearch), 
+                            Toast.LENGTH_SHORT).show();
+                        
+                        // 查询未读信息
+                        queryUnreadSpiderInfo();
+                        
+                        // 搜索结束
+                        searching = false;
+                    }
+                } else {
+                    android.widget.Toast.makeText(context, 
+                        R.string.author_not_found, 
+                        Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+            return false;
+        });
+        
+        popupMenu.show();
+        return true;
+    }
+    
+    /**
+     * 搜索特定作者并将结果添加到结果集合中
+     * @param resultsCollection 用于存储搜索结果的集合
+     * @return 是否找到了至少一个结果
+     */
+    private boolean searchForAuthorAndCollectResults(List<DownloadInfo> resultsCollection) {
+        if (mBackList == null || searchKey == null || searchKey.isEmpty()) {
+            return false;
+        }
+        
+        // 创建一个临时结果集
+        List<DownloadInfo> tempResults = new ArrayList<>();
+        
+        // 使用当前的搜索设置
+        boolean fuzzySearch = mFuzzySearchCheckbox != null && mFuzzySearchCheckbox.isChecked();
+        boolean ignoreCase = mIgnoreCaseCheckbox != null && mIgnoreCaseCheckbox.isChecked();
+        boolean caseSensitive = !ignoreCase;
+        boolean enableChineseConversion = mChineseConversionCheckbox != null && mChineseConversionCheckbox.isChecked();
+        boolean sortByRelevance = fuzzySearch && mSortByRelevanceCheckbox != null && mSortByRelevanceCheckbox.isChecked();
+        
+        // 执行搜索
+        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mBackList, searchKey, 
+                fuzzySearch, caseSensitive, enableChineseConversion);
+        
+        if (fuzzySearch && sortByRelevance) {
+            executor.enableSortByRelevance(true);
+        }
+        
+        // 同步执行搜索，获取结果
+        tempResults = executor.executeSearchingSync();
+        
+        if (tempResults != null && !tempResults.isEmpty()) {
+            // 使用Set来避免重复添加相同的下载项
+            java.util.Set<Long> existingGids = new java.util.HashSet<>();
+            
+            // 记录已存在的gid
+            for (DownloadInfo info : resultsCollection) {
+                existingGids.add(info.gid);
+            }
+            
+            // 添加新找到的项（不重复的）
+            for (DownloadInfo info : tempResults) {
+                if (!existingGids.contains(info.gid)) {
+                    resultsCollection.add(info);
+                    existingGids.add(info.gid);
+                }
+            }
+            
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * 从标题中提取作者名称
+     * 一般作者名称格式为 [AAAA(BBBB)] 中的 BBBB，或者是第一个 [CCCC] 中的 CCCC
+     * @param title 标题
+     * @return 作者名称，如果没有找到则返回null
+     */
+    public static String extractAuthorFromTitle(String title) {
+        if (title == null || title.isEmpty()) {
+            return null;
+        }
+        
+        // 找到第一个 []
+        java.util.regex.Matcher bracketMatcher = java.util.regex.Pattern.compile("\\[([^\\]]+)\\]").matcher(title);
+        if (!bracketMatcher.find()) return null;
+        
+        String bracketContent = bracketMatcher.group(1);
+        
+        // 在 [] 内容中查找 ()
+        java.util.regex.Matcher parenMatcher = java.util.regex.Pattern.compile("\\(([^)]+)\\)").matcher(bracketContent);
+        
+        return parenMatcher.find() ? parenMatcher.group(1) : bracketContent;
     }
 
     @SuppressLint("RtlHardcoded")
@@ -1281,9 +1480,15 @@ public class DownloadsScene extends ToolbarScene
             mSearchBar.setState(SearchBar.STATE_NORMAL);
         }
 
-        mSearchDialog.dismiss();
+        // 添加null检查，避免空指针异常
+        if (mSearchDialog != null) {
+            mSearchDialog.dismiss();
+        }
 
-        updateForLabel();
+        // 只有当没有预先设置搜索结果时，才更新标签（避免覆盖已有的搜索结果）
+        if (!searching) {
+            updateForLabel();
+        }
 
         // 读取用户选择的搜索选项
         boolean fuzzySearch = mFuzzySearchCheckbox != null && mFuzzySearchCheckbox.isChecked();

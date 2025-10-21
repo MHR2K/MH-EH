@@ -316,6 +316,21 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             start.setOnClickListener(this);
             stop.setOnClickListener(this);
             edit.setOnClickListener(this);
+            
+            // 为编辑按钮添加长按监听器
+            edit.setOnLongClickListener(v -> {
+                if (mScene != null) {
+                    Context context = mScene.getEHContext();
+                    EasyRecyclerView recyclerView = mCallback.getRecyclerView();
+                    if (context != null && recyclerView != null && !recyclerView.isInCustomChoice()) {
+                        int position = getAdapterPosition();
+                        if (position != RecyclerView.NO_POSITION) {
+                            return mScene.handleItemLongClickMenuOnEditButton(position, v);
+                        }
+                    }
+                }
+                return false;
+            });
 
             boolean isDarkTheme = !AttrResources.getAttrBoolean(mScene.getEHContext(), androidx.appcompat.R.attr.isLightTheme);
             Ripple.addRipple(start, isDarkTheme);

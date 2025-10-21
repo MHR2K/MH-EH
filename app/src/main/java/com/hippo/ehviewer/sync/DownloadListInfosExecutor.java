@@ -93,6 +93,9 @@ public class DownloadListInfosExecutor {
         mDownloadSearchCallback = downloadSearchCallback;
     }
 
+    /**
+     * 执行异步搜索，结果通过回调返回
+     */
     public void executeSearching() {
         service.execute(() -> {
             resultList = searchingInBackground();
@@ -109,6 +112,61 @@ public class DownloadListInfosExecutor {
                 mDownloadSearchCallback.onDownloadSearchSuccess(resultList);
             });
         });
+    }
+    
+    /**
+     * 执行同步搜索，直接返回结果
+     * @return 搜索结果列表
+     */
+    public List<DownloadInfo> executeSearchingSync() {
+        List<DownloadInfo> results = searchingInBackgroundInternal();
+        
+        // 如果启用按相关性排序，对搜索结果进行排序
+        if (mSortByRelevance && mSearchKey != null && !mSearchKey.isEmpty() && results != null && !results.isEmpty()) {
+            results = sortByRelevance(results, mSearchKey);
+        }
+        
+        return results;
+    }
+    
+    /**
+     * 同步搜索的内部实现，跳过回调检查
+     */
+    private List<DownloadInfo> searchingInBackgroundInternal() {
+        android.util.Log.d("EhSearch", "开始执行同步下载列表搜索: 关键词=" + mSearchKey + 
+                        ", 模糊搜索=" + mFuzzySearch + 
+                        ", 区分大小写=" + mCaseSensitive + 
+                        ", 简繁体转换=" + mEnableChineseConversion);
+        
+        if (mSearchKey == null || mSearchKey.isEmpty()) {
+            android.util.Log.d("EhSearch", "搜索关键词为空，返回完整列表");
+            return mList;
+        }
+        if (mList == null) {
+            android.util.Log.d("EhSearch", "下载列表为null，返回空列表");
+            return new ArrayList<>();
+        }
+        
+        // 创建结果列表和相似度分数映射
+        List<DownloadInfo> cache = new ArrayList<>();
+        final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
+
+        // 首先收集所有匹配的结果及其相似度分数
+        for (int i = 0; i < mList.size(); i++) {
+            DownloadInfo info = mList.get(i);
+            double score = calculateSimilarityScore(info, mSearchKey);
+            
+            if (score > 0) {
+                cache.add(info);
+                scoreMap.put(info, score);
+            }
+        }
+        
+        // 根据相似度分数对结果进行排序
+        cache.sort((a, b) -> Double.compare(scoreMap.getOrDefault(b, 0.0), 
+                                        scoreMap.getOrDefault(a, 0.0)));
+
+        return cache;
     }
 
     @SuppressLint("NonConstantResourceId")
@@ -338,38 +396,13 @@ public class DownloadListInfosExecutor {
                           ", 简繁体转换=" + mEnableChineseConversion);
         
         if (mDownloadSearchCallback == null) {
-            android.util.Log.d("EhSearch", "搜索回调为null，返回空列表");
-            return new ArrayList<>();
-        }
-        if (mSearchKey == null || mSearchKey.isEmpty()) {
-            android.util.Log.d("EhSearch", "搜索关键词为空，返回完整列表");
-            return mList;
-        }
-        if (mList == null) {
-            android.util.Log.d("EhSearch", "下载列表为null，返回空列表");
-            return new ArrayList<>();
+            android.util.Log.d("EhSearch", "搜索回调为null，改用内部搜索实现");
+            // 使用不依赖回调的内部搜索实现
+            return searchingInBackgroundInternal();
         }
         
-        // 创建结果列表和相似度分数映射
-        List<DownloadInfo> cache = new ArrayList<>();
-        final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
-
-        // 首先收集所有匹配的结果及其相似度分数
-        for (int i = 0; i < mList.size(); i++) {
-            DownloadInfo info = mList.get(i);
-            double score = calculateSimilarityScore(info, mSearchKey);
-            
-            if (score > 0) {
-                cache.add(info);
-                scoreMap.put(info, score);
-            }
-        }
-        
-        // 根据相似度分数对结果进行排序
-        cache.sort((a, b) -> Double.compare(scoreMap.getOrDefault(b, 0.0), 
-                                            scoreMap.getOrDefault(a, 0.0)));
-
-        return cache;
+        // 使用内部搜索实现执行搜索
+        return searchingInBackgroundInternal();
     }
 
     private boolean matchTag(String mSearchKey, DownloadInfo info) {
