@@ -79,6 +79,16 @@ public class SceneFragment extends Fragment {
         }
     }
 
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Ensure arguments Bundle uses this Fragment's ClassLoader for Parcelable
+        Bundle args = getArguments();
+        if (args != null) {
+            args.setClassLoader(getClass().getClassLoader());
+        }
+    }
+
     /**
      * @return negative for error
      */

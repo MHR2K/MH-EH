@@ -2,7 +2,7 @@ package com.hippo.ehviewer.client.parser;
 
 import android.util.Log;
 
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.client.data.HomeDetail;
 import com.hippo.ehviewer.client.exception.EhException;
 import com.hippo.lib.yorozuya.NumberUtils;
@@ -48,7 +48,7 @@ public class EhHomeParser {
             parseModerationPower(moderationPower, homeDetail);
         } catch (Exception e ) {
             Log.e(TAG, "数据结构错误");
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
         }
 
         return homeDetail;

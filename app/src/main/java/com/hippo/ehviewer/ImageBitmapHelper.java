@@ -19,12 +19,12 @@ package com.hippo.ehviewer;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.conaco.ValueHelper;
 import com.hippo.lib.image.Image;
 import com.hippo.streampipe.InputStreamPipe;
 
-import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 
 public class ImageBitmapHelper implements ValueHelper<Image> {
@@ -41,10 +41,10 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
     public Image decode(@NonNull InputStreamPipe isPipe,boolean hardware) {
         try {
             isPipe.obtain();
-            FileInputStream is = (FileInputStream) isPipe.open();
+            InputStream is = isPipe.open();
             return Image.decode(is,hardware);
         } catch (OutOfMemoryError e) {
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
             return null;
         } catch (IOException e) {
             return null;

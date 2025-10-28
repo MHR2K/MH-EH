@@ -26,6 +26,8 @@ import com.hippo.io.UniFileInputStreamPipe;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.streampipe.InputStreamPipe;
 import com.hippo.unifile.UniFile;
+import com.hippo.ehviewer.smb.SmbMappingStore;
+import com.hippo.ehviewer.smb.Client;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,7 +58,10 @@ public class ThumbDataContainer implements DataContainer {
     @Override
     public boolean isEnabled() {
         ensureFile();
-        return mFile != null;
+        if (mFile != null) return true;
+        // 如果已迁移到 SMB，仍然启用以便从 SMB 读取 .thumb
+        SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mInfo.gid);
+        return mapping != null;
     }
 
     @Override
@@ -88,7 +93,25 @@ public class ThumbDataContainer implements DataContainer {
         ensureFile();
         if (mFile != null) {
             return new UniFileInputStreamPipe(mFile);
-        } else {
+        }
+        // 本地不存在，尝试从 SMB 读取 .thumb（只读）
+        SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mInfo.gid);
+        if (mapping == null) return null;
+        String base = mapping.getBasePathInShare();
+        if (base == null) base = "";
+        String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+        String rel = normBase.isEmpty() ? ".thumb" : (normBase + "\\" + ".thumb");
+        Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+        try {
+            final InputStream is = Client.INSTANCE.openInputStream(target);
+            return new InputStreamPipe() {
+                private InputStream mIs;
+                @Override public void obtain() { /* no-op */ }
+                @Override public void release() { /* no-op */ }
+                @Override public InputStream open() { mIs = is; return mIs; }
+                @Override public void close() { IOUtils.closeQuietly(mIs); mIs = null; }
+            };
+        } catch (Throwable ignore) {
             return null;
         }
     }

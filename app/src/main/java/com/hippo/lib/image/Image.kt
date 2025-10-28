@@ -20,6 +20,8 @@ import androidx.core.graphics.drawable.toDrawable
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 import com.hippo.ehviewer.EhApplication
 import java.io.FileInputStream
+import java.io.InputStream
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import kotlin.math.max
 import kotlin.math.min
@@ -225,6 +227,39 @@ class Image private constructor(
         fun decode(stream: FileInputStream, hardware: Boolean = true): Image? {
             try {
                 return Image(stream, hardware = hardware)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                FirebaseCrashlytics.getInstance().recordException(e)
+                return null
+            }
+        }
+
+        @JvmStatic
+        fun decode(stream: InputStream, hardware: Boolean = true): Image? {
+            try {
+                // Read all bytes from the stream; for large images consider sampling
+                val bytes = stream.readBytes()
+                var simpleSize: Int? = null
+                if (bytes.size > 10 * 1024 * 1024) { // >10MB
+                    simpleSize = bytes.size / (10 * 1024 * 1024) + 1
+                }
+                return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val src = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+                    val drawable = ImageDecoder.decodeDrawable(src) { decoder: ImageDecoder, info: ImageInfo, _: Source ->
+                        decoder.allocator = if (hardware) ALLOCATOR_DEFAULT else ALLOCATOR_SOFTWARE
+                        val screenSize = kotlin.math.min(
+                            info.size.width / screenWidth,
+                            info.size.height / screenHeight
+                        ).coerceAtLeast(1)
+                        decoder.setTargetSampleSize(kotlin.math.max(screenSize, simpleSize ?: 1))
+                    }
+                    Image(null, drawable, hardware)
+                } else {
+                    val option = if (simpleSize != null) BitmapFactory.Options().apply { inSampleSize = simpleSize } else null
+                    val bitmap = if (option != null) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, option)
+                    else BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    Image(null, BitmapDrawable(EhApplication.getInstance().resources, bitmap), hardware = false)
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
                 FirebaseCrashlytics.getInstance().recordException(e)

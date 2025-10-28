@@ -54,7 +54,7 @@ import com.hippo.lib.yorozuya.AssertUtils;
 import com.hippo.lib.yorozuya.ViewUtils;
 import com.hippo.ripple.Ripple;
 import com.hippo.scene.Announcer;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.widget.LoadImageView;
 
 // 拖拽排序相关导入
@@ -173,7 +173,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             // Update transition name
             ViewCompat.setTransitionName(holder.thumb, TransitionNameFactory.getThumbTransitionName(info.gid));
         } catch (Exception e) {
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
         }
     }
 
@@ -471,6 +471,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         } catch (Exception e) {
             // 忽略硬件位图相关错误
             android.util.Log.e("DownloadAdapter", "Error in onItemDragFinished: " + e.getMessage());
+            CrashlyticsUtils.record(e);
         }
     }
 

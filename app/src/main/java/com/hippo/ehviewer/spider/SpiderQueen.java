@@ -64,7 +64,7 @@ import com.hippo.lib.yorozuya.Utilities;
 import com.hippo.lib.yorozuya.collect.SparseJLArray;
 import com.hippo.lib.yorozuya.thread.PriorityThread;
 import com.hippo.lib.yorozuya.thread.PriorityThreadFactory;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
@@ -604,7 +604,7 @@ public final class SpiderQueen implements Runnable {
                     mWorkerPoolExecutor.execute(new SpiderWorker());
                 }
             } catch (OutOfMemoryError outOfMemoryError) {
-                FirebaseCrashlytics.getInstance().recordException(outOfMemoryError);
+                CrashlyticsUtils.record(outOfMemoryError);
                 notifyFinish();
             }
         }
@@ -750,6 +750,33 @@ public final class SpiderQueen implements Runnable {
             }
         }
 
+        // Read from SMB (fallback)
+        try {
+            com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(mGalleryInfo.gid);
+            if (mapping != null) {
+                String base = mapping.getBasePathInShare();
+                if (base == null) base = "";
+                String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+                String rel = normBase.isEmpty() ? SPIDER_INFO_FILENAME : (normBase + "\\" + SPIDER_INFO_FILENAME);
+                com.hippo.ehviewer.smb.Client.Target target = new com.hippo.ehviewer.smb.Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+                java.io.InputStream is = null;
+                try {
+                    is = com.hippo.ehviewer.smb.Client.INSTANCE.openInputStream(target);
+                    spiderInfo = SpiderInfo.read(is);
+                    if (spiderInfo != null && spiderInfo.gid == mGalleryInfo.gid &&
+                            spiderInfo.token.equals(mGalleryInfo.token)) {
+                        return spiderInfo;
+                    }
+                } catch (Throwable ignore) {
+                    // ignore and continue
+                } finally {
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(is);
+                }
+            }
+        } catch (Throwable ignore) {
+            // ignore and continue
+        }
+
         // Read from cache
         InputStreamPipe pipe = mSpiderInfoCache.getInputStreamPipe(Long.toString(mGalleryInfo.gid));
         if (null != pipe) {
@@ -811,7 +838,7 @@ public final class SpiderQueen implements Runnable {
             return spiderInfo;
         } catch (Throwable e) {
             ExceptionUtils.throwIfFatal(e);
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
             return null;
         }
     }
@@ -1309,7 +1336,7 @@ public final class SpiderQueen implements Runnable {
                     } catch (IOException e) {
                         error = "GP不足/Insufficient GP";
                         IOException ioException = new IOException("原图链接获取失败", e);
-                        FirebaseCrashlytics.getInstance().recordException(ioException);
+                        CrashlyticsUtils.record(ioException);
                         break;
                     }
                 } else {
@@ -1419,7 +1446,7 @@ public final class SpiderQueen implements Runnable {
                                         cancelDownload = false;
                                         downloadSpeedZeroTimeCount.schedule(new TimeCount(), 3000);
                                     } catch (Throwable e) {
-                                        FirebaseCrashlytics.getInstance().recordException(e);
+                                        CrashlyticsUtils.record(e);
                                     }
                                 }
                                 if (cancelDownload) {
@@ -1795,15 +1822,15 @@ public final class SpiderQueen implements Runnable {
 
                 if (is != null) {
                     try {
-                        image = Image.decode((FileInputStream) is, false);
+                        image = Image.decode(is, false);
                     }catch (OutOfMemoryError e){
-                        FirebaseCrashlytics.getInstance().recordException(e);
+                        CrashlyticsUtils.record(e);
                     }finally {
                         try {
                             is.close();
                         } catch (IOException e) {
                             Log.e(TAG, "解码失败", e);
-                            FirebaseCrashlytics.getInstance().recordException(e);
+                            CrashlyticsUtils.record(e);
                         }
                     }
                     if (image == null) {

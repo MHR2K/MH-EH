@@ -135,7 +135,7 @@ import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.lib.yorozuya.IntIdGenerator;
 import com.hippo.lib.yorozuya.SimpleHandler;
 import com.hippo.lib.yorozuya.ViewUtils;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 
 import com.hippo.ehviewer.spider.SpiderQueen;
 
@@ -1871,7 +1871,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
 
     protected void onGetGalleryDetailUpdateFailure(Exception e) {
         e.printStackTrace();
-        FirebaseCrashlytics.getInstance().recordException(e);
+    CrashlyticsUtils.record(e);
         adjustViewVisibility(STATE_NORMAL, true);
     }
 

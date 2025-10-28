@@ -48,7 +48,7 @@ import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.dao.QuickSearch;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.util.PermissionRequester;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 
 import org.greenrobot.eventbus.EventBus;
 
@@ -286,7 +286,7 @@ public class WiFiClientActivity extends AppCompatActivity {
                    DownloadInfo info = DownloadInfo.downloadInfoFromJson(jsonArray.getJSONObject(i));
                    manager.addDownloadInfo(info,info.label);
                }catch (ClassCastException e){
-                   FirebaseCrashlytics.getInstance().recordException(e);
+                   CrashlyticsUtils.record(e);
                }
             }
             connectThread.dataProcessed(response);
