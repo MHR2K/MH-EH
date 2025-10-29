@@ -35,20 +35,25 @@ public final class Analytics {
     private Analytics() {}
 
     public static void start(Context context) {
-        analytics = FirebaseAnalytics.getInstance(context);
-        analytics.setUserId(Settings.getUserID());
+        try {
+            analytics = FirebaseAnalytics.getInstance(context);
+            analytics.setUserId(Settings.getUserID());
 
-        Locale locale = Locale.getDefault();
-        String language = locale.getLanguage();
-        if (TextUtils.isEmpty(language)) {
-            language = "none";
+            Locale locale = Locale.getDefault();
+            String language = locale.getLanguage();
+            if (TextUtils.isEmpty(language)) {
+                language = "none";
+            }
+            String country = locale.getCountry();
+            if (!TextUtils.isEmpty(country)) {
+                language = language + "-" + country;
+            }
+            language = language.toLowerCase();
+            analytics.setUserProperty(DEVICE_LANGUAGE, language);
+        } catch (IllegalStateException | NoClassDefFoundError ignored) {
+            // Firebase not configured or dependency missing – disable analytics silently
+            analytics = null;
         }
-        String country = locale.getCountry();
-        if (!TextUtils.isEmpty(country)) {
-            language = language + "-" + country;
-        }
-        language = language.toLowerCase();
-        analytics.setUserProperty(DEVICE_LANGUAGE, language);
     }
 
     public static boolean isEnabled() {

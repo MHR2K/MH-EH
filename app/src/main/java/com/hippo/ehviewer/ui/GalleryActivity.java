@@ -281,7 +281,9 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
             return;
         }
 
-        mAction = intent.getAction();
+    // Ensure Intent extras can unmarshal app Parcelables
+    intent.setExtrasClassLoader(getClassLoader());
+    mAction = intent.getAction();
         mFilename = intent.getStringExtra(KEY_FILENAME);
         mUri = intent.getData();
         mGalleryInfo = intent.getParcelableExtra(KEY_GALLERY_INFO);

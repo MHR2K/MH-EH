@@ -110,6 +110,10 @@ public abstract class StageActivity extends EhActivity {
         }
 
         Bundle args = intent.getBundleExtra(KEY_SCENE_ARGS);
+        // Ensure proper ClassLoader for Parcelable unmarshalling (e.g., DownloadInfo)
+        if (args != null) {
+            args.setClassLoader(getClassLoader());
+        }
 
         Announcer announcer = onStartSceneFromIntent(clazz, args);
         if (announcer == null) {
@@ -270,6 +274,10 @@ public abstract class StageActivity extends EhActivity {
     public void startScene(Announcer announcer) {
         Class<?> clazz = announcer.clazz;
         Bundle args = announcer.args;
+        if (args != null) {
+            // Ensure arguments carry the app ClassLoader before attaching to Fragment
+            args.setClassLoader(getClassLoader());
+        }
         TransitionHelper tranHelper = announcer.tranHelper;
         FragmentManager fragmentManager = getSupportFragmentManager();
         int launchMode = getSceneLaunchMode(clazz);
@@ -401,6 +409,10 @@ public abstract class StageActivity extends EhActivity {
     public void startSceneFirstly(Announcer announcer) {
         Class<?> clazz = announcer.clazz;
         Bundle args = announcer.args;
+        if (args != null) {
+            // Ensure arguments carry the app ClassLoader before attaching to Fragment
+            args.setClassLoader(getClassLoader());
+        }
         FragmentManager fragmentManager = getSupportFragmentManager();
         int launchMode = getSceneLaunchMode(clazz);
         boolean forceNewScene = launchMode == SceneFragment.LAUNCH_MODE_STANDARD;

@@ -38,7 +38,7 @@ import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.lib.yorozuya.NumberUtils;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -321,7 +321,7 @@ public class SpiderInfo {
             readPreviews(info, 0, spiderInfo);
             return spiderInfo;
         } catch (ParseException e) {
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
         }
         return null;
     }

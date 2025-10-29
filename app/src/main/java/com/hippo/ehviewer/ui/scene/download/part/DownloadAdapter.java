@@ -54,8 +54,9 @@ import com.hippo.lib.yorozuya.AssertUtils;
 import com.hippo.lib.yorozuya.ViewUtils;
 import com.hippo.ripple.Ripple;
 import com.hippo.scene.Announcer;
-import com.google.firebase.crashlytics.FirebaseCrashlytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.widget.LoadImageView;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
 
 // 拖拽排序相关导入
 import com.h6ah4i.android.widget.advrecyclerview.draggable.DraggableItemAdapter;
@@ -173,7 +174,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             // Update transition name
             ViewCompat.setTransitionName(holder.thumb, TransitionNameFactory.getThumbTransitionName(info.gid));
         } catch (Exception e) {
-            FirebaseCrashlytics.getInstance().recordException(e);
+            CrashlyticsUtils.record(e);
         }
     }
 
@@ -228,6 +229,34 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         holder.category.setVisibility(View.VISIBLE);
         holder.readProgress.setVisibility(View.VISIBLE);
         holder.state.setVisibility(View.VISIBLE);
+        // 存储位置指示仅在状态可见时显示
+        Resources res0 = mScene.getResources2();
+        if (res0 != null) {
+            StorageLocation loc = StorageDetector.detect(info);
+            String label = "";
+            switch (loc) {
+                case SMB:
+                    label = res0.getString(R.string.storage_smb);
+                    break;
+                case LOCAL:
+                    label = res0.getString(R.string.storage_local);
+                    break;
+                case BOTH:
+                    label = res0.getString(R.string.storage_both);
+                    break;
+                case UNKNOWN:
+                default:
+                    label = "";
+            }
+            if (label.isEmpty()) {
+                holder.storageIndicator.setVisibility(View.GONE);
+            } else {
+                holder.storageIndicator.setVisibility(View.VISIBLE);
+                holder.storageIndicator.setText(label);
+            }
+        } else {
+            holder.storageIndicator.setVisibility(View.GONE);
+        }
         holder.edit.setVisibility(View.VISIBLE);
         holder.progressBar.setVisibility(View.GONE);
         holder.percent.setVisibility(View.GONE);
@@ -250,6 +279,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         holder.category.setVisibility(View.GONE);
         holder.readProgress.setVisibility(View.GONE);
         holder.state.setVisibility(View.GONE);
+        holder.storageIndicator.setVisibility(View.GONE);
         holder.edit.setVisibility(View.VISIBLE);
         holder.progressBar.setVisibility(View.VISIBLE);
         holder.percent.setVisibility(View.VISIBLE);
@@ -290,6 +320,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         public final View stop;
         public final View edit;
         public final TextView state;
+    public final TextView storageIndicator;
         public final android.widget.ProgressBar progressBar;
         public final TextView percent;
         public final TextView speed;
@@ -307,6 +338,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             stop = itemView.findViewById(R.id.stop);
             edit = itemView.findViewById(R.id.edit);
             state = itemView.findViewById(R.id.state);
+            storageIndicator = itemView.findViewById(R.id.storage_indicator);
             progressBar = itemView.findViewById(R.id.progress_bar);
             percent = itemView.findViewById(R.id.percent);
             speed = itemView.findViewById(R.id.speed);
@@ -471,6 +503,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         } catch (Exception e) {
             // 忽略硬件位图相关错误
             android.util.Log.e("DownloadAdapter", "Error in onItemDragFinished: " + e.getMessage());
+            CrashlyticsUtils.record(e);
         }
     }
 

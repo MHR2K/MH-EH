@@ -58,6 +58,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     private static final String KEY_IMPORT_DATA = "import_data";
     private static final String KEY_WIFI_SERVER = "wifi_server";
     private static final String KEY_WIFI_CLIENT = "wifi_client";
+    private static final String KEY_SMB_ADD_SERVER = "smb_add_server";
 
     private final DbSyncHandle dbSyncHandle = new DbSyncHandle(Looper.getMainLooper());
 
@@ -87,6 +88,34 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     @Override
     public void onResume() {
         super.onResume();
+        // 更新“添加 SMB 服务器”项的摘要为已保存服务器的 URL 列表（包含密码）
+        Preference smbAdd = findPreference(KEY_SMB_ADD_SERVER);
+        if (smbAdd != null) {
+            try {
+                java.util.List<com.hippo.ehviewer.smb.SmbServer> list = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                if (list == null || list.isEmpty()) {
+                    smbAdd.setSummary("未保存任何 SMB 服务器");
+                } else {
+                    StringBuilder sb = new StringBuilder();
+                    for (com.hippo.ehviewer.smb.SmbServer s : list) {
+                        com.hippo.ehviewer.smb.Authority a = s.getAuthority();
+                        String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\\\" + a.getUsername()) : a.getUsername();
+                        String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
+                        String path = s.getRelativePath();
+                            String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
+                        String url = "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
+                        if (sb.length() > 0) sb.append('\n');
+                        if (s.getName() != null) {
+                            sb.append(s.getName()).append(": ");
+                        }
+                        sb.append(url);
+                    }
+                    smbAdd.setSummary(sb.toString());
+                }
+            } catch (Throwable t) {
+                smbAdd.setSummary("读取保存的 SMB 服务器失败");
+            }
+        }
     }
 
     @Override
