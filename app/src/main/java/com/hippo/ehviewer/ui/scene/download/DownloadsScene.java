@@ -206,6 +206,7 @@ public class DownloadsScene extends ToolbarScene
     private CheckBox mIgnoreCaseCheckbox;
     private CheckBox mChineseConversionCheckbox;
     private CheckBox mSortByRelevanceCheckbox;
+    private CheckBox mSearchAllLabelsCheckbox;
     @Nullable
     private PaginationIndicator mPaginationIndicator;
 
@@ -793,12 +794,17 @@ public class DownloadsScene extends ToolbarScene
         mIgnoreCaseCheckbox = linearLayout.findViewById(R.id.case_sensitive_checkbox);
         mChineseConversionCheckbox = linearLayout.findViewById(R.id.chinese_conversion_checkbox);
         mSortByRelevanceCheckbox = linearLayout.findViewById(R.id.sort_by_relevance_checkbox);
+    mSearchAllLabelsCheckbox = linearLayout.findViewById(R.id.search_all_labels_checkbox);
         
         // 初始化当前设置状态，从 Settings 加载所有搜索相关设置
         mFuzzySearchCheckbox.setChecked(Settings.getEnableFuzzySearch());
         mIgnoreCaseCheckbox.setChecked(Settings.getEnableIgnoreCase());
         mChineseConversionCheckbox.setChecked(Settings.getEnableChineseConversion());
         mSortByRelevanceCheckbox.setChecked(Settings.getEnableSortByRelevance());
+        if (mSearchAllLabelsCheckbox != null) {
+            // 默认不勾选全标签搜索
+            mSearchAllLabelsCheckbox.setChecked(false);
+        }
         
         // 设置"按相关性排序"复选框的启用状态，只有在模糊搜索启用时才可用
         updateSortByRelevanceState();
@@ -1675,8 +1681,24 @@ public class DownloadsScene extends ToolbarScene
                       "区分大小写=" + caseSensitive + ", " + 
                       "简繁体转换=" + enableChineseConversion);
 
+        // 选择数据源：当选中“在全部标签中搜索”时，使用所有下载项；否则使用当前列表
+        List<DownloadInfo> dataSource = mList;
+        try {
+            if (mSearchAllLabelsCheckbox != null && mSearchAllLabelsCheckbox.isChecked()) {
+                Context ctx = getEHContext();
+                if (ctx != null) {
+                    DownloadManager dm = EhApplication.getDownloadManager(ctx);
+                    if (dm != null) {
+                        dataSource = dm.getAllDownloadInfoList();
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            // 兜底：出现异常时，继续使用当前列表数据源
+        }
+
         // 使用用户选择的搜索选项
-        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey, fuzzySearch, caseSensitive, enableChineseConversion);
+        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(dataSource, searchKey, fuzzySearch, caseSensitive, enableChineseConversion);
         
         // 只有当模糊搜索启用并且按相关性排序选项被勾选时，才启用排序
         if (fuzzySearch && sortByRelevance) {
