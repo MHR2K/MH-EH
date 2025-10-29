@@ -105,6 +105,8 @@ import com.sxj.paginationlib.PaginationIndicator;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
 
 // 拖拽排序相关导入
 import com.h6ah4i.android.widget.advrecyclerview.animator.DraggableItemAnimator;
@@ -714,6 +716,48 @@ public class DownloadsScene extends ToolbarScene
             case R.id.sort_by_rating_desc:
                 gotoFilterAndSort(id);
                 return true;
+
+            case R.id.storage_all: {
+                // 还原标题与分页
+                mList = mBackList;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+            case R.id.storage_smb_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    StorageLocation loc = StorageDetector.detect(di);
+                    if (loc == StorageLocation.SMB || loc == StorageLocation.BOTH) {
+                        result.add(di);
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+            case R.id.storage_local_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    StorageLocation loc = StorageDetector.detect(di);
+                    if (loc == StorageLocation.LOCAL) {
+                        result.add(di);
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
 
         }
         return false;

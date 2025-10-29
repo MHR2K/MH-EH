@@ -451,7 +451,11 @@
     <string name="download_labels">Download labels</string>
     <string name="download_sort_list">Sort</string>
     <string name="download_filter_by_status">Filter by status</string>
+    <string name="download_filter_by_storage">Filter by storage</string>
     <string name="download_status_all">All</string>
+    <string name="storage_all">All</string>
+    <string name="storage_smb_only">SMB only</string>
+    <string name="storage_local_only">Local only</string>
     <string name="download_status_not_started">Not </string>
     <string name="default_sort">Default</string>
     <string name="sort_by_gallery_id_asc">By Id Asc</string>
@@ -1044,5 +1048,10 @@
     <!-- S-Pen Actions(Samsung only) -->
     <string name="spen_previous_page">Previous page</string>
     <string name="spen_next_page">Next page</string>
+
+    <!-- Storage indicator labels -->
+    <string name="storage_smb">SMB</string>
+    <string name="storage_local">Local</string>
+    <string name="storage_both">SMB+Local</string>
 
 </resources>
