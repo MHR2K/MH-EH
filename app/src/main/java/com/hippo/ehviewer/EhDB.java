@@ -95,6 +95,15 @@ public class EhDB {
         @Override
         public void onCreate(SQLiteDatabase db) {
             super.onCreate(db);
+            // Try to create FTS structures for downloads on fresh DB
+            try {
+                createDownloadsFts(db);
+                // Populate initial data if any rows already exist
+                db.execSQL("INSERT INTO downloads_fts(rowid, title, title_jpn) SELECT GID, TITLE, TITLE_JPN FROM DOWNLOADS");
+            } catch (Throwable t) {
+                // Ignore if FTS5 is not available on this device
+                Log.w(TAG, "FTS5 not available or failed to initialize onCreate", t);
+            }
             sNewDB = true;
         }
 
@@ -164,6 +173,15 @@ public class EhDB {
                         "\"RECLASS\" TEXT," + // 13: reclass
                         "\"CREATE_TIME\" INTEGER," + // 14: create_time
                         "\"UPDATE_TIME\" INTEGER);"); // 15: update_time
+            case 6: // 6 to 7, add FTS5 virtual table and triggers for DOWNLOADS
+                try {
+                    createDownloadsFts(db);
+                    // Backfill existing rows
+                    db.execSQL("INSERT INTO downloads_fts(rowid, title, title_jpn) SELECT GID, TITLE, TITLE_JPN FROM DOWNLOADS");
+                } catch (Throwable t) {
+                    // Ignore on devices without FTS5
+                    Log.w(TAG, "FTS5 not available or failed to initialize during upgrade", t);
+                }
         }
     }
 
@@ -1073,4 +1091,104 @@ public class EhDB {
         message.setData(bundle);
         handler.sendMessage(message);
     }
+
+    // region FTS5 (downloads)
+
+    /**
+     * Create FTS5 virtual table and triggers for DOWNLOADS.
+     * Safe to call multiple times; will use IF NOT EXISTS.
+     */
+    private static void createDownloadsFts(SQLiteDatabase db) {
+        // Create FTS5 external-content table indexing title fields
+        db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS downloads_fts USING fts5(" +
+                "title, " +
+                "title_jpn, " +
+                "content='DOWNLOADS', " +
+                "content_rowid='GID'" +
+            ")");
+
+        // Keep FTS in sync with DOWNLOADS via triggers
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS downloads_ai AFTER INSERT ON DOWNLOADS BEGIN " +
+                "INSERT INTO downloads_fts(rowid, title, title_jpn) VALUES (new.GID, new.TITLE, new.TITLE_JPN); END;");
+
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS downloads_ad AFTER DELETE ON DOWNLOADS BEGIN " +
+                "INSERT INTO downloads_fts(downloads_fts, rowid, title, title_jpn) VALUES('delete', old.GID, old.TITLE, old.TITLE_JPN); END;");
+
+        db.execSQL("CREATE TRIGGER IF NOT EXISTS downloads_au AFTER UPDATE ON DOWNLOADS BEGIN " +
+                "INSERT INTO downloads_fts(downloads_fts, rowid, title, title_jpn) VALUES('delete', old.GID, old.TITLE, old.TITLE_JPN); " +
+                "INSERT INTO downloads_fts(rowid, title, title_jpn) VALUES (new.GID, new.TITLE, new.TITLE_JPN); END;");
+    }
+
+    /**
+     * Perform FTS5-backed search on DOWNLOADS titles.
+     * If labelFilter is null, only default label (null) items are returned; if empty string indicates no filter; otherwise filter by given label.
+     */
+    @NonNull
+    public static synchronized List<DownloadInfo> searchDownloadsByFts(@NonNull String query, @Nullable String labelFilter, boolean searchAllLabels) {
+        List<DownloadInfo> result = new ArrayList<>();
+        try {
+            DownloadsDao dao = sDaoSession.getDownloadsDao();
+            org.greenrobot.greendao.database.Database gdb = dao.getDatabase();
+
+            StringBuilder sql = new StringBuilder();
+            sql.append("SELECT d.GID, d.TOKEN, d.TITLE, d.TITLE_JPN, d.THUMB, d.CATEGORY, d.POSTED, d.UPLOADER, d.RATING, d.SIMPLE_LANGUAGE, d.STATE, d.LEGACY, d.TIME, d.LABEL ");
+            sql.append("FROM DOWNLOADS d JOIN downloads_fts f ON f.rowid = d.GID ");
+            sql.append("WHERE f MATCH ? ");
+
+            ArrayList<String> args = new ArrayList<>();
+            args.add(query);
+
+            if (!searchAllLabels) {
+                if (labelFilter == null) {
+                    sql.append("AND d.LABEL IS NULL ");
+                } else {
+                    sql.append("AND d.LABEL = ? ");
+                    args.add(labelFilter);
+                }
+            }
+
+            // Note: Not ordering by rank to maximize compatibility across SQLite builds
+
+            Cursor cursor = gdb.rawQuery(sql.toString(), args.toArray(new String[0]));
+            if (cursor != null) {
+                try {
+                    if (cursor.moveToFirst()) {
+                        do {
+                            DownloadInfo entity = dao.readEntity(cursor, 0);
+                            result.add(entity);
+                        } while (cursor.moveToNext());
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+        } catch (Throwable t) {
+            // On any failure (e.g., no FTS5), return empty list so caller can fallback
+            Log.w(TAG, "FTS search failed, will fallback to in-memory", t);
+            result.clear();
+        }
+        return result;
+    }
+
+    /**
+     * Quick check whether downloads_fts exists.
+     */
+    public static synchronized boolean hasDownloadsFts() {
+        try {
+            DownloadsDao dao = sDaoSession.getDownloadsDao();
+            org.greenrobot.greendao.database.Database gdb = dao.getDatabase();
+            Cursor c = gdb.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads_fts'", null);
+            if (c != null) {
+                try {
+                    return c.moveToFirst();
+                } finally {
+                    c.close();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    // endregion
 }

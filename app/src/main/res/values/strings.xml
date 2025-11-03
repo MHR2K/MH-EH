@@ -243,6 +243,7 @@
     <string name="gallery_tag_copy">tag copied</string>
 
     <string name="search">Search</string>
+    <string name="index_search">索引搜索</string>
 
     <string name="keyword_search">Keyword search</string>
     <string name="image_search">Image search</string>

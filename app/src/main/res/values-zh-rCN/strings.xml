@@ -155,6 +155,7 @@
     <string name="gallery_list_empty_hit_subscription">请至 设置->EH->我的标签 订阅标签</string>
     <string name="gallery_list_no_preview_tag">暂无预览标签</string>
     <string name="search">搜索</string>
+    <string name="index_search">索引搜索</string>
 
     <string name="gallery_list_action_url_missed">没找到下一页</string>
     <string name="gallery_list_no_more_data">当前列表没有更多数据</string>

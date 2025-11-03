@@ -307,6 +307,10 @@ public class Settings {
     private static final String KEY_ENABLE_SORT_BY_RELEVANCE = "enable_sort_by_relevance";
     private static final boolean DEFAULT_ENABLE_SORT_BY_RELEVANCE = true;
 
+    // Enable FTS index search for downloads
+    private static final String KEY_ENABLE_INDEX_SEARCH = "enable_index_search";
+    private static final boolean DEFAULT_ENABLE_INDEX_SEARCH = false;
+
     public static boolean getEnableChineseConversion() {
         return getBoolean(KEY_ENABLE_CHINESE_CONVERSION, DEFAULT_ENABLE_CHINESE_CONVERSION);
     }
@@ -337,6 +341,14 @@ public class Settings {
 
     public static void putEnableSortByRelevance(boolean value) {
         putBoolean(KEY_ENABLE_SORT_BY_RELEVANCE, value);
+    }
+
+    public static boolean getEnableIndexSearch() {
+        return getBoolean(KEY_ENABLE_INDEX_SEARCH, DEFAULT_ENABLE_INDEX_SEARCH);
+    }
+
+    public static void putEnableIndexSearch(boolean value) {
+        putBoolean(KEY_ENABLE_INDEX_SEARCH, value);
     }
 
     /********************

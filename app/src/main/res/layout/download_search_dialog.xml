@@ -74,9 +74,18 @@
 
             <CheckBox
                 android:id="@+id/search_all_labels_checkbox"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_weight="1"
                 android:text="@string/search_all_labels"
+                android:checked="false" />
+
+            <CheckBox
+                android:id="@+id/index_search_checkbox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/index_search"
                 android:checked="false" />
 
         </LinearLayout>
