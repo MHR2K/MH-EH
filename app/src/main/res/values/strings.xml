@@ -485,6 +485,10 @@
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
 
+    <!-- Download search options -->
+    <string name="fuzzy_search">Fuzzy search</string>
+    <string name="ignore_case">Ignore case</string>
+
     <!-- Download label -->
     <string name="no_download_label">Download labels will be shown here</string>
     <string name="add">Add</string>
