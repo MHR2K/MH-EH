@@ -686,6 +686,53 @@ public class Settings {
     }
 
     /********************
+     ****** Download Search Settings
+     ********************/
+    private static final String KEY_ENABLE_CHINESE_CONVERSION = "enable_chinese_conversion";
+    private static final boolean DEFAULT_ENABLE_CHINESE_CONVERSION = true;
+    
+    private static final String KEY_ENABLE_FUZZY_SEARCH = "enable_fuzzy_search";
+    private static final boolean DEFAULT_ENABLE_FUZZY_SEARCH = false;
+    
+    private static final String KEY_ENABLE_IGNORE_CASE = "enable_ignore_case";
+    private static final boolean DEFAULT_ENABLE_IGNORE_CASE = true;
+    
+    private static final String KEY_ENABLE_SORT_BY_RELEVANCE = "enable_sort_by_relevance";
+    private static final boolean DEFAULT_ENABLE_SORT_BY_RELEVANCE = true;
+
+    public static boolean getEnableChineseConversion() {
+        return getBoolean(KEY_ENABLE_CHINESE_CONVERSION, DEFAULT_ENABLE_CHINESE_CONVERSION);
+    }
+
+    public static void putEnableChineseConversion(boolean value) {
+        putBoolean(KEY_ENABLE_CHINESE_CONVERSION, value);
+    }
+    
+    public static boolean getEnableFuzzySearch() {
+        return getBoolean(KEY_ENABLE_FUZZY_SEARCH, DEFAULT_ENABLE_FUZZY_SEARCH);
+    }
+
+    public static void putEnableFuzzySearch(boolean value) {
+        putBoolean(KEY_ENABLE_FUZZY_SEARCH, value);
+    }
+    
+    public static boolean getEnableIgnoreCase() {
+        return getBoolean(KEY_ENABLE_IGNORE_CASE, DEFAULT_ENABLE_IGNORE_CASE);
+    }
+
+    public static void putEnableIgnoreCase(boolean value) {
+        putBoolean(KEY_ENABLE_IGNORE_CASE, value);
+    }
+    
+    public static boolean getEnableSortByRelevance() {
+        return getBoolean(KEY_ENABLE_SORT_BY_RELEVANCE, DEFAULT_ENABLE_SORT_BY_RELEVANCE);
+    }
+
+    public static void putEnableSortByRelevance(boolean value) {
+        putBoolean(KEY_ENABLE_SORT_BY_RELEVANCE, value);
+    }
+
+    /********************
      ****** Download
      ********************/
     public static final String KEY_DOWNLOAD_SAVE_SCHEME = "image_scheme";

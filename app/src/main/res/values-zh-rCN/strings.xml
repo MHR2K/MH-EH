@@ -397,6 +397,8 @@
     <!-- Download search options -->
     <string name="fuzzy_search">模糊搜索</string>
     <string name="ignore_case">忽略大小写</string>
+    <string name="chinese_conversion">简繁体转换</string>
+    <string name="sort_by_relevance">按相关性排序</string>
 
     <!-- Edit download info -->
     <string name="edit_download_info_title">编辑下载信息</string>

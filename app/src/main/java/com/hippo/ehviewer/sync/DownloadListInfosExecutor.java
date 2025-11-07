@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
+import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.callBack.DownloadSearchCallback;
 import com.hippo.ehviewer.client.EhConfig;
 import com.hippo.ehviewer.client.EhUtils;
@@ -19,7 +20,9 @@ import com.hippo.unifile.UniFile;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -49,8 +52,10 @@ public class DownloadListInfosExecutor {
     private final String mSearchKey;
 
     private DownloadManager mDownloadManager;
-    private boolean mFuzzySearch = true;
+    private boolean mFuzzySearch = false;
     private boolean mIgnoreCase = true;
+    private boolean mEnableChineseConversion = true;
+    private boolean mSortByRelevance = false;
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey) {
         this.mList = mList;
@@ -58,10 +63,15 @@ public class DownloadListInfosExecutor {
     }
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey, boolean fuzzySearch, boolean ignoreCase) {
+        this(mList, searchKey, fuzzySearch, ignoreCase, Settings.getEnableChineseConversion());
+    }
+
+    public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey, boolean fuzzySearch, boolean ignoreCase, boolean enableChineseConversion) {
         this.mList = mList;
         this.mSearchKey = searchKey;
         this.mFuzzySearch = fuzzySearch;
         this.mIgnoreCase = ignoreCase;
+        this.mEnableChineseConversion = enableChineseConversion;
     }
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, DownloadManager downloadManager) {
@@ -70,9 +80,18 @@ public class DownloadListInfosExecutor {
         mDownloadManager = downloadManager;
     }
 
-    public void setSearchOptions(boolean fuzzySearch, boolean ignoreCase) {
+    public void setSearchOptions(boolean fuzzySearch, boolean ignoreCase, boolean enableChineseConversion) {
         this.mFuzzySearch = fuzzySearch;
         this.mIgnoreCase = ignoreCase;
+        this.mEnableChineseConversion = enableChineseConversion;
+    }
+
+    public void setSearchOptions(boolean fuzzySearch, boolean ignoreCase) {
+        setSearchOptions(fuzzySearch, ignoreCase, Settings.getEnableChineseConversion());
+    }
+    
+    public void enableSortByRelevance(boolean enable) {
+        this.mSortByRelevance = enable;
     }
 
     public void setDownloadSearchingListener(DownloadSearchCallback downloadSearchCallback) {
@@ -82,6 +101,11 @@ public class DownloadListInfosExecutor {
     public void executeSearching() {
         service.execute(() -> {
             resultList = searchingInBackground();
+            
+            // 如果启用按相关性排序，对搜索结果进行排序
+            if (mSortByRelevance && mSearchKey != null && !mSearchKey.isEmpty() && resultList != null && !resultList.isEmpty()) {
+                resultList = sortByRelevance(resultList, mSearchKey);
+            }
 
             handler.post(() -> {
                 if (mDownloadSearchCallback == null) {
@@ -340,6 +364,39 @@ public class DownloadListInfosExecutor {
         }
         return list;
     }
+    
+    /**
+     * 根据搜索关键词与标题的相关性对下载项进行排序
+     * 
+     * @param list 待排序的下载项列表
+     * @param searchKey 搜索关键词
+     * @return 排序后的列表
+     */
+    private List<DownloadInfo> sortByRelevance(List<DownloadInfo> list, String searchKey) {
+        if (list == null || list.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // 创建副本以避免修改原列表
+        List<DownloadInfo> result = new ArrayList<>(list);
+        
+        // 创建相似度分数映射
+        final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
+        
+        // 计算每个下载项与搜索关键词的相似度分数
+        for (DownloadInfo info : result) {
+            double score = calculateSimilarityScore(info, searchKey);
+            scoreMap.put(info, score);
+        }
+        
+        // 根据相似度分数排序（高分在前）
+        result.sort((a, b) -> Double.compare(
+            scoreMap.getOrDefault(b, 0.0),
+            scoreMap.getOrDefault(a, 0.0)
+        ));
+        
+        return result;
+    }
 
     private List<DownloadInfo> filterDownloadKind(int state) {
         int kind = kindValue(state);
@@ -362,26 +419,74 @@ public class DownloadListInfosExecutor {
     }
 
 
+    // 计算标题与查询词的相似度分数
+    private double calculateSimilarityScore(DownloadInfo info, String searchKey) {
+        String title = info.title;
+        String titleJpn = info.titleJpn;
+        
+        // 合并标题
+        String fullTitle = (titleJpn != null ? titleJpn : "") + " " + (title != null ? title : "");
+        
+        // 精确匹配给予最高分
+        if ((mIgnoreCase && fullTitle.toLowerCase().contains(searchKey.toLowerCase())) ||
+            (mIgnoreCase && fullTitle.contains(searchKey))) {
+            return 1.5; // 超过1的分数，确保精确匹配排在最前面
+        }
+        
+        // 使用EhUtils中的相似度计算方法计算分数
+        // 注意：无论是否开启模糊搜索，都允许简繁体转换功能生效
+        double similarityScore = EhUtils.calculateSimilarityScore(fullTitle, searchKey, 
+                                                                 mFuzzySearch, mIgnoreCase, mEnableChineseConversion);
+        
+        // 如果有相似度，将分数放大到0.8-1.0范围内，使其排在前面但低于精确匹配
+        if (similarityScore > 0) {
+            return 0.8 + similarityScore * 0.2;
+        }
+        
+        // 匹配标签给予一定分数
+        if (matchTag(searchKey, info)) {
+            return 0.6;  // 标签匹配的相似度较低
+        }
+        
+        return 0.0;  // 不匹配
+    }
+
     protected List<DownloadInfo> searchingInBackground() {
+        android.util.Log.d("EhSearch", "开始执行下载列表搜索: 关键词=" + mSearchKey + 
+                          ", 模糊搜索=" + mFuzzySearch + 
+                          ", 忽略大小写=" + mIgnoreCase + 
+                          ", 简繁体转换=" + mEnableChineseConversion);
+        
         if (mDownloadSearchCallback == null) {
+            android.util.Log.d("EhSearch", "搜索回调为null，返回空列表");
             return new ArrayList<>();
         }
         if (mSearchKey == null || mSearchKey.isEmpty()) {
+            android.util.Log.d("EhSearch", "搜索关键词为空，返回完整列表");
             return mList;
         }
         if (mList == null) {
+            android.util.Log.d("EhSearch", "下载列表为null，返回空列表");
             return new ArrayList<>();
         }
+        
+        // 创建结果列表和相似度分数映射
         List<DownloadInfo> cache = new ArrayList<>();
+        final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
 
+        // 首先收集所有匹配的结果及其相似度分数
         for (int i = 0; i < mList.size(); i++) {
             DownloadInfo info = mList.get(i);
-            if (EhUtils.judgeSuitableTitle(info, mSearchKey, mFuzzySearch, mIgnoreCase)) {
+            double score = calculateSimilarityScore(info, mSearchKey);
+            if (score > 0) {
                 cache.add(info);
-            } else if (matchTag(mSearchKey, info)) {
-                cache.add(info);
+                scoreMap.put(info, score);
             }
         }
+        
+        // 根据相似度分数对结果进行排序
+        cache.sort((a, b) -> Double.compare(scoreMap.getOrDefault(b, 0.0), 
+                                            scoreMap.getOrDefault(a, 0.0)));
 
         return cache;
     }

@@ -488,7 +488,9 @@
     <!-- Download search options -->
     <string name="fuzzy_search">Fuzzy search</string>
     <string name="ignore_case">Ignore case</string>
-
+    <string name="chinese_conversion">Chinese conversion</string>
+    <string name="sort_by_relevance">Sort by relevance</string>
+    
     <!-- Edit download info -->
     <string name="edit_download_info_title">Edit Download Info</string>
     <string name="edit_download_save_changes">Save Changes</string>
