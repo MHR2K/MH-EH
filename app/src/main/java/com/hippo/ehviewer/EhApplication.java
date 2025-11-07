@@ -49,6 +49,7 @@ import com.hippo.ehviewer.client.EhClient;
 import com.hippo.ehviewer.client.EhCookieStore;
 import com.hippo.ehviewer.client.EhHosts;
 import com.hippo.ehviewer.client.EhEngine;
+import com.hippo.ehviewer.util.ChineseConverterHelper;
 import com.hippo.ehviewer.client.data.EhNewsDetail;
 import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.userTag.UserTagList;
@@ -95,6 +96,9 @@ import okhttp3.Cache;
 import okhttp3.ConnectionSpec;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
+
+import com.hippo.ehviewer.Hosts;
+import com.hippo.scene.SceneApplication;
 
 public class EhApplication extends RecordingApplication {
 
@@ -177,6 +181,9 @@ public class EhApplication extends RecordingApplication {
         Html.initialize(this);
         AppConfig.initialize(this);
         SpiderDen.initialize(this);
+        
+        // 初始化中文简繁体转换辅助类
+        ChineseConverterHelper.init();
         EhDB.initialize(this);
         EhEngine.initialize();
         BitmapUtils.initialize(this);

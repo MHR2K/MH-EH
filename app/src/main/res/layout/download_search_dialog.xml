@@ -17,27 +17,56 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:layout_marginLeft="@dimen/gallery_search_bar_margin_h"
         android:layout_marginRight="@dimen/gallery_search_bar_margin_h"
         android:layout_marginBottom="@dimen/gallery_search_bar_margin_v">
-
-        <CheckBox
-            android:id="@+id/fuzzy_search_checkbox"
-            android:layout_width="0dp"
+        
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/fuzzy_search"
-            android:checked="true" />
+            android:orientation="horizontal">
 
-        <CheckBox
-            android:id="@+id/ignore_case_checkbox"
-            android:layout_width="0dp"
+            <CheckBox
+                android:id="@+id/fuzzy_search_checkbox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/fuzzy_search"
+                android:checked="false" />
+            
+            <CheckBox
+                android:id="@+id/sort_by_relevance_checkbox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/sort_by_relevance"
+                android:checked="true" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/ignore_case"
-            android:checked="false" />
+            android:orientation="horizontal">
 
+            <CheckBox
+                android:id="@+id/ignore_case_checkbox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/ignore_case"
+                android:checked="false" />
+
+            <CheckBox
+                android:id="@+id/chinese_conversion_checkbox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/chinese_conversion"
+                android:checked="true" />
+        </LinearLayout>
+    
     </LinearLayout>
 
 </LinearLayout>
