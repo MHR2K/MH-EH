@@ -398,6 +398,11 @@
     <string name="fuzzy_search">模糊搜索</string>
     <string name="ignore_case">忽略大小写</string>
 
+    <!-- Edit download info -->
+    <string name="edit_download_info_title">编辑下载信息</string>
+    <string name="edit_download_save_changes">保存更改</string>
+    <string name="edit_download_info_updated">成功更新下载信息</string>
+
     <!-- Download label -->
     <string name="no_download_label">这里是下载标签</string>
     <string name="add">添加</string>
