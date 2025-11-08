@@ -415,6 +415,7 @@
     <string name="ignore_case">忽略大小写</string>
     <string name="chinese_conversion">简繁体转换</string>
     <string name="sort_by_relevance">按相关性排序</string>
+    <string name="search_all_labels">在全部下载标签中搜索</string>
 
     <!-- Edit download info -->
     <string name="edit_download_info_title">编辑下载信息</string>
