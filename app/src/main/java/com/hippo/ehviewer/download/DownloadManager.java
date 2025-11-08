@@ -48,7 +48,10 @@ import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
 import com.hippo.lib.yorozuya.collect.SparseJLArray;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -180,9 +183,122 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         mAllInfoMap.remove(oldInfo.gid);
         mAllInfoMap.put(newInfo.gid, newInfo);
 
+        // 同步更新SpiderInfo的页数字段
+        if (newInfo.pages != oldInfo.pages) {
+            updateSpiderInfoPages(newInfo);
+        }
 
         for (DownloadInfoListener l : mDownloadInfoListeners) {
             l.onReplace(newInfo, oldInfo);
+        }
+    }
+
+    private void updateSpiderInfoPages(DownloadInfo info) {
+        // 异步更新SpiderInfo的页数字段
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... voids) {
+                try {
+                    GalleryInfo galleryInfo = new GalleryInfo();
+                    galleryInfo.gid = info.gid;
+                    galleryInfo.token = info.token;
+                    galleryInfo.title = info.title;
+                    galleryInfo.thumb = info.thumb;
+                    galleryInfo.category = info.category;
+                    galleryInfo.posted = info.posted;
+                    galleryInfo.uploader = info.uploader;
+                    galleryInfo.rating = info.rating;
+
+                    UniFile downloadDir = SpiderDen.getGalleryDownloadDir(galleryInfo);
+                    if (downloadDir != null && downloadDir.isDirectory()) {
+                        // 首先检查目录中的.ehviewer文件
+                        UniFile file = downloadDir.findFile(".ehviewer");
+                        if (file != null) {
+                            SpiderInfo spiderInfo = SpiderInfo.read(file);
+                            if (spiderInfo != null) {
+                                // 保存旧的页数信息
+                                int oldPages = spiderInfo.pages;
+                                
+                                // 更新页数字段
+                                spiderInfo.pages = info.pages;
+                                
+                                // 重新写入文件
+                                spiderInfo.write(file.openOutputStream());
+                                Log.i(TAG, "Updated SpiderInfo pages from " + oldPages + " to: " + info.pages + " for gallery: " + info.gid);
+                                
+                                // 如果页数减少，删除多余的图片
+                                if (info.pages < oldPages) {
+                                    deleteExcessImages(downloadDir, info.pages);
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to update SpiderInfo pages", e);
+                }
+                return null;
+            }
+        }.executeOnExecutor(IoThreadPoolExecutor.getInstance());
+    }
+
+    /**
+     * 删除文件夹中多余的图片文件
+     * @param downloadDir 下载目录
+     * @param newPages 新的页数
+     */
+    private void deleteExcessImages(UniFile downloadDir, int newPages) {
+        if (downloadDir == null || !downloadDir.isDirectory()) {
+            return;
+        }
+        
+        try {
+            // 获取目录中的所有文件
+            UniFile[] files = downloadDir.listFiles();
+            if (files == null) {
+                return;
+            }
+            
+            // 支持的图片扩展名
+            String[] supportedExtensions = {".jpg", ".jpeg", ".png", ".gif", ".webp"};
+            
+            for (UniFile file : files) {
+                if (file.isFile()) {
+                    String filename = file.getName();
+                    if (filename != null) {
+                        // 检查文件是否是图片文件
+                        boolean isImageFile = false;
+                        for (String ext : supportedExtensions) {
+                            if (filename.toLowerCase().endsWith(ext)) {
+                                isImageFile = true;
+                                break;
+                            }
+                        }
+                        
+                        if (isImageFile) {
+                            // 尝试从文件名中提取页码
+                            try {
+                                // 文件名格式为: 00000001.jpg, 00000002.png 等
+                                String numberPart = filename.substring(0, 8);
+                                int pageNumber = Integer.parseInt(numberPart);
+                                
+                                // 如果页码大于新的页数，删除该文件
+                                if (pageNumber > newPages) {
+                                    if (file.delete()) {
+                                        Log.i(TAG, "Deleted excess image file: " + filename);
+                                    } else {
+                                        Log.w(TAG, "Failed to delete excess image file: " + filename);
+                                    }
+                                }
+                            } catch (NumberFormatException | StringIndexOutOfBoundsException e) {
+                                // 文件名格式不符合预期，跳过
+                                Log.d(TAG, "Skipping file with unexpected name format: " + filename);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error deleting excess images", e);
         }
     }
 
