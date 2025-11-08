@@ -509,6 +509,7 @@
     <string name="ignore_case">Ignore case</string>
     <string name="chinese_conversion">Chinese conversion</string>
     <string name="sort_by_relevance">Sort by relevance</string>
+    <string name="search_all_labels">Search across all labels</string>
     
     <!-- Edit download info -->
     <string name="edit_download_info_title">Edit Download Info</string>
