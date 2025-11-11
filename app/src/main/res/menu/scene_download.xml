@@ -120,6 +120,14 @@
                         android:title="@string/storage_all"
                         app:showAsAction="ifRoom"/>
                     <item
+                        android:id="@+id/storage_archives_only"
+                        android:title="@string/storage_archives_only"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/storage_images_only"
+                        android:title="@string/storage_images_only"
+                        app:showAsAction="ifRoom"/>
+                    <item
                         android:id="@+id/storage_smb_only"
                         android:title="@string/storage_smb_only"
                         app:showAsAction="ifRoom"/>
@@ -209,6 +217,12 @@
     <item
         android:id="@+id/import_local_archive"
         android:title="@string/import_local_archive"
+        app:showAsAction="never"/>
+
+    <!-- 批量转换存储形式（图片 <-> CBZ） -->
+    <item
+        android:id="@+id/action_convert_storage"
+        android:title="@string/download_convert_storage"
         app:showAsAction="never"/>
 
 </menu>

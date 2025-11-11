@@ -258,6 +258,21 @@ public class Settings {
         putBoolean(KEY_REMOVE_IMAGE_FILES, value);
     }
 
+    // 自动下载完成后打包为 CBZ 开关
+    private static final String KEY_AUTO_CBZ_AFTER_DOWNLOAD = "auto_cbz_after_download";
+    private static final boolean DEFAULT_AUTO_CBZ_AFTER_DOWNLOAD = false;
+
+    /**
+     * 是否在下载完成后自动将漫画目录打包为 CBZ（保留 .cbz .thumb .ehviewer，删除图片）
+     */
+    public static boolean isAutoCbzAfterDownloadEnabled() {
+        return getBoolean(KEY_AUTO_CBZ_AFTER_DOWNLOAD, DEFAULT_AUTO_CBZ_AFTER_DOWNLOAD);
+    }
+
+    public static void setAutoCbzAfterDownloadEnabled(boolean enable) {
+        putBoolean(KEY_AUTO_CBZ_AFTER_DOWNLOAD, enable);
+    }
+
     public static EhConfig getEhConfig() {
         return sEhConfig;
     }

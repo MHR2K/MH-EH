@@ -28,7 +28,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hippo.ehviewer.Analytics;
+import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.data.GalleryInfo;
@@ -1434,6 +1434,29 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                         for (DownloadInfoListener l : mDownloadInfoListeners) {
                             l.onUpdate(info, list, mWaitList);
                         }
+                    }
+                    // 自动打包为 CBZ（高级设置开启且当前目录未处于 CBZ 模式）
+                    if (info.state == DownloadInfo.STATE_FINISH && Settings.isAutoCbzAfterDownloadEnabled()) {
+                        final DownloadInfo finalInfo = info;
+                        IoThreadPoolExecutor.getInstance().execute(() -> {
+                            try {
+                                com.hippo.unifile.UniFile dir = SpiderDen.getGalleryDownloadDir(finalInfo);
+                                if (dir != null && dir.isDirectory() && !com.hippo.ehviewer.util.CbzUtils.isCbzMode(dir)) {
+                                    boolean ok = com.hippo.ehviewer.util.CbzUtils.createCbzWithComicInfo(
+                                            dir,
+                                            finalInfo,
+                                            finalInfo.total > 0 ? finalInfo.total : finalInfo.pages,
+                                            finalInfo.simpleTags,
+                                            true
+                                    );
+                                    if (!ok) {
+                                        new Handler(Looper.getMainLooper()).post(() -> {
+                                            android.widget.Toast.makeText(mContext, mContext.getString(R.string.auto_cbz_failed), android.widget.Toast.LENGTH_SHORT).show();
+                                        });
+                                    }
+                                }
+                            } catch (Throwable ignore) {}
+                        });
                     }
                     // Start next download
                     ensureDownload();

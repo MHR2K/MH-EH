@@ -47,6 +47,8 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public final class SpiderDen {
 
@@ -206,7 +208,34 @@ public final class SpiderDen {
         }
 
         // Find image file in download dir
-        return findImageFile(dir, index) != null;
+        UniFile img = findImageFile(dir, index);
+        if (img != null) return true;
+        // 若是 CBZ 模式：检查压缩包内是否包含对应条目
+        UniFile cbz = com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir);
+        if (cbz == null) return false;
+        java.io.InputStream base = null; ZipInputStream zis = null;
+        try {
+            base = cbz.openInputStream();
+            zis = new ZipInputStream(base);
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String name = entry.getName();
+                if (name == null) continue;
+                for (String ext : com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+                    String expect = generateImageFilename(index, ext);
+                    if (expect.equalsIgnoreCase(name)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable ignore) {
+            // 忽略解析失败，视为不存在
+        } finally {
+            com.hippo.lib.yorozuya.IOUtils.closeQuietly(zis);
+            com.hippo.lib.yorozuya.IOUtils.closeQuietly(base);
+        }
+        return false;
     }
 
     /**
@@ -401,6 +430,45 @@ public final class SpiderDen {
             if (file != null) {
                 return new UniFileInputStreamPipe(file);
             } else if (!copyFromCacheToDownloadDir(index)) {
+                // 未找到物理图片，尝试从 CBZ 中读取
+                UniFile cbz = com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir);
+                if (cbz != null) {
+                    final String[] exts = com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+                    // 返回一个 InputStreamPipe：每次 open 时新建 ZipInputStream，定位到目标条目
+                    return new InputStreamPipe() {
+                        private ZipInputStream mZis;
+                        private java.io.InputStream mBase;
+                        @Override public void obtain() { }
+                        @Override public void release() { }
+                        @Override public java.io.InputStream open() throws IOException {
+                            mBase = cbz.openInputStream();
+                            mZis = new ZipInputStream(mBase);
+                            ZipEntry entry;
+                            // 依次尝试不同扩展名
+                            String name1 = null; ZipEntry found = null;
+                            outer: while ((entry = mZis.getNextEntry()) != null) {
+                                String en = entry.getName();
+                                if (en == null || entry.isDirectory()) continue;
+                                for (String ext : exts) {
+                                    String expect = generateImageFilename(index, ext);
+                                    if (expect.equalsIgnoreCase(en)) { found = entry; name1 = en; break outer; }
+                                }
+                            }
+                            if (found == null) {
+                                // 未找到，关闭并返回空
+                                close();
+                                throw new IOException("Entry not found in CBZ for index=" + index);
+                            }
+                            // 直接返回当前 ZipInputStream（指向该 entry 数据段）
+                            return mZis;
+                        }
+                        @Override public void close() {
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                            mZis = null; mBase = null;
+                        }
+                    };
+                }
                 return null;
             }
         }
