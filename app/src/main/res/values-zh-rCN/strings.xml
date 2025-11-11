@@ -990,4 +990,21 @@
     <string name="storage_local">本地</string>
     <string name="storage_both">SMB+本地</string>
 
+    <!-- CBZ / 存储筛选与转换 -->
+    <string name="storage_archives_only">只看压缩包</string>
+    <string name="storage_images_only">只看图片</string>
+    <string name="download_convert_storage">转换</string>
+    <string name="convert_to_cbz">转换为 CBZ</string>
+    <string name="convert_to_images">解压为图片</string>
+    <string name="convert_in_progress">正在转换：%1$d/%2$d</string>
+    <string name="convert_done">转换完成：%1$d/%2$d</string>
+    <string name="convert_failed_for">转换失败：%s</string>
+
+    <!-- 高级设置：自动 CBZ -->
+    <string name="settings_advanced_auto_cbz_title">下载完成后自动打包为 CBZ</string>
+    <string name="settings_advanced_auto_cbz_summary">下载完成后将图片打包为 CBZ，并仅保留 .cbz、.thumb、.ehviewer</string>
+
+    <!-- 提示 -->
+    <string name="auto_cbz_failed">自动打包 CBZ 失败</string>
+
 </resources>

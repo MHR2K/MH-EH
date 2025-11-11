@@ -670,9 +670,10 @@ public class DownloadsScene extends ToolbarScene
     @SuppressLint("NonConstantResourceId")
     @Override
     public boolean onMenuItemClick(MenuItem item) {
-        // Skip when in choice mode
         Activity activity = getActivity2();
-        if (null == activity || null == mRecyclerView || mRecyclerView.isInCustomChoice()) {
+        if (activity == null || mRecyclerView == null) return false;
+        // 选择模式下仅允许执行转换操作
+        if (mRecyclerView.isInCustomChoice() && item.getItemId() != R.id.action_convert_storage) {
             return false;
         }
 
@@ -747,6 +748,42 @@ public class DownloadsScene extends ToolbarScene
                 updateTitle();
                 return true;
             }
+            case R.id.storage_archives_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    UniFile dir = getGalleryDownloadDir(di);
+                    if (dir != null && dir.isDirectory()) {
+                        if (com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir) != null) {
+                            result.add(di);
+                        }
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+            case R.id.storage_images_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    UniFile dir = getGalleryDownloadDir(di);
+                    if (dir != null && dir.isDirectory()) {
+                        if (com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir) == null) {
+                            result.add(di);
+                        }
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
             case R.id.storage_smb_only: {
                 if (mBackList == null) return false;
                 List<DownloadInfo> result = new ArrayList<>();
@@ -777,6 +814,37 @@ public class DownloadsScene extends ToolbarScene
                 mProgressView.setVisibility(View.GONE);
                 if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
                 updateTitle();
+                return true;
+            }
+            case R.id.action_convert_storage: {
+                // 必须在选择模式
+                if (!mRecyclerView.isInCustomChoice()) return false;
+                SparseBooleanArray array = mRecyclerView.getCheckedItemPositions();
+                List<DownloadInfo> targets = new ArrayList<>();
+                if (mList != null) {
+                    for (int i = 0; i < array.size(); i++) {
+                        if (array.valueAt(i)) {
+                            int pos = positionInList(array.keyAt(i));
+                            if (pos >=0 && pos < mList.size()) targets.add(mList.get(pos));
+                        }
+                    }
+                }
+                if (targets.isEmpty()) return true;
+                // 构造对话框选项
+                Context ctx = getEHContext();
+                if (ctx == null) return true;
+                CharSequence[] options = new CharSequence[]{getString(R.string.convert_to_cbz), getString(R.string.convert_to_images)};
+                new AlertDialog.Builder(ctx)
+                        .setTitle(R.string.download_convert_storage)
+                        .setItems(options, (d, which) -> {
+                            if (which == 0) {
+                                convertBatchAsync(targets, true);
+                            } else {
+                                convertBatchAsync(targets, false);
+                            }
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
                 return true;
             }
 
@@ -851,6 +919,61 @@ public class DownloadsScene extends ToolbarScene
                     mSearchBar.applySearch(true);
                     dialog.dismiss();
                 }).show();
+    }
+
+    private void convertBatchAsync(List<DownloadInfo> infos, boolean toCbz) {
+        Context ctx = getEHContext();
+        if (ctx == null) return;
+        Toast.makeText(ctx, getString(R.string.convert_in_progress, 0, infos.size()), Toast.LENGTH_SHORT).show();
+        new AsyncTask<Void, Integer, Integer>() {
+            final List<String> failed = new ArrayList<>();
+            @Override protected Integer doInBackground(Void... voids) {
+                int done=0;
+                for (DownloadInfo di : infos) {
+                    try {
+                        UniFile dir = getGalleryDownloadDir(di);
+                        if (dir == null || !dir.isDirectory()) { failed.add(di.title); continue; }
+                        if (toCbz) {
+                            // 若已有 CBZ 跳过
+                            if (com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir)!=null) { done++; publishProgress(done); continue; }
+                            GalleryInfo gi = new GalleryInfo();
+                            gi.gid = di.gid; gi.title = di.title; gi.titleJpn = di.titleJpn; gi.category = di.category; gi.thumb = di.thumb;
+                            int pages = di.total > 0 ? di.total : di.pages;
+                            String[] tags = di.simpleTags != null ? di.simpleTags : new String[0];
+                            com.hippo.ehviewer.util.CbzUtils.createCbzWithComicInfo(dir, gi, pages, tags, true);
+                        } else {
+                            // 解包：若无 CBZ 则跳过
+                            UniFile cbz = com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir);
+                            if (cbz==null) { done++; publishProgress(done); continue; }
+                            com.hippo.ehviewer.util.CbzUtils.extractCbz(dir, true);
+                        }
+                        done++; publishProgress(done);
+                    } catch (Throwable t) {
+                        failed.add(di.title);
+                    }
+                }
+                return done;
+            }
+            @Override protected void onProgressUpdate(Integer... values) {
+                if (ctx!=null) Toast.makeText(ctx, getString(R.string.convert_in_progress, values[0], infos.size()), Toast.LENGTH_SHORT).show();
+            }
+            @Override protected void onPostExecute(Integer result) {
+                if (ctx!=null) {
+                    if (failed.isEmpty()) {
+                        Toast.makeText(ctx, getString(R.string.convert_done, result, infos.size()), Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(ctx, getString(R.string.convert_done, result, infos.size()), Toast.LENGTH_LONG).show();
+                        for (String f : failed) {
+                            Toast.makeText(ctx, getString(R.string.convert_failed_for, f), Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }
+                // 退出选择模式并刷新
+                if (mRecyclerView!=null) mRecyclerView.outOfCustomChoiceMode();
+                updateForLabel();
+                updateView();
+            }
+        }.executeOnExecutor(IoThreadPoolExecutor.getInstance());
     }
 
     private void onSearchDialogDismiss(DialogInterface dialog) {

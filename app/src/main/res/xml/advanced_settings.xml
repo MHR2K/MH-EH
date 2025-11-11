@@ -145,4 +145,11 @@
         app:allowDividerAbove="true"
         app:activity="com.hippo.ehviewer.smb.ui.SmbToolsActivity" />
 
+    <com.hippo.preference.SwitchPreference
+        android:key="auto_cbz_after_download"
+        android:defaultValue="false"
+        android:title="@string/settings_advanced_auto_cbz_title"
+        android:summary="@string/settings_advanced_auto_cbz_summary"
+        app:allowDividerAbove="true" />
+
 </PreferenceScreen>

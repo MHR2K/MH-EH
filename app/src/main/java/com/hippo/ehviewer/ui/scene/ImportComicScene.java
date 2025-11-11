@@ -98,7 +98,8 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
     public void onClick(View v) {
         if (v == mPickArchiveButton) {
             Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.setType("application/zip");
+            // 放宽类型，使用扩展名再校验
+            intent.setType("*/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             startActivityForResult(intent, REQUEST_CODE_CHOOSE_ARCHIVE);
         }
@@ -136,6 +137,10 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                 // 1. 解析文件名、gid、token
                 String fileName = getFileName(archiveUri);
                 if (fileName == null) {
+                    errorMessage = getString(R.string.error_invalid_archive);
+                    return false;
+                }
+                if (!com.hippo.ehviewer.util.ArchiveSupportUtils.isSupportedArchiveName(fileName)) {
                     errorMessage = getString(R.string.error_invalid_archive);
                     return false;
                 }
