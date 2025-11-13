@@ -445,6 +445,9 @@
     <string name="download_remove_dialog_message">Remove %s from download list ?</string>
     <string name="download_remove_dialog_message_2">Remove %d items from download list ?</string>
     <string name="download_remove_dialog_check_text">Delete image files</string>
+    <string name="download_remove_option_keep_item">Remove download item (keep images)</string>
+    <string name="download_remove_option_remove_all">Remove download item and image files</string>
+    <string name="download_remove_option_images_only">Delete image files only (keep download item)</string>
     <string name="stat_download_action_stop_all">Stop all</string>
     <string name="drawer_download_label_title">Label</string>
     <string name="default_download_label_name">Default</string>
@@ -481,6 +484,7 @@
     <string name="convert_in_progress">Converting… %1$d/%2$d</string>
     <string name="convert_done">Converted %1$d/%2$d</string>
     <string name="convert_failed_for">Failed: %s</string>
+    <string name="add_download_entry_only">Add download entry only</string>
     <string name="reset_reading_progress_message">Reset the reading progress of all downloaded galleries?</string>
     <string name="download_service_label">EhViewer Download Service</string>
     <string name="download_speed_text">%s</string>

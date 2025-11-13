@@ -370,6 +370,9 @@
     <string name="download_remove_dialog_message">从下载列表移除 %s ？</string>
     <string name="download_remove_dialog_message_2">从下载列表移除 %d 项？</string>
     <string name="download_remove_dialog_check_text">删除图片文件</string>
+    <string name="download_remove_option_keep_item">移除下载项（保留图片文件）</string>
+    <string name="download_remove_option_remove_all">移除下载项并删除图片文件</string>
+    <string name="download_remove_option_images_only">仅删除图片文件（不移除下载项）</string>
     <string name="stat_download_action_stop_all">全部停止</string>
     <string name="drawer_download_label_title">标签</string>
     <string name="default_download_label_name">默认</string>
@@ -409,6 +412,7 @@
     <string name="find_same_author">查找相同作者</string>
     <string name="searching_author">搜索作者中...</string>
     <string name="author_not_found">未找到作者信息</string>
+    <string name="add_download_entry_only">仅添加下载项</string>
 
     <!-- Download search options -->
     <string name="fuzzy_search">模糊搜索</string>

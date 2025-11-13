@@ -136,6 +136,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import com.hippo.ehviewer.dao.DownloadLabel;
 import java.util.concurrent.ExecutorService;
 
 public final class GalleryListScene extends BaseScene
@@ -1262,17 +1263,19 @@ public final class GalleryListScene extends BaseScene
         boolean downloaded = mDownloadManager.getDownloadState(gi.gid) != DownloadInfo.STATE_INVALID;
         boolean favourited = gi.favoriteSlot != -2;
 
-        CharSequence[] items = new CharSequence[]{
-                context.getString(R.string.read),
-                context.getString(downloaded ? R.string.delete_downloads : R.string.download),
-                context.getString(favourited ? R.string.remove_from_favourites : R.string.add_to_favourites),
-        };
+    CharSequence[] items = new CharSequence[]{
+        context.getString(R.string.read),
+        context.getString(downloaded ? R.string.delete_downloads : R.string.download),
+        context.getString(R.string.add_download_entry_only),
+        context.getString(favourited ? R.string.remove_from_favourites : R.string.add_to_favourites),
+    };
 
-        int[] icons = new int[]{
-                R.drawable.v_book_open_x24,
-                downloaded ? R.drawable.v_delete_x24 : R.drawable.v_download_x24,
-                favourited ? R.drawable.v_heart_broken_x24 : R.drawable.v_heart_x24,
-        };
+    int[] icons = new int[]{
+        R.drawable.v_book_open_x24,
+        downloaded ? R.drawable.v_delete_x24 : R.drawable.v_download_x24,
+        R.drawable.v_plus_x24,
+        favourited ? R.drawable.v_heart_broken_x24 : R.drawable.v_heart_x24,
+    };
 
         @SuppressLint("InflateParams") LinearLayout linearLayout = (LinearLayout) getLayoutInflater2().inflate(R.layout.gallery_item_dialog_coustom_title, null);
 
@@ -1319,7 +1322,57 @@ public final class GalleryListScene extends BaseScene
                                 CommonOperations.startDownload(activity, gi, false);
                             }
                             break;
-                        case 2: // Favorites
+                        case 2: // Add download entry only
+                            if (downloaded) {
+                                Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                break;
+                            }
+                            final DownloadManager dm = mDownloadManager;
+                            boolean justAdd = false;
+                            String label = null;
+                            if (Settings.getHasDefaultDownloadLabel()) {
+                                label = Settings.getDefaultDownloadLabel();
+                                justAdd = (label == null) || dm.containLabel(label);
+                            }
+                            if (!justAdd && 0 == dm.getLabelList().size()) {
+                                justAdd = true;
+                                label = null;
+                            }
+                            if (justAdd) {
+                                dm.addDownload(gi, label);
+                                Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                            } else {
+                                List<DownloadLabel> list = dm.getLabelList();
+                                final String[] labelItems = new String[list.size() + 1];
+                                labelItems[0] = context.getString(R.string.default_download_label_name);
+                                for (int i = 0, n = list.size(); i < n; i++) {
+                                    labelItems[i + 1] = list.get(i).getLabel();
+                                }
+                                new com.hippo.app.ListCheckBoxDialogBuilder(activity, labelItems,
+                                        (builder, dialog1, position) -> {
+                                            String label1;
+                                            if (position == 0) {
+                                                label1 = null;
+                                            } else {
+                                                label1 = labelItems[position];
+                                                if (!dm.containLabel(label1)) {
+                                                    label1 = null;
+                                                }
+                                            }
+                                            dm.addDownload(gi, label1);
+                                            if (builder.isChecked()) {
+                                                Settings.putHasDefaultDownloadLabel(true);
+                                                Settings.putDefaultDownloadLabel(label1);
+                                            } else {
+                                                Settings.putHasDefaultDownloadLabel(false);
+                                            }
+                                            Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                        }, context.getString(R.string.remember_download_label), false)
+                                        .setTitle(R.string.add_download_entry_only)
+                                        .show();
+                            }
+                            break;
+                        case 3: // Favorites
                             if (favourited) {
                                 CommonOperations.removeFromFavorites(activity, gi, new RemoveFromFavoriteListener(context, activity.getStageId(), getTag()));
                             } else {
