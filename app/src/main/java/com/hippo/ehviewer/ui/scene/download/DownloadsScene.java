@@ -1502,14 +1502,85 @@ public class DownloadsScene extends ToolbarScene
                     if (downloadInfoList.isEmpty()) {
                         break;
                     }
-                    CheckBoxDialogBuilder builder = new CheckBoxDialogBuilder(context,
-                            getString(R.string.download_remove_dialog_message_2, gidList.size()),
-                            getString(R.string.download_remove_dialog_check_text),
-                            Settings.getRemoveImageFiles());
-                    DeleteRangeDialogHelper helper = new DeleteRangeDialogHelper(
-                            downloadInfoList, gidList, builder);
-                    builder.setTitle(R.string.download_remove_dialog_title)
-                            .setPositiveButton(android.R.string.ok, helper)
+                    // 恢复使用“复选框”样式：保留原有“删除图片文件”勾选，同时增加“仅删除图片文件（不移除下载项）”
+                    final LongList selectedGidList = gidList; // for lambda
+                    final List<DownloadInfo> selectedInfoList = downloadInfoList; // for lambda
+
+                    // 动态构建包含两个复选框的视图
+                    LinearLayout container = new LinearLayout(context);
+                    container.setOrientation(LinearLayout.VERTICAL);
+                    int pad = (int) (16 * context.getResources().getDisplayMetrics().density);
+                    container.setPadding(pad, pad, pad, 0);
+
+                    final CheckBox cbDeleteImages = new CheckBox(context);
+                    cbDeleteImages.setText(R.string.download_remove_dialog_check_text);
+                    cbDeleteImages.setChecked(Settings.getRemoveImageFiles());
+                    container.addView(cbDeleteImages);
+
+                    final CheckBox cbImagesOnly = new CheckBox(context);
+                    cbImagesOnly.setText(R.string.download_remove_option_images_only);
+                    cbImagesOnly.setChecked(false);
+                    container.addView(cbImagesOnly);
+
+                    // 逻辑：若勾选“仅删除图片文件”，则禁用“删除图片文件”的复选框（避免语义冲突）
+                    cbImagesOnly.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                        cbDeleteImages.setEnabled(!isChecked);
+                    });
+
+                    new AlertDialog.Builder(context)
+                            .setTitle(R.string.download_remove_dialog_title)
+                            .setMessage(getString(R.string.download_remove_dialog_message_2, selectedGidList.size()))
+                            .setView(container)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(android.R.string.ok, (d, w) -> {
+                                // 退出选择模式
+                                if (mRecyclerView != null) {
+                                    mRecyclerView.outOfCustomChoiceMode();
+                                }
+
+                                boolean imagesOnly = cbImagesOnly.isChecked();
+                                boolean deleteImages = cbDeleteImages.isChecked();
+                                // 记住“删除图片文件”选项
+                                Settings.putRemoveImageFiles(deleteImages);
+
+                                if (!imagesOnly) {
+                                    // 普通模式：删除下载项
+                                    if (mDownloadManager != null) {
+                                        mDownloadManager.deleteRangeDownload(selectedGidList);
+                                    }
+                                }
+
+                                if (imagesOnly || deleteImages) {
+                                    // 需要删除图片文件（仅删图 或 附带删图）
+                                    List<UniFile> fileList = new ArrayList<>();
+                                    for (DownloadInfo info : selectedInfoList) {
+                                        UniFile dir = getGalleryDownloadDir(info);
+                                        if (dir != null) {
+                                            fileList.add(dir);
+                                        }
+                                        // 清除路径映射
+                                        EhDB.removeDownloadDirname(info.gid);
+
+                                        if (imagesOnly) {
+                                            // 仅删除图片文件保留下载项：重置状态以便重新下载
+                                            info.state = DownloadInfo.STATE_NONE;
+                                            info.finished = 0;
+                                            info.downloaded = 0;
+                                            info.speed = 0;
+                                            info.remaining = 0;
+                                            if (info.total < 0) info.total = 0;
+                                            EhDB.putDownloadInfo(info);
+                                        }
+                                    }
+                                    if (!fileList.isEmpty()) {
+                                        deleteFileAsync(fileList.toArray(new UniFile[0]));
+                                    }
+                                }
+
+                                // 刷新界面
+                                updateForLabel();
+                                updateView();
+                            })
                             .show();
                     break;
                 }
