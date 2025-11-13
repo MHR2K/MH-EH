@@ -52,8 +52,9 @@
     
     <!-- Import comic -->
     <string name="import_comic">导入漫画</string>
-    <string name="import_comic_tip">选择一个漫画压缩包文件（.zip）导入到 EhViewer。</string>
+    <string name="import_comic_tip">选择漫画压缩包（.zip/.cbz，可多选）导入到 EhViewer。</string>
     <string name="select_archive">选择压缩包</string>
+    <string name="select_archives">选择压缩包（可多选）</string>
     <string name="importing_comic">导入漫画中…</string>
     <string name="import_comic_success">漫画导入成功</string>
     <!-- <string name="error_invalid_archive">无效的压缩包文件</string> 重复的-->
@@ -61,6 +62,11 @@
     <string name="error_reading_archive">读取压缩包错误</string>
     <string name="error_no_images_found">压缩包中未找到图片</string>
     <string name="error_importing_comic">导入漫画时出错</string>
+    <string name="import_mode_cbz">导入为CBZ</string>
+    <string name="import_mode_images">导入为图片</string>
+    <string name="import_summary">成功 %1$d 个，失败 %2$d 个</string>
+    <string name="import_progress_fmt">正在导入：%1$d / %2$d</string>
+    <string name="import_failed_header">以下文件导入失败：</string>
 
     <string name="default_display_name">Little Hippo</string>
 

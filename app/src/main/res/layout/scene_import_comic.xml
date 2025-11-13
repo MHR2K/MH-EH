@@ -34,12 +34,35 @@
             android:text="@string/import_comic_tip"
             android:textSize="16sp" />
 
+        <RadioGroup
+            android:id="@+id/import_mode_group"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <RadioButton
+                android:id="@+id/rb_import_cbz"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/import_mode_cbz"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/rb_import_images"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="24dp"
+                android:text="@string/import_mode_images" />
+        </RadioGroup>
+
         <Button
             android:id="@+id/pick_archive_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:text="@string/select_archive" />
+            android:text="@string/select_archives" />
 
         <ProgressBar
             android:id="@+id/import_progress"
@@ -49,6 +72,24 @@
             android:layout_gravity="center_horizontal"
             android:layout_marginTop="16dp"
             android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/progress_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center"
+            android:visibility="gone"
+            android:textColor="@android:color/secondary_text_light" />
+
+        <TextView
+            android:id="@+id/failure_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:visibility="gone"
+            android:textColor="@android:color/holo_red_dark"
+            android:textIsSelectable="true" />
 
     </LinearLayout>
 
