@@ -286,7 +286,31 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     mAction = intent.getAction();
         mFilename = intent.getStringExtra(KEY_FILENAME);
         mUri = intent.getData();
+        // 尝试从旧 Parcelable 读取（兼容），若不存在则用原始字段重建
         mGalleryInfo = intent.getParcelableExtra(KEY_GALLERY_INFO);
+        if (mGalleryInfo == null) {
+            long gid = intent.getLongExtra("gi_gid", -1L);
+            if (gid != -1L) {
+                GalleryInfo gi = new GalleryInfo();
+                gi.gid = gid;
+                gi.token = intent.getStringExtra("gi_token");
+                gi.title = intent.getStringExtra("gi_title");
+                gi.titleJpn = intent.getStringExtra("gi_titleJpn");
+                gi.thumb = intent.getStringExtra("gi_thumb");
+                gi.category = intent.getIntExtra("gi_category", 0);
+                gi.posted = intent.getStringExtra("gi_posted");
+                gi.uploader = intent.getStringExtra("gi_uploader");
+                gi.rating = intent.getFloatExtra("gi_rating", 0f);
+                gi.rated = intent.getBooleanExtra("gi_rated", false);
+                gi.pages = intent.getIntExtra("gi_pages", 0);
+                gi.favoriteSlot = intent.getIntExtra("gi_fav_slot", -2);
+                gi.favoriteName = intent.getStringExtra("gi_fav_name");
+                gi.simpleLanguage = intent.getStringExtra("gi_simple_lang");
+                gi.simpleTags = intent.getStringArrayExtra("gi_simple_tags");
+                gi.generateSLang();
+                mGalleryInfo = gi;
+            }
+        }
         boolean onEvent = intent.getBooleanExtra(DATA_IN_EVENT, false);
         if (!onEvent) {
             canFinish = true;
@@ -300,6 +324,29 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         mFilename = savedInstanceState.getString(KEY_FILENAME);
         mUri = savedInstanceState.getParcelable(KEY_URI);
         mGalleryInfo = savedInstanceState.getParcelable(KEY_GALLERY_INFO);
+        if (mGalleryInfo == null) {
+            long gid = savedInstanceState.getLong("gi_gid", -1L);
+            if (gid != -1L) {
+                GalleryInfo gi = new GalleryInfo();
+                gi.gid = gid;
+                gi.token = savedInstanceState.getString("gi_token");
+                gi.title = savedInstanceState.getString("gi_title");
+                gi.titleJpn = savedInstanceState.getString("gi_titleJpn");
+                gi.thumb = savedInstanceState.getString("gi_thumb");
+                gi.category = savedInstanceState.getInt("gi_category", 0);
+                gi.posted = savedInstanceState.getString("gi_posted");
+                gi.uploader = savedInstanceState.getString("gi_uploader");
+                gi.rating = savedInstanceState.getFloat("gi_rating", 0f);
+                gi.rated = savedInstanceState.getBoolean("gi_rated", false);
+                gi.pages = savedInstanceState.getInt("gi_pages", 0);
+                gi.favoriteSlot = savedInstanceState.getInt("gi_fav_slot", -2);
+                gi.favoriteName = savedInstanceState.getString("gi_fav_name");
+                gi.simpleLanguage = savedInstanceState.getString("gi_simple_lang");
+                gi.simpleTags = savedInstanceState.getStringArray("gi_simple_tags");
+                gi.generateSLang();
+                mGalleryInfo = gi;
+            }
+        }
         mPage = savedInstanceState.getInt(KEY_PAGE, -1);
         mCurrentIndex = savedInstanceState.getInt(KEY_CURRENT_INDEX);
         buildProvider();
@@ -313,6 +360,21 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         outState.putParcelable(KEY_URI, mUri);
         if (mGalleryInfo != null) {
             outState.putParcelable(KEY_GALLERY_INFO, mGalleryInfo);
+            outState.putLong("gi_gid", mGalleryInfo.gid);
+            outState.putString("gi_token", mGalleryInfo.token);
+            outState.putString("gi_title", mGalleryInfo.title);
+            outState.putString("gi_titleJpn", mGalleryInfo.titleJpn);
+            outState.putString("gi_thumb", mGalleryInfo.thumb);
+            outState.putInt("gi_category", mGalleryInfo.category);
+            outState.putString("gi_posted", mGalleryInfo.posted);
+            outState.putString("gi_uploader", mGalleryInfo.uploader);
+            outState.putFloat("gi_rating", mGalleryInfo.rating);
+            outState.putBoolean("gi_rated", mGalleryInfo.rated);
+            outState.putInt("gi_pages", mGalleryInfo.pages);
+            outState.putInt("gi_fav_slot", mGalleryInfo.favoriteSlot);
+            outState.putString("gi_fav_name", mGalleryInfo.favoriteName);
+            outState.putString("gi_simple_lang", mGalleryInfo.simpleLanguage);
+            outState.putStringArray("gi_simple_tags", mGalleryInfo.simpleTags);
         }
         outState.putInt(KEY_PAGE, mPage);
         outState.putInt(KEY_CURRENT_INDEX, mCurrentIndex);
