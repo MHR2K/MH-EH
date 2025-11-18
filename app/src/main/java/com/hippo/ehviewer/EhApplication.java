@@ -55,6 +55,7 @@ import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.userTag.UserTagList;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.lib.image.Image;
 import com.hippo.network.EhSSLSocketFactory;
@@ -180,7 +181,13 @@ public class EhApplication extends RecordingApplication {
         ReadableTime.initialize(this);
         Html.initialize(this);
         AppConfig.initialize(this);
-        SpiderDen.initialize(this);
+        // Best-effort Firebase init (will no-op if config is absent)
+        try {
+            com.hippo.ehviewer.util.CrashlyticsUtils.initIfPossible(this);
+        } catch (Throwable ignored) {}
+    SpiderDen.initialize(this);
+    // SMB 映射存储初始化
+    SmbMappingStore.INSTANCE.init(this);
         
         // 初始化中文简繁体转换辅助类
         ChineseConverterHelper.init();
@@ -254,6 +261,17 @@ public class EhApplication extends RecordingApplication {
         
         // 检查并执行自动备份
         checkAndPerformAutoBackup();
+
+        // 初始化 SMB 存储与认证
+        try {
+            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.init(this);
+            com.hippo.ehviewer.smb.Client.INSTANCE.setAuthenticator(
+                    com.hippo.ehviewer.smb.SmbServerAuthenticator.INSTANCE
+            );
+        } catch (Throwable t) {
+            // 避免初始化失败影响主流程
+            t.printStackTrace();
+        }
     }
     
     private void checkAndPerformAutoBackup() {

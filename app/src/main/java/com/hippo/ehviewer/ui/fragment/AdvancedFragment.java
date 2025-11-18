@@ -37,6 +37,7 @@ import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.ui.wifi.WiFiClientActivity;
 import com.hippo.ehviewer.ui.wifi.WiFiServerActivity;
+import com.hippo.ehviewer.smb.ui.SmbAddServerActivity;
 import com.hippo.ehviewer.widget.ProgressHelper;
 import com.hippo.util.LogCat;
 import com.hippo.util.ReadableTime;
@@ -58,6 +59,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     private static final String KEY_IMPORT_DATA = "import_data";
     private static final String KEY_WIFI_SERVER = "wifi_server";
     private static final String KEY_WIFI_CLIENT = "wifi_client";
+    private static final String KEY_SMB_ADD_SERVER = "smb_add_server";
 
     private final DbSyncHandle dbSyncHandle = new DbSyncHandle(Looper.getMainLooper());
 
@@ -74,12 +76,14 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         Preference importData = findPreference(KEY_IMPORT_DATA);
         Preference socketData = findPreference(KEY_WIFI_SERVER);
         Preference clientData = findPreference(KEY_WIFI_CLIENT);
+        Preference smbAdd = findPreference(KEY_SMB_ADD_SERVER);
 
         dumpLogcat.setOnPreferenceClickListener(this);
         clearMemoryCache.setOnPreferenceClickListener(this);
         importData.setOnPreferenceClickListener(this);
         socketData.setOnPreferenceClickListener(this);
         clientData.setOnPreferenceClickListener(this);
+        if (smbAdd != null) smbAdd.setOnPreferenceClickListener(this);
 
         appLanguage.setOnPreferenceChangeListener(this);
     }
@@ -87,6 +91,34 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     @Override
     public void onResume() {
         super.onResume();
+        // 更新“添加 SMB 服务器”项的摘要为已保存服务器的 URL 列表（包含密码）
+        Preference smbAdd = findPreference(KEY_SMB_ADD_SERVER);
+        if (smbAdd != null) {
+            try {
+                java.util.List<com.hippo.ehviewer.smb.SmbServer> list = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                if (list == null || list.isEmpty()) {
+                    smbAdd.setSummary("未保存任何 SMB 服务器");
+                } else {
+                    StringBuilder sb = new StringBuilder();
+                    for (com.hippo.ehviewer.smb.SmbServer s : list) {
+                        com.hippo.ehviewer.smb.Authority a = s.getAuthority();
+                        String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\\\" + a.getUsername()) : a.getUsername();
+                        String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
+                        String path = s.getRelativePath();
+                            String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
+                        String url = "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
+                        if (sb.length() > 0) sb.append('\n');
+                        if (s.getName() != null) {
+                            sb.append(s.getName()).append(": ");
+                        }
+                        sb.append(url);
+                    }
+                    smbAdd.setSummary(sb.toString());
+                }
+            } catch (Throwable t) {
+                smbAdd.setSummary("读取保存的 SMB 服务器失败");
+            }
+        }
     }
 
     @Override
@@ -105,8 +137,56 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
                 return gotoWiFiServerActivity();
             case KEY_WIFI_CLIENT:
                 return gotoWiFiClientActivity();
+            case KEY_SMB_ADD_SERVER:
+                return gotoSmbAddServerActivity();
             default:
                 return false;
+        }
+    }
+
+    private boolean gotoSmbAddServerActivity() {
+        final Activity activity = getActivity();
+        if (activity == null) return false;
+        try {
+            java.util.List<com.hippo.ehviewer.smb.SmbServer> list = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+            if (list == null || list.isEmpty()) {
+                // 无已保存，直接进入新增
+                SmbAddServerActivity.start(activity);
+                return true;
+            }
+
+            // 构造选择列表：首项为“添加新服务器…”，其余为已保存条目
+            CharSequence[] items = new CharSequence[list.size() + 1];
+            items[0] = activity.getString(R.string.add) + "…";
+            for (int i = 0; i < list.size(); i++) {
+                com.hippo.ehviewer.smb.SmbServer s = list.get(i);
+                com.hippo.ehviewer.smb.Authority a = s.getAuthority();
+                String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\" + a.getUsername()) : a.getUsername();
+                String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
+                        String path = s.getRelativePath();
+                        String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
+                String label = (s.getName() != null ? (s.getName() + ": ") : "") +
+                        "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
+                items[i + 1] = label;
+            }
+
+            new AlertDialog.Builder(activity)
+                    .setTitle("选择 SMB 服务器")
+                    .setItems(items, (dialog, which) -> {
+                        dialog.dismiss();
+                        if (which == 0) {
+                            SmbAddServerActivity.start(activity);
+                        } else {
+                            long id = list.get(which - 1).getId();
+                            SmbAddServerActivity.start(activity, id);
+                        }
+                    })
+                    .show();
+            return true;
+        } catch (Throwable t) {
+            // 出错时也允许进入新增
+            SmbAddServerActivity.start(activity);
+            return true;
         }
     }
 
@@ -213,10 +293,9 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
                 if (null == error) {
                     error = context.getString(R.string.settings_advanced_import_data_successfully);
                 }
-
                 Toast.makeText(context, error, Toast.LENGTH_SHORT).show();
             } else if (state == DB_LOADING) {
-                ProgressHelper.setProgress(data.getInt(LOADING_PROGRESS,0));
+                ProgressHelper.setProgress(data.getInt(LOADING_PROGRESS, 0));
             }
 
         }

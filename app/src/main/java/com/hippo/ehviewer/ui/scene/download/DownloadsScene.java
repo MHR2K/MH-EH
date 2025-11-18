@@ -107,8 +107,11 @@ import com.hippo.lib.yorozuya.ObjectUtils;
 import com.hippo.lib.yorozuya.ViewUtils;
 import com.hippo.lib.yorozuya.collect.LongList;
 import com.sxj.paginationlib.PaginationIndicator;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
 
 // 拖拽排序相关导入
 import com.h6ah4i.android.widget.advrecyclerview.animator.DraggableItemAnimator;
@@ -375,7 +378,8 @@ public class DownloadsScene extends ToolbarScene
                     Integer.toString(mList == null ? 0 : mList.size()),
                     mLabel != null ? mLabel : getString(R.string.default_download_label_name)));
         } catch (Exception e) {
-            Analytics.recordException(e);
+            e.printStackTrace();
+            CrashlyticsUtils.record(e);
             setTitle(getString(R.string.scene_download_title,
                     mLabel != null ? mLabel : getString(R.string.default_download_label_name)));
         }
@@ -731,6 +735,48 @@ public class DownloadsScene extends ToolbarScene
                 importLocalArchive();
                 return true;
 
+            case R.id.storage_all: {
+                // 还原标题与分页
+                mList = mBackList;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+            case R.id.storage_smb_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    StorageLocation loc = StorageDetector.detect(di);
+                    if (loc == StorageLocation.SMB || loc == StorageLocation.BOTH) {
+                        result.add(di);
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+            case R.id.storage_local_only: {
+                if (mBackList == null) return false;
+                List<DownloadInfo> result = new ArrayList<>();
+                for (DownloadInfo di : mBackList) {
+                    StorageLocation loc = StorageDetector.detect(di);
+                    if (loc == StorageLocation.LOCAL) {
+                        result.add(di);
+                    }
+                }
+                mList = result;
+                updateAdapter();
+                mProgressView.setVisibility(View.GONE);
+                if (mRecyclerView != null) mRecyclerView.setVisibility(View.VISIBLE);
+                updateTitle();
+                return true;
+            }
+
         }
         return false;
     }
@@ -1003,7 +1049,7 @@ public class DownloadsScene extends ToolbarScene
             LongList gidList = null;
             List<DownloadInfo> downloadInfoList = null;
             boolean collectGid = position == 1 || position == 2 || position == 3; // Start, Stop, Delete
-            boolean collectDownloadInfo = position == 3 || position == 4; // Delete or Move
+            boolean collectDownloadInfo = position == 3 || position == 4 || position == 5; // Delete or Move (Change Label) or Move to SMB
             if (collectGid) {
                 gidList = new LongList();
             }
@@ -1063,7 +1109,7 @@ public class DownloadsScene extends ToolbarScene
                             .show();
                     break;
                 }
-                case 4: {// Move
+                case 4: { // Move (Change Label)
                     if (downloadInfoList.isEmpty()){
                         break;
                     }
@@ -1083,7 +1129,39 @@ public class DownloadsScene extends ToolbarScene
                             .show();
                     break;
                 }
-                case 5:
+                case 5: { // Move to SMB (new button)
+                    if (downloadInfoList.isEmpty()){
+                        break;
+                    }
+                    java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                    if (servers == null || servers.isEmpty()) {
+                        Toast.makeText(context, "请先在 设置>高级>添加 SMB 服务器", Toast.LENGTH_LONG).show();
+                        break;
+                    }
+                    CharSequence[] choices = new CharSequence[servers.size()];
+                    for (int i = 0; i < servers.size(); i++) {
+                        com.hippo.ehviewer.smb.SmbServer s = servers.get(i);
+                        com.hippo.ehviewer.smb.Authority a = s.getAuthority();
+                        String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\\\" + a.getUsername()) : a.getUsername();
+                        String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
+                        String path = s.getRelativePath();
+                        String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
+                        String url = "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
+                        choices[i] = (s.getName() != null ? (s.getName() + ": ") : "") + url;
+                    }
+
+                    final Context ctxFinal = context;
+                    final List<DownloadInfo> infosFinal = downloadInfoList;
+                    new AlertDialog.Builder(context)
+                            .setTitle("选择目标 SMB 服务器")
+                            .setItems(choices, (d, whichIdx) -> {
+                                com.hippo.ehviewer.smb.SmbServer server = servers.get(whichIdx);
+                                migrateToSmbAsync(ctxFinal, infosFinal, server);
+                            })
+                            .show();
+                    break;
+                }
+                case 6:
                     if (mList == null || mList.isEmpty()) {
                         return;
                     }
@@ -1107,6 +1185,93 @@ public class DownloadsScene extends ToolbarScene
             fab.setImageDrawable(ResourcesCompat.getDrawable(getResources(), R.drawable.v_mobile_hand_left_off_x24, context.getTheme()));
         }
 //        mDragDropManager.cancelDrag(dragEnable);
+    }
+
+    private void migrateToSmbAsync(Context context, List<DownloadInfo> infos, com.hippo.ehviewer.smb.SmbServer server) {
+        // 取消选择模式
+        if (mRecyclerView != null) {
+            mRecyclerView.outOfCustomChoiceMode();
+        }
+        new android.os.AsyncTask<Void, Integer, Integer>() {
+            @Override protected Integer doInBackground(Void... voids) {
+                int okCount = 0;
+                for (DownloadInfo info : infos) {
+                    try {
+                        com.hippo.unifile.UniFile dir = getGalleryDownloadDir(info);
+                        if (dir == null || !dir.isDirectory()) continue;
+                        String dirname = dir.getName();
+                        com.hippo.ehviewer.smb.Client.Target base = server.toTarget();
+                        if (base == null) continue;
+                        String basePath = joinPath(base.getPathInShare(), dirname);
+                        com.hippo.ehviewer.smb.Client.Target targetBase = new com.hippo.ehviewer.smb.Client.Target(base.getAuthority(), base.getShare(), basePath);
+                        boolean success = com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(targetBase.getAuthority(), server.getPassword(), () -> {
+                            try {
+                                com.hippo.ehviewer.smb.Client.INSTANCE.mkdirs(targetBase);
+                                com.hippo.unifile.UniFile[] children = dir.listFiles();
+                                if (children != null) {
+                                    for (com.hippo.unifile.UniFile child : children) {
+                                        if (child == null || child.isDirectory()) continue;
+                                        String name = child.getName();
+                                        java.io.InputStream is = null;
+                                        try {
+                                            is = child.openInputStream();
+                                            com.hippo.ehviewer.smb.Client.INSTANCE.upload(
+                                                    new com.hippo.ehviewer.smb.Client.Target(targetBase.getAuthority(), targetBase.getShare(), joinPath(targetBase.getPathInShare(), name)),
+                                                    is,
+                                                    true
+                                            );
+                                        } finally {
+                                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(is);
+                                        }
+                                    }
+                                }
+                                return true;
+                            } catch (Throwable t) {
+                                t.printStackTrace();
+                                return false;
+                            }
+                        });
+                        if (success) {
+                            // 写入 SMB 映射
+                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.put(
+                                    new com.hippo.ehviewer.smb.SmbMappingStore.Mapping(
+                                            info.gid,
+                                            targetBase.getAuthority(),
+                                            targetBase.getShare(),
+                                            targetBase.getPathInShare()
+                                    )
+                            );
+                            // 删除本地目录以实现“移动”效果
+                            dir.delete();
+                            okCount++;
+                        }
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
+                }
+                return okCount;
+            }
+
+            @Override protected void onPostExecute(Integer okCount) {
+                Toast.makeText(context, "已移动漫画到 SMB：" + okCount + "/" + infos.size(), Toast.LENGTH_LONG).show();
+                // 刷新界面
+                updateForLabel();
+                updateView();
+            }
+        }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
+    }
+
+    private static String joinPath(String base, String name) {
+        if (base == null) base = "";
+        if (name == null) name = "";
+        base = base.trim();
+        name = name.trim();
+        if (base.isEmpty()) return name;
+        if (name.isEmpty()) return base;
+        char sep = '\\';
+        String b = base.replace('/', sep).replaceAll("\\\\+$", "");
+        String n = name.replace('/', sep).replaceAll("^\\\\+", "");
+        return b + sep + n;
     }
 
     private void viewRandom() {

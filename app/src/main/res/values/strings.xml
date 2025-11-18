@@ -452,7 +452,11 @@
     <string name="download_labels">Download labels</string>
     <string name="download_sort_list">Sort</string>
     <string name="download_filter_by_status">Filter by status</string>
+    <string name="download_filter_by_storage">Filter by storage</string>
     <string name="download_status_all">All</string>
+    <string name="storage_all">All</string>
+    <string name="storage_smb_only">SMB only</string>
+    <string name="storage_local_only">Local only</string>
     <string name="download_status_not_started">Not </string>
     <string name="default_sort">Default</string>
     <string name="sort_by_gallery_id_asc">By Id Asc</string>
@@ -729,6 +733,12 @@
     <string name="settings_advanced_wifi_sander_summary">Data Migration via Wi-Fi Hotspot</string>
     <string name="settings_advanced_wifi_client">WiFi migration data reception</string>
     <string name="settings_advanced_wifi_client_summary">Receive migration data from Wi Fi hotspots</string>
+
+    <!-- SMB -->
+    <string name="settings_advanced_smb_add_server_title">添加 SMB 服务器</string>
+    <string name="settings_advanced_smb_add_server_summary">配置局域网 SMB 服务器，上传/编辑文件</string>
+    <string name="settings_advanced_smb_tools_title">SMB 测试工具（上传/修改）</string>
+    <string name="settings_advanced_smb_tools_summary">选择已保存服务器，测试上传、重命名或删除文件</string>
 
     <string name="settings_about">About</string>
     <string name="settings_about_declaration" translatable="false">EhViewer</string>
@@ -1050,5 +1060,10 @@
     <string name="imported_archive_info_title">Local Import Info</string>
     <string name="imported_archive_info_message">This is an item imported from local storage</string>
     <string name="imported_archive_category">Local Import</string>
+
+    <!-- Storage indicator labels -->
+    <string name="storage_smb">SMB</string>
+    <string name="storage_local">Local</string>
+    <string name="storage_both">SMB+Local</string>
 
 </resources>
