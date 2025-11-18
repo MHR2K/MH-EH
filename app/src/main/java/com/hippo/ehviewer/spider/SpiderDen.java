@@ -505,13 +505,113 @@ public final class SpiderDen {
         // 查找 gid 对应的 SMB 映射
         SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mGid);
         if (mapping == null) return null;
-        // 尝试所有支持的扩展名
+        // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
+        String base = mapping.getBasePathInShare();
+        if (base == null) base = "";
+        String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+
+        // Step 1: 直接尝试 <gid>.cbz （如果 base 是目录）
+        if (!normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+            String gidCbz = mGid + ".cbz";
+            String relGidCbz = normBase.isEmpty() ? gidCbz : (normBase + "\\" + gidCbz);
+            Client.Target gidCbzTarget = new Client.Target(mapping.getAuthority(), mapping.getShare(), relGidCbz);
+            try {
+                java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB pre-check gid.cbz success: gid=" + mGid + ", path=" + relGidCbz);
+                }
+                // 包装为 Zip 流读取所需条目
+                final String relCbzFinal = relGidCbz;
+                final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+                return new InputStreamPipe() {
+                    private java.io.InputStream mBase;
+                    private ZipInputStream mZis;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() throws IOException {
+                        mBase = Client.INSTANCE.openInputStream(new Client.Target(mapping.getAuthority(), mapping.getShare(), relCbzFinal));
+                        mZis = new ZipInputStream(mBase);
+                        ZipEntry entry;
+                        while ((entry = mZis.getNextEntry()) != null) {
+                            if (entry.isDirectory()) continue;
+                            String en = entry.getName();
+                            if (en == null) continue;
+                            for (String ext : exts) {
+                                String expect = generateImageFilename(index, ext);
+                                if (expect.equalsIgnoreCase(en)) {
+                                    if (BuildConfig.DEBUG) {
+                                        android.util.Log.d("SpiderDen", "SMB gid.cbz hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                    }
+                                    return mZis;
+                                }
+                            }
+                        }
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", "SMB gid.cbz miss entry: gid=" + mGid + ", index=" + (index+1) + ", path=" + relCbzFinal);
+                        }
+                        close();
+                        throw new IOException("Entry not found in remote gid.cbz for index=" + index);
+                    }
+                    @Override public void close() {
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                        mZis = null; mBase = null;
+                    }
+                };
+            } catch (Throwable ignore) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB pre-check gid.cbz not found: gid=" + mGid + ", path=" + relGidCbz + ", err=" + ignore);
+                }
+            }
+        }
+
+        // 若 base 直接指向 .cbz 文件，则直接从该 CBZ 读取
+        if (!normBase.isEmpty() && normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+            final Client.Target cbzTarget = new Client.Target(mapping.getAuthority(), mapping.getShare(), normBase);
+            final String[] extsDirect = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB direct CBZ mapping detected: gid=" + mGid + ", cbzPath=" + normBase);
+            }
+            return new InputStreamPipe() {
+                private java.io.InputStream mBase;
+                private ZipInputStream mZis;
+                @Override public void obtain() { /* no-op */ }
+                @Override public void release() { /* no-op */ }
+                @Override public java.io.InputStream open() throws IOException {
+                    mBase = Client.INSTANCE.openInputStream(cbzTarget);
+                    mZis = new ZipInputStream(mBase);
+                    ZipEntry entry;
+                    while ((entry = mZis.getNextEntry()) != null) {
+                        if (entry.isDirectory()) continue;
+                        String en = entry.getName();
+                        if (en == null) continue;
+                        for (String ext : extsDirect) {
+                            String expect = generateImageFilename(index, ext);
+                            if (expect.equalsIgnoreCase(en)) {
+                                if (BuildConfig.DEBUG) {
+                                    android.util.Log.d("SpiderDen", "SMB direct CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                }
+                                return mZis;
+                            }
+                        }
+                    }
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB direct CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbzPath=" + normBase);
+                    }
+                    close();
+                    throw new IOException("Entry not found in remote CBZ (direct) for index=" + index);
+                }
+                @Override public void close() {
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                    mZis = null; mBase = null;
+                }
+            };
+        }
+
+        // 尝试所有支持的扩展名（base 为目录场景）
         for (String ext : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
             String filename = generateImageFilename(index, ext);
-            String base = mapping.getBasePathInShare();
-            // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
-            if (base == null) base = "";
-            String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
             String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
             Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
             try {
@@ -532,9 +632,7 @@ public final class SpiderDen {
         }
         // 兜底：列目录查找（处理远端大小写差异或不一致扩展名）
         try {
-            String base = mapping.getBasePathInShare();
-            if (base == null) base = "";
-            String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+            // 此处 base 已规范化为 normBase
             Client.Target dirTarget = new Client.Target(mapping.getAuthority(), mapping.getShare(), normBase);
             java.util.List<Client.RemoteDirEntry> entries = Client.INSTANCE.listDirectory(dirTarget);
             String indexPrefix = String.format(java.util.Locale.US, "%08d", index + 1);
@@ -563,10 +661,75 @@ public final class SpiderDen {
                     @Override public java.io.InputStream open() { mIs = is; return mIs; }
                     @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
                 };
-            } else {
-                if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB directory scan: no match for index=" + (index + 1) + ", base=" + normBase + ", gid=" + mGid);
+            }
+
+            // 未匹配到单张图片时，尝试发现唯一的 .cbz 并从中读取对应条目
+            String cbzName = null; int cbzCount = 0;
+            String prefer = (mGid > 0 ? (mGid + ".cbz") : null);
+            for (Client.RemoteDirEntry e : entries) {
+                if (e.isDirectory()) continue;
+                String name = e.getName();
+                if (name == null) continue;
+                if (name.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+                    cbzCount++;
+                    // 优先匹配 gid 命名的 CBZ
+                    if (prefer != null && name.equalsIgnoreCase(prefer)) {
+                        cbzName = name; break;
+                    }
+                    if (cbzName == null) cbzName = name; // 记录第一个，作为回退
+                    if (cbzCount > 1) break;
                 }
+            }
+            if ((cbzCount == 1 && cbzName != null) || (cbzCount > 1 && cbzName != null && prefer != null && cbzName.equalsIgnoreCase(prefer))) {
+                final String relCbz = normBase.isEmpty() ? cbzName : (normBase + "\\" + cbzName);
+                final Client.Target cbzTarget = new Client.Target(mapping.getAuthority(), mapping.getShare(), relCbz);
+                final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB directory CBZ selected: gid=" + mGid + ", cbz=" + relCbz + ", count=" + cbzCount + ", prefer=" + prefer);
+                }
+                // 返回一个按需打开的 Zip 流：每次 open() 重新打开远端 CBZ 并定位到目标条目
+                return new InputStreamPipe() {
+                    private java.io.InputStream mBase;
+                    private ZipInputStream mZis;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() throws IOException {
+                        mBase = Client.INSTANCE.openInputStream(cbzTarget);
+                        mZis = new ZipInputStream(mBase);
+                        ZipEntry entry;
+                        // 依次尝试不同扩展名
+                        while ((entry = mZis.getNextEntry()) != null) {
+                            if (entry.isDirectory()) continue;
+                            String en = entry.getName();
+                            if (en == null) continue;
+                            for (String ext : exts) {
+                                String expect = generateImageFilename(index, ext);
+                                if (expect.equalsIgnoreCase(en)) {
+                                    if (BuildConfig.DEBUG) {
+                                        android.util.Log.d("SpiderDen", "SMB directory CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                    }
+                                    // 命中：返回当前 ZipInputStream（指向该 entry 数据段）
+                                    return mZis;
+                                }
+                            }
+                        }
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", "SMB directory CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbz=" + relCbz);
+                        }
+                        // 未找到目标 entry
+                        close();
+                        throw new IOException("Entry not found in remote CBZ for index=" + index);
+                    }
+                    @Override public void close() {
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                        mZis = null; mBase = null;
+                    }
+                };
+            }
+
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB directory scan: no match for index=" + (index + 1) + ", base=" + normBase + ", gid=" + mGid);
             }
         } catch (Throwable e) {
             if (BuildConfig.DEBUG) {

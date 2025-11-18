@@ -13,6 +13,7 @@ import com.hierynomus.smbj.share.File
 import com.hierynomus.smbj.share.Share
 import com.rapid7.client.dcerpc.mssrvs.ServerService
 import com.rapid7.client.dcerpc.transport.SMBTransportFactories
+import com.hippo.ehviewer.BuildConfig
 import jcifs.context.SingletonContext
 import java.io.IOException
 import java.net.Inet4Address
@@ -69,7 +70,8 @@ object Client {
             share.openDirectory(
                 target.pathInShare,
                 setOf(AccessMask.FILE_LIST_DIRECTORY, AccessMask.FILE_READ_ATTRIBUTES),
-                setOf(FileAttributes.FILE_ATTRIBUTE_DIRECTORY),
+                // 使用 NORMAL 代替 DIRECTORY，避免潜在实现中过滤出文件条目
+                setOf(FileAttributes.FILE_ATTRIBUTE_NORMAL),
                 SMB2ShareAccess.ALL,
                 SMB2CreateDisposition.FILE_OPEN,
                 null
@@ -77,7 +79,14 @@ object Client {
         } catch (e: SMBRuntimeException) {
             throw IOException(e)
         }
-        return dir.list()
+        val raw = dir.list()
+        if (BuildConfig.DEBUG) {
+            try {
+                android.util.Log.d("Client", "SMB listDirectory: path=" + target.pathInShare + ", entries=" + raw.size)
+                raw.take(10).forEach { android.util.Log.d("Client", "  entry=" + it.fileName + " attr=" + it.fileAttributes) }
+            } catch (_: Throwable) {}
+        }
+        return raw
             .filter { it.fileName != "." && it.fileName != ".." }
             .map {
                 val fa: Any? = it.fileAttributes
