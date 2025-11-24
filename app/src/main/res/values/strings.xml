@@ -382,6 +382,10 @@
     <string name="header_key">Key</string>
     <string name="header_value">Value</string>
     <string name="key_gid">Gid</string>
+    <string name="edit_download_gid_duplicate">Gid already exists</string>
+    <string name="edit_download_gid_invalid">Invalid Gid</string>
+    <string name="edit_download_dir_migrate_success">Download directory migrated</string>
+    <string name="edit_download_dir_migrate_failed">Download directory migration failed</string>
     <string name="key_token">Token</string>
     <string name="key_url">Url</string>
     <string name="key_title">Title</string>
