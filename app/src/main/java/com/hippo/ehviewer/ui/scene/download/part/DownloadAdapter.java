@@ -45,6 +45,10 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
+import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.client.data.GalleryInfo;
+import com.hippo.lib.yorozuya.FileUtils;
+import com.hippo.unifile.UniFile;
 import com.hippo.ehviewer.download.DownloadService;
 import com.hippo.ehviewer.gallery.A7ZipArchive;
 import com.hippo.ehviewer.gallery.Pipe;
@@ -811,6 +815,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         builder.setView(dialogView);
 
         // 获取视图引用
+        com.google.android.material.textfield.TextInputEditText editGid = dialogView.findViewById(R.id.edit_gid);
         com.google.android.material.textfield.TextInputEditText editTitle = dialogView.findViewById(R.id.edit_title);
         com.google.android.material.textfield.TextInputEditText editTitleJpn = dialogView.findViewById(R.id.edit_title_jpn);
         com.google.android.material.textfield.TextInputEditText editUploader = dialogView.findViewById(R.id.edit_uploader);
@@ -819,6 +824,11 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         com.google.android.material.textfield.TextInputEditText editPages = dialogView.findViewById(R.id.edit_pages);
 
         // 设置当前值
+        if (editGid != null) {
+            try {
+                editGid.setText(String.valueOf(info.gid));
+            } catch (Exception ignore) {}
+        }
         editTitle.setText(info.title);
         editTitleJpn.setText(info.titleJpn);
         editUploader.setText(info.uploader);
@@ -844,10 +854,12 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                 // keep original rating
             }
 
+            String newGidText = editGid != null ? String.valueOf(editGid.getText()).trim() : "";
+
             saveDownloadInfoChanges(info, editTitle.getText().toString(),
                     editTitleJpn.getText().toString(), editUploader.getText().toString(),
                     ratingValue, editPosted.getText().toString(),
-                    editPages.getText().toString());
+                    editPages.getText().toString(), newGidText);
         });
 
         builder.setNegativeButton(android.R.string.cancel, null);
@@ -856,9 +868,9 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         builder.create().show();
     }
 
-    private void saveDownloadInfoChanges(DownloadInfo oldInfo, String newTitle, String newTitleJpn, 
-                                       String newUploader, float newRating, String newPosted,
-                                       String newPages) {
+    private void saveDownloadInfoChanges(DownloadInfo oldInfo, String newTitle, String newTitleJpn,
+                                         String newUploader, float newRating, String newPosted,
+                                         String newPages, String newGidText) {
         Context context = mScene.getEHContext();
         if (context == null) {
             return;
@@ -866,7 +878,24 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
 
         // 创建新的DownloadInfo对象，复制所有字段
         DownloadInfo newInfo = new DownloadInfo();
-        newInfo.gid = oldInfo.gid;
+        long newGid = oldInfo.gid;
+        if (newGidText != null && !newGidText.isEmpty()) {
+            try {
+                newGid = Long.parseLong(newGidText);
+            } catch (NumberFormatException e) {
+                Toast.makeText(context, R.string.edit_download_gid_invalid, Toast.LENGTH_SHORT).show();
+                return; // 无效 gid 不保存
+            }
+        }
+        DownloadManager downloadManager = mCallback.getDownloadManager();
+        if (downloadManager != null && newGid != oldInfo.gid) {
+            DownloadInfo existed = downloadManager.getDownloadInfo(newGid);
+            if (existed != null) {
+                Toast.makeText(context, R.string.edit_download_gid_duplicate, Toast.LENGTH_SHORT).show();
+                return; // 重复 gid 不保存
+            }
+        }
+        newInfo.gid = newGid;
         newInfo.token = oldInfo.token;
         newInfo.title = newTitle != null ? newTitle : "";
         newInfo.titleJpn = newTitleJpn != null ? newTitleJpn : "";
@@ -893,8 +922,55 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             newInfo.pages = oldInfo.pages; // 如果解析失败，保持原值
         }
 
+        // 如果 gid 发生变化，尝试迁移物理下载目录
+        if (newInfo.gid != oldInfo.gid) {
+            try {
+                UniFile root = Settings.getDownloadLocation();
+                if (root != null && root.isDirectory()) {
+                    String oldDirName = EhDB.getDownloadDirname(oldInfo.gid);
+                    if (oldDirName == null) {
+                        // 扫描前缀 fallback
+                        UniFile[] arr = root.listFiles((directory, filename) -> filename != null && filename.startsWith(oldInfo.gid + "-"));
+                        if (arr != null) {
+                            int max = -1; String pick = null;
+                            for (UniFile f : arr) {
+                                if (f.isDirectory()) {
+                                    int len = f.getName() != null ? f.getName().length() : 0;
+                                    if (len > max) { max = len; pick = f.getName(); }
+                                }
+                            }
+                            oldDirName = pick;
+                        }
+                    }
+                    if (oldDirName != null) {
+                        UniFile oldDir = root.subFile(oldDirName);
+                        if (oldDir != null && oldDir.isDirectory()) {
+                            GalleryInfo gi = new GalleryInfo();
+                            gi.gid = newInfo.gid;
+                            gi.title = newInfo.title;
+                            String newDirName = FileUtils.sanitizeFilename(newInfo.gid + "-" + EhUtils.getSuitableTitle(gi));
+                            UniFile conflict = root.subFile(newDirName);
+                            if (conflict != null && conflict.exists() && !conflict.getName().equals(oldDirName)) {
+                                newDirName = newDirName + "_" + System.currentTimeMillis();
+                            }
+                            boolean ok = oldDir.renameTo(newDirName);
+                            if (ok) {
+                                EhDB.updateDownloadDirname(oldInfo.gid, newInfo.gid, newDirName);
+                                Toast.makeText(context, R.string.edit_download_dir_migrate_success, Toast.LENGTH_SHORT).show();
+                            } else {
+                                Toast.makeText(context, R.string.edit_download_dir_migrate_failed, Toast.LENGTH_SHORT).show();
+                                return; // 失败不提交更改
+                            }
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                Toast.makeText(context, R.string.edit_download_dir_migrate_failed, Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
         // 使用DownloadManager更新信息
-        DownloadManager downloadManager = mCallback.getDownloadManager();
         if (downloadManager != null) {
             downloadManager.replaceInfo(newInfo, oldInfo);
             Toast.makeText(context, R.string.edit_download_info_updated, Toast.LENGTH_SHORT).show();

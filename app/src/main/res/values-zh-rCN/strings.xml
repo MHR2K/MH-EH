@@ -16,7 +16,7 @@
 
 <resources>
 
-    <string name="app_name">EhViewer</string>
+    <string name="app_name">EH</string>
 
     <!-- Theme -->
     <string name="theme_light">亮色主题</string>
@@ -307,6 +307,10 @@
     <string name="header_key">键</string>
     <string name="header_value">值</string>
     <string name="key_gid">Gid</string>
+    <string name="edit_download_gid_duplicate">Gid 已存在</string>
+    <string name="edit_download_gid_invalid">Gid 无效</string>
+    <string name="edit_download_dir_migrate_success">下载目录迁移成功</string>
+    <string name="edit_download_dir_migrate_failed">下载目录迁移失败</string>
     <string name="key_token">Token</string>
     <string name="key_url">链接</string>
     <string name="key_title">标题</string>
