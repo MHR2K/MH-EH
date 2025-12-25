@@ -48,6 +48,7 @@ import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
 import com.hippo.lib.yorozuya.collect.SparseJLArray;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
+import android.util.SparseArray;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -435,6 +436,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         // Get download from wait list
         if (!mWaitList.isEmpty()) {
             DownloadInfo info = mWaitList.removeFirst();
+            ensureLocalScaffold(info);
             SpiderQueen spider = SpiderQueen.obtainSpiderQueen(mContext, info, SpiderQueen.MODE_DOWNLOAD);
             mCurrentTask = info;
             mCurrentSpider = spider;
@@ -461,6 +463,46 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     l.onUpdate(info, list, mWaitList);
                 }
             }
+        }
+    }
+
+    /**
+     * Ensure download directory and a minimal .ehviewer file exist even if the remote gallery is gone.
+     * This only relies on stored metadata in DownloadInfo and does not touch the network.
+     */
+    private void ensureLocalScaffold(@NonNull DownloadInfo info) {
+        // Without gid/token/pages we can't build a valid spider info file.
+        if (info.gid <= 0 || info.token == null || info.pages <= 0) {
+            return;
+        }
+
+        try {
+            SpiderDen spiderDen = new SpiderDen(info);
+            // Switch to download mode so the directory is created if missing.
+            spiderDen.setMode(SpiderQueen.MODE_DOWNLOAD);
+
+            com.hippo.unifile.UniFile dir = spiderDen.getDownloadDir();
+            if (dir == null) {
+                return;
+            }
+
+            if (dir.findFile(SpiderQueen.SPIDER_INFO_FILENAME) != null) {
+                return;
+            }
+
+            SpiderInfo spiderInfo = new SpiderInfo();
+            spiderInfo.gid = info.gid;
+            spiderInfo.token = info.token;
+            spiderInfo.pages = info.pages;
+            spiderInfo.previewPages = 0;
+            spiderInfo.previewPerPage = 0;
+            spiderInfo.pTokenMap = new SparseArray<>(0);
+            spiderInfo.startPage = 0;
+
+            // Write both to download dir and to cache for consistency.
+            spiderInfo.writeNewSpiderInfoToLocal(spiderDen, mContext);
+        } catch (Throwable t) {
+            Log.w(TAG, "ensureLocalScaffold failed", t);
         }
     }
 
