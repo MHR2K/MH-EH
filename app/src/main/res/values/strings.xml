@@ -62,8 +62,9 @@
     
     <!-- Import comic -->
     <string name="import_comic">Import Comic</string>
-    <string name="import_comic_tip">Select a comic archive (.zip) file to import it into EhViewer.</string>
+    <string name="import_comic_tip">Select comic archives (.zip/.cbz) to import into EhViewer.</string>
     <string name="select_archive">Select Archive</string>
+    <string name="select_archives">Select Archives</string>
     <string name="importing_comic">Importing comic…</string>
     <string name="import_comic_success">Comic imported successfully</string>
     <!-- <string name="error_invalid_archive">Invalid archive file</string> duplicate-->
@@ -71,6 +72,11 @@
     <string name="error_reading_archive">Error reading archive</string>
     <string name="error_no_images_found">No images found in archive</string>
     <string name="error_importing_comic">Error importing comic</string>
+    <string name="import_mode_cbz">Import as CBZ</string>
+    <string name="import_mode_images">Import as images</string>
+    <string name="import_summary">%1$d succeeded, %2$d failed</string>
+    <string name="import_progress_fmt">Importing: %1$d / %2$d</string>
+    <string name="import_failed_header">Failed items:</string>
 
     <string name="site_e" translatable="false">e-hentai</string>
     <string name="site_ex" translatable="false">exhentai</string>

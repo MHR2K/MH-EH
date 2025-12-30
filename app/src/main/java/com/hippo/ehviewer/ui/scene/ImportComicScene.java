@@ -26,6 +26,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -74,6 +76,11 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
     private TextView mTipText;
     private Button mPickArchiveButton;
     private View mImportProgress;
+    private RadioGroup mModeGroup;
+    private RadioButton mRbCbz;
+    private RadioButton mRbImages;
+    private TextView mProgressText;
+    private TextView mFailureText;
 
     @Nullable
     @Override
@@ -82,6 +89,11 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
         mTipText = view.findViewById(R.id.tip_text);
         mPickArchiveButton = view.findViewById(R.id.pick_archive_button);
         mImportProgress = view.findViewById(R.id.import_progress);
+        mModeGroup = view.findViewById(R.id.import_mode_group);
+        mRbCbz = view.findViewById(R.id.rb_import_cbz);
+        mRbImages = view.findViewById(R.id.rb_import_images);
+        mProgressText = view.findViewById(R.id.progress_text);
+        mFailureText = view.findViewById(R.id.failure_text);
         
         mPickArchiveButton.setOnClickListener(this);
         
@@ -101,6 +113,14 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
             // 放宽类型，使用扩展名再校验
             intent.setType("*/*");
             intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                    "application/zip",
+                    "application/x-zip",
+                    "application/x-zip-compressed",
+                    "application/octet-stream",
+                    "application/x-cbz"
+            });
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             startActivityForResult(intent, REQUEST_CODE_CHOOSE_ARCHIVE);
         }
     }
@@ -108,8 +128,21 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_CODE_CHOOSE_ARCHIVE && resultCode == Activity.RESULT_OK) {
-            if (data != null && data.getData() != null) {
-                importArchive(data.getData());
+            if (data != null) {
+                java.util.List<Uri> uris = new java.util.ArrayList<>();
+                if (data.getClipData() != null) {
+                    android.content.ClipData clipData = data.getClipData();
+                    for (int i = 0; i < clipData.getItemCount(); i++) {
+                        Uri u = clipData.getItemAt(i).getUri();
+                        if (u != null) uris.add(u);
+                    }
+                } else if (data.getData() != null) {
+                    uris.add(data.getData());
+                }
+                if (!uris.isEmpty()) {
+                    boolean asCbz = mRbCbz != null && mRbCbz.isChecked();
+                    importArchives(uris, asCbz);
+                }
             }
         } else {
             super.onActivityResult(requestCode, resultCode, data);
@@ -117,14 +150,17 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
     }
 
     @SuppressLint("StaticFieldLeak")
-    private void importArchive(Uri archiveUri) {
+    private void importArchives(java.util.List<Uri> archiveUris, boolean importAsCbz) {
         mPickArchiveButton.setEnabled(false);
         mImportProgress.setVisibility(View.VISIBLE);
         mTipText.setText(R.string.importing_comic);
 
-        new AsyncTask<Void, Void, Boolean>() {
+        new AsyncTask<Void, Integer, Boolean>() {
             private String errorMessage;
-            private DownloadInfo downloadInfo;
+            private int successCount;
+            private int failCount;
+            private java.util.List<String> failedDetails = new java.util.ArrayList<>();
+            private int total;
 
             // 工具方法：标准化扩展名，确保以点开头
             private String normalizeExtension(String ext) {
@@ -134,19 +170,33 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
 
             @Override
             protected Boolean doInBackground(Void... voids) {
-                // 1. 解析文件名、gid、token
+                total = archiveUris.size();
+                for (int i = 0; i < archiveUris.size(); i++) {
+                    Uri uri = archiveUris.get(i);
+                    String name = getFileName(uri);
+                    boolean ok = importSingle(uri, importAsCbz);
+                    if (ok) successCount++; else failCount++;
+                    if (!ok) {
+                        String reason = errorMessage != null ? errorMessage : getString(R.string.error_importing_comic);
+                        String showName = name != null ? name : String.valueOf(uri);
+                        failedDetails.add(showName + ": " + reason);
+                    }
+                    publishProgress(i + 1, total);
+                }
+                return successCount > 0 && failCount == 0;
+            }
+
+            
+
+            private boolean importSingle(Uri archiveUri, boolean asCbz) {
                 String fileName = getFileName(archiveUri);
-                if (fileName == null) {
+                if (fileName == null || !com.hippo.ehviewer.util.ArchiveSupportUtils.isSupportedArchiveName(fileName)) {
                     errorMessage = getString(R.string.error_invalid_archive);
                     return false;
                 }
-                if (!com.hippo.ehviewer.util.ArchiveSupportUtils.isSupportedArchiveName(fileName)) {
-                    errorMessage = getString(R.string.error_invalid_archive);
-                    return false;
-                }
+
                 Matcher matcher = PATTERN_GID_TOKEN.matcher(fileName);
-                long gid;
-                String token;
+                long gid; String token;
                 if (matcher.find()) {
                     gid = Long.parseLong(matcher.group(1));
                     token = matcher.group(2);
@@ -156,34 +206,26 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                     token = UUID.randomUUID().toString().substring(0, 10);
                 }
 
-                // 2. 创建下载信息对象
-                downloadInfo = new DownloadInfo(gid);
+                DownloadInfo downloadInfo = new DownloadInfo(gid);
                 downloadInfo.token = token;
                 downloadInfo.title = FileUtils.getNameFromFilename(fileName);
-                downloadInfo.titleJpn = downloadInfo.title; // 日文标题同title
-                downloadInfo.category = 2; // 分区为DOUJINSHI
-                downloadInfo.rating = 5.0f; // 评分满分
-                downloadInfo.state = DownloadInfo.STATE_FINISH;
+                downloadInfo.titleJpn = downloadInfo.title;
+                downloadInfo.category = 2;
+                downloadInfo.rating = 5.0f;
                 downloadInfo.time = System.currentTimeMillis();
 
-                // 3. 创建下载目录
                 UniFile downloadDir = SpiderDen.getGalleryDownloadDir(downloadInfo);
                 if (downloadDir == null || !downloadDir.ensureDir()) {
                     errorMessage = getString(R.string.error_create_download_dir);
                     return false;
                 }
 
-                // 4. 一次遍历zip流，收集图片条目，写入磁盘，记录第一张图片数据用于缩略图
                 java.util.List<String> sortedEntryNames = new java.util.ArrayList<>();
-                java.util.Map<String, String> entryNameToFileName = new java.util.HashMap<>();
                 byte[] firstImageData = null;
-                String firstEntryName = null;
-                int count = 0;
+                int count;
                 try (InputStream is = requireContext().getContentResolver().openInputStream(archiveUri);
                      ZipInputStream zis = new ZipInputStream(is)) {
                     ZipEntry zipEntry;
-                    byte[] buffer = new byte[8192];
-                    // 4.1 收集所有图片条目名
                     while ((zipEntry = zis.getNextEntry()) != null) {
                         String entryName = zipEntry.getName();
                         if (!zipEntry.isDirectory() && isImageFile(entryName)) {
@@ -194,57 +236,88 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                     errorMessage = getString(R.string.error_reading_archive);
                     return false;
                 }
-
-                // 4.2 按文件名排序
                 sortedEntryNames.sort(String::compareToIgnoreCase);
                 if (sortedEntryNames.isEmpty()) {
                     errorMessage = getString(R.string.error_no_images_found);
                     return false;
                 }
+                count = sortedEntryNames.size();
 
-                // 4.3 再次遍历zip流，按排序后顺序写入磁盘，并记录第一张图片数据
-                try (InputStream is = requireContext().getContentResolver().openInputStream(archiveUri);
-                     ZipInputStream zis = new ZipInputStream(is)) {
-                    ZipEntry zipEntry;
-                    byte[] buffer = new byte[8192];
-                    int imgIndex = 0;
-                    while ((zipEntry = zis.getNextEntry()) != null) {
-                        String entryName = zipEntry.getName();
-                        if (!zipEntry.isDirectory() && isImageFile(entryName)) {
-                            int sortedIndex = sortedEntryNames.indexOf(entryName);
-                            if (sortedIndex == -1) continue;
-                            String extension = normalizeExtension(FileUtils.getExtensionFromFilename(entryName));
-                            String imageName = String.format(Locale.US, "%08d%s", sortedIndex + 1, extension);
-                            entryNameToFileName.put(entryName, imageName);
-                            UniFile imageFile = downloadDir.createFile(imageName);
-                            if (imageFile != null) {
-                                OutputStream os = null;
-                                try {
-                                    os = imageFile.openOutputStream();
-                                    java.io.ByteArrayOutputStream baos = null;
-                                    if (sortedIndex == 0) baos = new java.io.ByteArrayOutputStream();
-                                    int read;
-                                    while ((read = zis.read(buffer)) != -1) {
-                                        os.write(buffer, 0, read);
-                                        if (baos != null) baos.write(buffer, 0, read);
-                                    }
-                                    if (baos != null) {
-                                        firstImageData = baos.toByteArray();
-                                        firstEntryName = entryName;
-                                    }
-                                } finally {
-                                    IOUtils.closeQuietly(os);
-                                }
-                            }
-                            count++;
-                        }
+                if (asCbz) {
+                    java.util.Map<String, Integer> nameToIndex = new java.util.HashMap<>();
+                    for (int i = 0; i < sortedEntryNames.size(); i++) nameToIndex.put(sortedEntryNames.get(i), i);
+                    UniFile cbzFile = downloadDir.createFile(gid + ".cbz");
+                    if (cbzFile == null) {
+                        errorMessage = getString(R.string.error_importing_comic);
+                        return false;
                     }
-                } catch (Exception e) {
-                    errorMessage = getString(R.string.error_reading_archive);
-                    return false;
+                    java.util.zip.ZipOutputStream zos = null; InputStream is2 = null; ZipInputStream zis2 = null;
+                    try {
+                        OutputStream osCbz = cbzFile.openOutputStream();
+                        zos = new java.util.zip.ZipOutputStream(osCbz);
+                        is2 = requireContext().getContentResolver().openInputStream(archiveUri);
+                        zis2 = new ZipInputStream(is2);
+                        ZipEntry ze; byte[] buf = new byte[8192];
+                        while ((ze = zis2.getNextEntry()) != null) {
+                            String en = ze.getName();
+                            if (ze.isDirectory() || !isImageFile(en)) continue;
+                            Integer sortedIdx = nameToIndex.get(en);
+                            if (sortedIdx == null) continue;
+                            String ext = normalizeExtension(FileUtils.getExtensionFromFilename(en));
+                            String outName = String.format(Locale.US, "%08d%s", sortedIdx + 1, ext);
+                            java.util.zip.ZipEntry out = new java.util.zip.ZipEntry(outName);
+                            zos.putNextEntry(out);
+                            int r; java.io.ByteArrayOutputStream firstBaos = null;
+                            if (sortedIdx == 0) firstBaos = new java.io.ByteArrayOutputStream();
+                            while ((r = zis2.read(buf)) != -1) {
+                                zos.write(buf, 0, r);
+                                if (firstBaos != null) firstBaos.write(buf, 0, r);
+                            }
+                            zos.closeEntry();
+                            if (firstBaos != null) firstImageData = firstBaos.toByteArray();
+                        }
+                        zos.finish();
+                    } catch (Exception e) {
+                        errorMessage = getString(R.string.error_importing_comic);
+                        return false;
+                    } finally {
+                        IOUtils.closeQuietly(zos);
+                        IOUtils.closeQuietly(zis2);
+                        IOUtils.closeQuietly(is2);
+                    }
+                } else {
+                    java.util.Map<String, Integer> nameToIndex = new java.util.HashMap<>();
+                    for (int i = 0; i < sortedEntryNames.size(); i++) nameToIndex.put(sortedEntryNames.get(i), i);
+                    try (InputStream is = requireContext().getContentResolver().openInputStream(archiveUri);
+                         ZipInputStream zis = new ZipInputStream(is)) {
+                        ZipEntry zipEntry; byte[] buffer = new byte[8192];
+                        while ((zipEntry = zis.getNextEntry()) != null) {
+                            String en = zipEntry.getName();
+                            if (zipEntry.isDirectory() || !isImageFile(en)) continue;
+                            Integer idx = nameToIndex.get(en);
+                            if (idx == null) continue;
+                            String ext = normalizeExtension(FileUtils.getExtensionFromFilename(en));
+                            String imageName = String.format(Locale.US, "%08d%s", idx + 1, ext);
+                            UniFile imageFile = downloadDir.createFile(imageName);
+                            if (imageFile == null) continue;
+                            OutputStream os = null;
+                            try {
+                                os = imageFile.openOutputStream();
+                                int read; java.io.ByteArrayOutputStream firstBaos = null;
+                                if (idx == 0) firstBaos = new java.io.ByteArrayOutputStream();
+                                while ((read = zis.read(buffer)) != -1) {
+                                    os.write(buffer, 0, read);
+                                    if (firstBaos != null) firstBaos.write(buffer, 0, read);
+                                }
+                                if (firstBaos != null) firstImageData = firstBaos.toByteArray();
+                            } finally { IOUtils.closeQuietly(os); }
+                        }
+                    } catch (Exception e) {
+                        errorMessage = getString(R.string.error_reading_archive);
+                        return false;
+                    }
                 }
 
-                // 5. 生成缩略图（取第一张图片，缩放为160x240，保存为.thumb文件，并赋值thumb字段，PNG无损）
                 try {
                     if (firstImageData != null) {
                         android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeByteArray(firstImageData, 0, firstImageData.length);
@@ -256,24 +329,16 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                             UniFile thumbFile = downloadDir.createFile(".thumb");
                             if (thumbFile != null) {
                                 OutputStream tos = null;
-                                try {
-                                    tos = thumbFile.openOutputStream();
-                                    tos.write(thumbBytes);
-                                    tos.flush();
-                                    downloadInfo.thumb = ".thumb";
-                                } finally {
-                                    IOUtils.closeQuietly(tos);
-                                }
+                                try { tos = thumbFile.openOutputStream(); tos.write(thumbBytes); tos.flush(); } finally { IOUtils.closeQuietly(tos); }
+                                // 记录封面相对路径，供下载页加载
+                                downloadInfo.thumb = ".thumb";
                             }
                             thumbBmp.recycle();
                             bitmap.recycle();
                         }
                     }
-                } catch (Throwable t) {
-                    // 忽略缩略图生成异常
-                }
+                } catch (Throwable t) { }
 
-                // 6. 创建 SpiderInfo 文件
                 SpiderInfo spiderInfo = new SpiderInfo();
                 spiderInfo.gid = gid;
                 spiderInfo.token = token;
@@ -281,35 +346,46 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                 spiderInfo.previewPages = 0;
                 spiderInfo.previewPerPage = 0;
                 spiderInfo.pTokenMap = new android.util.SparseArray<>(count);
-                for(int i = 0; i < count; i++) {
+                for (int i = 0; i < count; i++) {
                     spiderInfo.pTokenMap.put(i, "imported" + i);
                 }
                 UniFile spiderInfoFile = downloadDir.createFile(SpiderQueen.SPIDER_INFO_FILENAME);
                 if (spiderInfoFile != null) {
                     OutputStream os = null;
-                    try {
-                        os = spiderInfoFile.openOutputStream();
-                        spiderInfo.write(os);
-                    } catch (Exception e) {
-                        // 写入SpiderInfo文件时发生异常，忽略或可记录日志
-                        e.printStackTrace();
-                    } finally {
-                        IOUtils.closeQuietly(os);
-                    }
+                    try { os = spiderInfoFile.openOutputStream(); spiderInfo.write(os); } catch (Exception ignored) { } finally { IOUtils.closeQuietly(os); }
                 }
 
-                // 7. 只设置总页数，状态设为未启动，让下载管理器重新处理
+                // 导入完成后直接标记为已完成，避免卡在“等待中”
                 downloadInfo.total = count;
-                downloadInfo.finished = 0;
-                downloadInfo.downloaded = 0;
-                // 设置为等待中，确保下载管理器能自动拉起任务
-                downloadInfo.state = DownloadInfo.STATE_WAIT;
+                downloadInfo.finished = count;
+                downloadInfo.downloaded = count;
+                downloadInfo.state = DownloadInfo.STATE_FINISH;
 
-                // 8. 先删除同gid任务，确保addDownload能生效
-                EhDB.removeDownloadInfo(downloadInfo.gid);
-                EhDB.putDownloadInfo(downloadInfo);
+                DownloadManager manager = EhApplication.getDownloadManager(requireContext());
+                if (manager != null) {
+                    // 通过 GalleryInfo 接口添加，并设置为已完成
+                    GalleryInfo gi = new GalleryInfo();
+                    gi.gid = gid; gi.token = token; gi.title = downloadInfo.title; gi.titleJpn = downloadInfo.titleJpn;
+                    gi.category = downloadInfo.category; gi.thumb = downloadInfo.thumb;
+                    manager.addDownload(gi, null, DownloadInfo.STATE_FINISH);
+                    // 用 DB 更新计数信息（总页数/完成数）
+                    EhDB.putDownloadInfo(downloadInfo);
+                } else {
+                    // 后备：直接写入数据库
+                    EhDB.putDownloadInfo(downloadInfo);
+                }
 
                 return true;
+            }
+
+            @Override
+            protected void onProgressUpdate(Integer... values) {
+                if (mProgressText != null) {
+                    mProgressText.setVisibility(View.VISIBLE);
+                    if (values != null && values.length >= 2) {
+                        mProgressText.setText(getString(R.string.import_progress_fmt, values[0], values[1]));
+                    }
+                }
             }
 
             @Override
@@ -317,37 +393,22 @@ public class ImportComicScene extends ToolbarScene implements View.OnClickListen
                 mImportProgress.setVisibility(View.GONE);
                 mPickArchiveButton.setEnabled(true);
 
-                if (success && downloadInfo != null) {
+                if (successCount > 0) {
                     mTipText.setText(R.string.import_comic_success);
-                    Toast.makeText(requireContext(), getString(R.string.import_comic_success), Toast.LENGTH_SHORT).show();
+                    Toast.makeText(requireContext(), getString(R.string.import_summary, successCount, failCount), Toast.LENGTH_SHORT).show();
 
-                    // 通知下载管理器，addDownload后用反射强制调用startDownload，确保立即拉起
-                    DownloadManager manager = EhApplication.getDownloadManager(requireContext());
-                    if (manager != null) {
-                        manager.addDownload(downloadInfo, null);
-                        try {
-                            java.lang.reflect.Method m = manager.getClass().getDeclaredMethod("startDownload", com.hippo.ehviewer.client.data.GalleryInfo.class, String.class);
-                            m.setAccessible(true);
-                            m.invoke(manager, downloadInfo, null);
-                        } catch (Throwable t) {
-                            t.printStackTrace();
-                        }
-                    }
-
-                    // 返回下载页面
-                    Activity activity = getActivity();
-                    if (activity instanceof MainActivity && activity != null) {
-                        try {
-                            ((MainActivity) activity).navtoDownloadsScene();
-                        } catch (Exception e) {
-                            // 如果导航失败，记录错误并尝试直接启动场景
-                            e.printStackTrace();
-                            try {
-                                startScene(new Announcer(DownloadsScene.class));
-                            } catch (Exception ex) {
-                                // 忽略，不中断流程
-                                ex.printStackTrace();
-                            }
+                    if (failCount > 0 && mFailureText != null) {
+                        mFailureText.setVisibility(View.VISIBLE);
+                        StringBuilder sb = new StringBuilder();
+                        sb.append(getString(R.string.import_failed_header)).append('\n');
+                        for (String line : failedDetails) sb.append("- ").append(line).append('\n');
+                        mFailureText.setText(sb.toString());
+                        // 有失败则不自动跳转，便于查看详情
+                    } else {
+                        Activity activity = getActivity();
+                        if (activity instanceof MainActivity && activity != null) {
+                            try { ((MainActivity) activity).navtoDownloadsScene(); }
+                            catch (Exception e) { try { startScene(new Announcer(DownloadsScene.class)); } catch (Exception ignored) {} }
                         }
                     }
                 } else {
