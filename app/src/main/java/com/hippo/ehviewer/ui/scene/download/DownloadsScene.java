@@ -78,7 +78,6 @@ import com.hippo.easyrecyclerview.EasyRecyclerView;
 import com.hippo.easyrecyclerview.FastScroller;
 import com.hippo.easyrecyclerview.HandlerDrawable;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
-import com.hippo.ehviewer.Analytics;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
@@ -220,6 +219,10 @@ public class DownloadsScene extends ToolbarScene
 
     private AlertDialog mSearchDialog;
     private SearchBar mSearchBar;
+    private CheckBox mFuzzySearchCheckbox;
+    private CheckBox mIgnoreCaseCheckbox;
+    private CheckBox mChineseConversionCheckbox;
+    private CheckBox mSortByRelevanceCheckbox;
     @Nullable
     private PaginationIndicator mPaginationIndicator;
 
@@ -995,6 +998,27 @@ public class DownloadsScene extends ToolbarScene
         }
 
         mSearchBar.setRightDrawable(DrawableManager.getVectorDrawable(context, R.drawable.v_magnify_x24));
+        
+        // 初始化复选框
+        mFuzzySearchCheckbox = linearLayout.findViewById(R.id.fuzzy_search_checkbox);
+        mIgnoreCaseCheckbox = linearLayout.findViewById(R.id.ignore_case_checkbox);
+        mChineseConversionCheckbox = linearLayout.findViewById(R.id.chinese_conversion_checkbox);
+        mSortByRelevanceCheckbox = linearLayout.findViewById(R.id.sort_by_relevance_checkbox);
+        
+        // 初始化当前设置状态，从 Settings 加载所有搜索相关设置
+        mFuzzySearchCheckbox.setChecked(Settings.getEnableFuzzySearch());
+        mIgnoreCaseCheckbox.setChecked(Settings.getEnableIgnoreCase());
+        mChineseConversionCheckbox.setChecked(Settings.getEnableChineseConversion());
+        mSortByRelevanceCheckbox.setChecked(Settings.getEnableSortByRelevance());
+        
+        // 设置"按相关性排序"复选框的启用状态，只有在模糊搜索启用时才可用
+        updateSortByRelevanceState();
+        
+        // 添加模糊搜索复选框的点击监听器
+        mFuzzySearchCheckbox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            updateSortByRelevanceState();
+        });
+        
         mSearchBarMover = new SearchBarMover(this, mSearchBar);
         mSearchDialog = new AlertDialog.Builder(context)
                 .setMessage(R.string.download_search_gallery)
@@ -1071,6 +1095,24 @@ public class DownloadsScene extends ToolbarScene
 
     private void onSearchDialogDismiss(DialogInterface dialog) {
         mSearchMode = false;
+    }
+
+    /**
+     * 更新"按相关性排序"复选框的启用状态
+     * 只有在"模糊搜索"启用时才允许使用
+     */
+    private void updateSortByRelevanceState() {
+        if (mSortByRelevanceCheckbox == null || mFuzzySearchCheckbox == null) {
+            return;
+        }
+        
+        boolean fuzzySearchEnabled = mFuzzySearchCheckbox.isChecked();
+        mSortByRelevanceCheckbox.setEnabled(fuzzySearchEnabled);
+        
+        // 如果禁用了模糊搜索，自动取消勾选"按相关性排序"
+        if (!fuzzySearchEnabled) {
+            mSortByRelevanceCheckbox.setChecked(false);
+        }
     }
 
     private void enterSearchMode(boolean animation) {

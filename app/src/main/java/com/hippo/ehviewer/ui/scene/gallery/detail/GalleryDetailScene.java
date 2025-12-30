@@ -1869,7 +1869,6 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     }
 
     protected void onGetGalleryDetailUpdateFailure(Exception e) {
-<<<<<<< HEAD
         e.printStackTrace();
         CrashlyticsUtils.record(e);
         adjustViewVisibility(STATE_NORMAL, true);

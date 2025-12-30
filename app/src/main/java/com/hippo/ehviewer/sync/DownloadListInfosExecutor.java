@@ -487,18 +487,20 @@ public class DownloadListInfosExecutor {
         
         // 精确匹配给予最高分
         if ((mIgnoreCase && fullTitle.toLowerCase().contains(searchKey.toLowerCase())) ||
-            (mIgnoreCase && fullTitle.contains(searchKey))) {
+            (!mIgnoreCase && fullTitle.contains(searchKey))) {
             return 1.5; // 超过1的分数，确保精确匹配排在最前面
         }
         
-        // 使用EhUtils中的相似度计算方法计算分数
-        // 注意：无论是否开启模糊搜索，都允许简繁体转换功能生效
-        double similarityScore = EhUtils.calculateSimilarityScore(fullTitle, searchKey, 
-                                                                 mFuzzySearch, mIgnoreCase, mEnableChineseConversion);
-        
-        // 如果有相似度，将分数放大到0.8-1.0范围内，使其排在前面但低于精确匹配
-        if (similarityScore > 0) {
-            return 0.8 + similarityScore * 0.2;
+        // 如果启用模糊搜索，使用Jaro-Winkler相似度计算
+        if (mFuzzySearch) {
+            String titleToMatch = mIgnoreCase ? fullTitle.toLowerCase() : fullTitle;
+            String keyToMatch = mIgnoreCase ? searchKey.toLowerCase() : searchKey;
+            double similarity = EhUtils.calculateJaroWinklerSimilarity(titleToMatch, keyToMatch);
+            
+            // 如果相似度超过阈值，将分数放大到0.7-1.0范围内
+            if (similarity >= 0.7) {
+                return 0.7 + similarity * 0.3;
+            }
         }
         
         // 匹配标签给予一定分数

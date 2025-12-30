@@ -151,8 +151,151 @@ object EhUtils {
 
     @JvmStatic
     fun judgeSuitableTitle(gi: GalleryInfo, key: String): Boolean {
-        val titleB = gi.titleJpn + "" + gi.title
-        return titleB.contains(key)
+        return judgeSuitableTitle(gi, key, true, true)
+    }
+
+    @JvmStatic
+    fun judgeSuitableTitle(
+        gi: GalleryInfo,
+        key: String,
+        fuzzySearch: Boolean,
+        ignoreCase: Boolean
+    ): Boolean {
+        var titleB = gi.titleJpn + "" + gi.title
+        var searchKey = key
+
+        if (ignoreCase) {
+            titleB = titleB.lowercase()
+            searchKey = searchKey.lowercase()
+        }
+
+        return if (fuzzySearch) {
+            fuzzyContains(titleB, searchKey, 0.7)
+        } else {
+            titleB.contains(searchKey)
+        }
+    }
+
+    /**
+     * 模糊匹配算法，使用Jaro-Winkler相似度
+     * @param text 文本内容
+     * @param query 查询关键词
+     * @param threshold 相似度阈值 (0-1)
+     * @return 是否匹配
+     */
+    @JvmStatic
+    fun fuzzyContains(text: String?, query: String?, threshold: Double): Boolean {
+        if (text == null || query == null || query.isEmpty()) {
+            return false
+        }
+
+        // 如果查询词很短，使用精确匹配
+        if (query.length <= 2) {
+            return text.contains(query)
+        }
+
+        // 计算Jaro-Winkler相似度
+        val similarity = calculateJaroWinklerSimilarity(text, query)
+        return similarity >= threshold
+    }
+
+    /**
+     * 计算Jaro-Winkler相似度
+     */
+    @JvmStatic
+    fun calculateJaroWinklerSimilarity(s1: String, s2: String): Double {
+        if (s1 == s2) {
+            return 1.0
+        }
+
+        val matches = getMatches(s1.toCharArray(), s2.toCharArray())
+        val m = matches[0]
+
+        if (m == 0) {
+            return 0.0
+        }
+
+        val jaro = (m.toDouble() / s1.length + m.toDouble() / s2.length + 
+                    (m - matches[1]).toDouble() / m) / 3.0
+
+        // 计算Jaro-Winkler相似度
+        var prefix = 0
+        val maxPrefix = minOf(4, minOf(s1.length, s2.length))
+        for (i in 0 until maxPrefix) {
+            if (s1[i] == s2[i]) {
+                prefix++
+            } else {
+                break
+            }
+        }
+
+        return jaro + (prefix * 0.1 * (1 - jaro))
+    }
+
+    private fun getMatches(s1: CharArray, s2: CharArray): IntArray {
+        val max: CharArray
+        val min: CharArray
+        if (s1.size > s2.size) {
+            max = s1
+            min = s2
+        } else {
+            max = s2
+            min = s1
+        }
+
+        val range = maxOf(max.size / 2 - 1, 0)
+        val matchIndexes = IntArray(min.size) { -1 }
+        val matchFlags = BooleanArray(max.size)
+        var matches = 0
+
+        for (mi in min.indices) {
+            val c1 = min[mi]
+            val xStart = maxOf(mi - range, 0)
+            val xEnd = minOf(mi + range + 1, max.size)
+            for (xi in xStart until xEnd) {
+                if (!matchFlags[xi] && c1 == max[xi]) {
+                    matchIndexes[mi] = xi
+                    matchFlags[xi] = true
+                    matches++
+                    break
+                }
+            }
+        }
+
+        val ms1 = CharArray(matches)
+        val ms2 = CharArray(matches)
+        var si = 0
+        for (i in min.indices) {
+            if (matchIndexes[i] != -1) {
+                ms1[si] = min[i]
+                si++
+            }
+        }
+        si = 0
+        for (i in max.indices) {
+            if (matchFlags[i]) {
+                ms2[si] = max[i]
+                si++
+            }
+        }
+
+        var transpositions = 0
+        for (mi in ms1.indices) {
+            if (ms1[mi] != ms2[mi]) {
+                transpositions++
+            }
+        }
+
+        var prefix = 0
+        for (mi in min.indices) {
+            if (s1[mi] == s2[mi]) {
+                prefix++
+            } else {
+                break
+            }
+        }
+
+        return intArrayOf(matches, transpositions / 2, prefix)
     }
 
     @JvmStatic

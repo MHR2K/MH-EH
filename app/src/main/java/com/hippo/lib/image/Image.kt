@@ -25,7 +25,7 @@ import java.nio.channels.FileChannel
 import kotlin.math.max
 import kotlin.math.min
 import androidx.core.graphics.createBitmap
-import com.hippo.ehviewer.Analytics
+import com.hippo.ehviewer.util.CrashlyticsUtils
 
 
 class Image private constructor(
@@ -84,7 +84,7 @@ class Image private constructor(
                             mObtainedDrawable = BitmapDrawable.createFromStream(source, null)
                         }
                     } catch (fallbackException: Exception) {
-                        Analytics.recordException(fallbackException)
+                        CrashlyticsUtils.record(fallbackException)
                         throw Exception("Android 9 解码失败", e)
                     }
                 }
@@ -199,17 +199,15 @@ class Image private constructor(
                 bitmap,
                 init,
                 offsetX,
-                offsetY,
-                width,
-                height
-            )
-        } catch (e: ClassCastException) {
-            Analytics.recordException(e)
-            return
-        }
+            offsetY,
+            width,
+            height
+        )
+    } catch (e: ClassCastException) {
+        CrashlyticsUtils.record(e)
+        return
     }
-
-    fun start() {
+}    fun start() {
         if (!started) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 (mObtainedDrawable as AnimatedImageDrawable?)?.start()
@@ -242,16 +240,14 @@ class Image private constructor(
 
         @JvmStatic
         fun decode(stream: FileInputStream, hardware: Boolean = true): Image? {
-            try {
-                return Image(stream, hardware = hardware)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Analytics.recordException(e)
-                return null
-            }
+        try {
+            return Image(stream, hardware = hardware)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            CrashlyticsUtils.record(e)
+            return null
         }
-
-        @JvmStatic
+    }        @JvmStatic
         fun decode(stream: InputStream, hardware: Boolean = true): Image? {
             try {
                 // Read all bytes from the stream; for large images consider sampling
@@ -279,23 +275,21 @@ class Image private constructor(
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
-                FirebaseCrashlytics.getInstance().recordException(e)
+                CrashlyticsUtils.record(e)
                 return null
             }
         }
 
         @JvmStatic
         fun decode(drawable: Drawable?, hardware: Boolean = true): Image? {
-            try {
-                return Image(null, drawable, hardware = hardware)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                Analytics.recordException(e)
-                return null
-            }
+        try {
+            return Image(null, drawable, hardware = hardware)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            CrashlyticsUtils.record(e)
+            return null
         }
-
-//        @JvmStatic
+    }//        @JvmStatic
 //        fun decode(buffer: ByteBuffer, hardware: Boolean = true, release: () -> Unit? = {}): Image {
 //            val src = ImageDecoder.createSource(buffer)
 //            return Image(src, hardware = hardware) {
