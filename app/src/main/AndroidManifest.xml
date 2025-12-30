@@ -31,7 +31,6 @@
     <uses-permission android:name="android.permission.USE_FINGERPRINT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.INTERNET" />
     <!--  用于获取wifi状态  -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!--  使用系统自带下载器  -->
@@ -271,6 +270,20 @@
             android:name="com.hippo.ehviewer.ui.wifi.WiFiClientActivity"
             android:configChanges="screenSize|uiMode"
             android:label="@string/wifi_client"
+            android:theme="@style/AppTheme.Toolbar" />
+
+        <!-- SMB: 添加服务器页面（简版） -->
+        <activity
+            android:name="com.hippo.ehviewer.smb.ui.SmbAddServerActivity"
+            android:exported="false"
+            android:label="添加SMB服务器"
+            android:theme="@style/AppTheme.Toolbar" />
+
+        <!-- SMB: 测试工具页面（上传/修改/删除） -->
+        <activity
+            android:name="com.hippo.ehviewer.smb.ui.SmbToolsActivity"
+            android:exported="false"
+            android:label="SMB 测试工具"
             android:theme="@style/AppTheme.Toolbar" />
 
         <service

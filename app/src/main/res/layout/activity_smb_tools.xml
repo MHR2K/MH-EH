@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <TextView
+            android:id="@+id/text_title"
+            android:text="SMB 测试工具"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:text="选择已保存的服务器"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"/>
+
+        <Spinner
+            android:id="@+id/spinner_servers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33000000"
+            android:layout_marginTop="12dp"/>
+
+        <TextView
+            android:text="1) 选择本地文件并上传到服务器 relativePath 目录"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"/>
+
+        <Button
+            android:id="@+id/btn_pick_file"
+            android:text="选择文件"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"/>
+
+        <TextView
+            android:id="@+id/text_picked"
+            android:text="(未选择)"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:layout_marginTop="4dp"/>
+
+        <Button
+            android:id="@+id/btn_upload"
+            android:text="上传"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33000000"
+            android:layout_marginTop="12dp"/>
+
+        <TextView
+            android:text="2) 重命名：在 relativePath 目录下操作"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"/>
+
+        <EditText
+            android:id="@+id/edit_old_name"
+            android:hint="旧文件名"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <EditText
+            android:id="@+id/edit_new_name"
+            android:hint="新文件名"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btn_rename"
+            android:text="重命名"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"/>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33000000"
+            android:layout_marginTop="12dp"/>
+
+        <TextView
+            android:text="3) 删除：在 relativePath 目录下操作"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"/>
+
+        <EditText
+            android:id="@+id/edit_delete_name"
+            android:hint="要删除的文件名"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"/>
+
+        <Button
+            android:id="@+id/btn_delete"
+            android:text="删除"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"/>
+
+    </LinearLayout>
+</ScrollView>

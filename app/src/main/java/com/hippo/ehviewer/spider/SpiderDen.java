@@ -22,6 +22,7 @@ import android.webkit.MimeTypeMap;
 
 import androidx.annotation.Nullable;
 
+import com.hippo.ehviewer.BuildConfig;
 import com.hippo.beerbelly.SimpleDiskCache;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.Settings;
@@ -29,6 +30,8 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
+import com.hippo.ehviewer.smb.Client;
+import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.io.UniFileInputStreamPipe;
 import com.hippo.io.UniFileOutputStreamPipe;
 import com.hippo.streampipe.InputStreamPipe;
@@ -268,7 +271,25 @@ public final class SpiderDen {
 
     public boolean contain(int index) {
         if (mMode == SpiderQueen.MODE_READ) {
-            return containInCache(index) || containInDownloadDir(index);
+            if (containInCache(index) || containInDownloadDir(index)) {
+                return true;
+            }
+            // SMB 上是否存在：探测可读性（打开即视为存在，立即关闭）
+            InputStreamPipe smbProbe = openSmbInputStreamPipe(index);
+            if (smbProbe != null) {
+                try {
+                    smbProbe.obtain();
+                    java.io.InputStream tmp = smbProbe.open();
+                    // 成功打开即认为存在
+                    return true;
+                } catch (Throwable ignore) {
+                    // 视为不存在
+                } finally {
+                    try { smbProbe.close(); } catch (Throwable ignore) {}
+                    try { smbProbe.release(); } catch (Throwable ignore) {}
+                }
+            }
+            return false;
         } else if (mMode == SpiderQueen.MODE_DOWNLOAD) {
             return containInDownloadDir(index) || copyFromCacheToDownloadDir(index);
         } else {
@@ -390,15 +411,100 @@ public final class SpiderDen {
     @Nullable
     public InputStreamPipe openInputStreamPipe(int index) {
         if (mMode == SpiderQueen.MODE_READ) {
+            // 1) 本地下载目录
             InputStreamPipe pipe = openDownloadInputStreamPipe(index);
-            if (pipe == null) {
-                pipe = openCacheInputStreamPipe(index);
-            }
-            return pipe;
+            if (pipe != null) return pipe;
+
+            // 2) 缓存
+            pipe = openCacheInputStreamPipe(index);
+            if (pipe != null) return pipe;
+
+            // 3) SMB（在网络之前）
+            InputStreamPipe smbPipe = openSmbInputStreamPipe(index);
+            if (smbPipe != null) return smbPipe;
+
+            // 4) 返回 null 触发网络
+            return null;
         } else if (mMode == SpiderQueen.MODE_DOWNLOAD) {
             return openDownloadInputStreamPipe(index);
         } else {
             return null;
         }
+    }
+
+    @Nullable
+    private InputStreamPipe openSmbInputStreamPipe(int index) {
+        // 查找 gid 对应的 SMB 映射
+        SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mGid);
+        if (mapping == null) return null;
+        // 尝试所有支持的扩展名
+        for (String ext : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+            String filename = generateImageFilename(index, ext);
+            String base = mapping.getBasePathInShare();
+            // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
+            if (base == null) base = "";
+            String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+            String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
+            Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+            try {
+                java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+                return new InputStreamPipe() {
+                    private java.io.InputStream mIs;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
+                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
+                };
+            } catch (Throwable ignore) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB open failed: auth=" + mapping.getAuthority() + ", share=" + mapping.getShare() + ", rel=" + rel + ", err=" + ignore);
+                }
+                // 尝试下一个扩展名
+            }
+        }
+        // 兜底：列目录查找（处理远端大小写差异或不一致扩展名）
+        try {
+            String base = mapping.getBasePathInShare();
+            if (base == null) base = "";
+            String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+            Client.Target dirTarget = new Client.Target(mapping.getAuthority(), mapping.getShare(), normBase);
+            java.util.List<Client.RemoteDirEntry> entries = Client.INSTANCE.listDirectory(dirTarget);
+            String indexPrefix = String.format(java.util.Locale.US, "%08d", index + 1);
+            Client.RemoteDirEntry match = null;
+            outer: for (Client.RemoteDirEntry e : entries) {
+                if (e.isDirectory()) continue;
+                String name = e.getName();
+                if (name == null) continue;
+                if (!name.toLowerCase(java.util.Locale.US).startsWith(indexPrefix)) continue;
+                // 检查扩展名是否受支持（忽略大小写）
+                for (String ext : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+                    String expect = (indexPrefix + ext).toLowerCase(java.util.Locale.US);
+                    if (name.toLowerCase(java.util.Locale.US).equals(expect)) {
+                        match = e; break outer;
+                    }
+                }
+            }
+            if (match != null) {
+                String rel = normBase.isEmpty() ? match.getName() : (normBase + "\\" + match.getName());
+                Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+                java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+                return new InputStreamPipe() {
+                    private java.io.InputStream mIs;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
+                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
+                };
+            } else {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB directory scan: no match for index=" + (index + 1) + ", base=" + normBase + ", gid=" + mGid);
+                }
+            }
+        } catch (Throwable e) {
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB directory scan failed for gid=" + mGid + ": " + e);
+            }
+        }
+        return null;
     }
 }

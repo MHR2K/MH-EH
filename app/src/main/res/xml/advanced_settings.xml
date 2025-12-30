@@ -131,4 +131,18 @@
         android:title="@string/settings_advanced_wifi_client"
         app:allowDividerAbove="true" />
 
+    <com.hippo.preference.ActivityPreference
+        android:key="smb_add_server"
+        android:title="@string/settings_advanced_smb_add_server_title"
+        android:summary="@string/settings_advanced_smb_add_server_summary"
+        app:allowDividerAbove="true"
+        app:activity="com.hippo.ehviewer.smb.ui.SmbAddServerActivity" />
+
+    <com.hippo.preference.ActivityPreference
+        android:key="smb_tools"
+        android:title="@string/settings_advanced_smb_tools_title"
+        android:summary="@string/settings_advanced_smb_tools_summary"
+        app:allowDividerAbove="true"
+        app:activity="com.hippo.ehviewer.smb.ui.SmbToolsActivity" />
+
 </PreferenceScreen>

@@ -21,7 +21,7 @@ import android.content.Context;
 import android.os.AsyncTask;
 import android.util.Log;
 
-import com.hippo.ehviewer.Analytics;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.client.data.userTag.TagPushParam;
 import com.hippo.ehviewer.client.data.userTag.UserTag;
@@ -215,6 +215,21 @@ public class EhClient {
             }
         }
 
+        protected boolean checkFirebaseAvailable() {
+            boolean enabled;
+            try {
+                try {
+                    // Query collection state only when Crashlytics is present
+                    enabled = com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled();
+                } catch (Throwable t) {
+                    enabled = false;
+                }
+            } catch (IllegalStateException e) {
+                enabled = false;
+            }
+            return enabled;
+        }
+
         @SuppressWarnings("unchecked")
         @Override
         protected void onPostExecute(Object result) {
@@ -223,7 +238,11 @@ public class EhClient {
                 if (!(result instanceof CancelledException)) {
                     if (result instanceof Throwable) {
                         mCallback.onFailure((Exception) result);
-                        Analytics.recordException((Throwable) result);
+                        if (checkFirebaseAvailable()) {
+                            CrashlyticsUtils.record((Throwable) result);
+                        } else {
+                            Log.e(TAG, result.toString());
+                        }
                     } else {
                         mCallback.onSuccess(result);
                     }

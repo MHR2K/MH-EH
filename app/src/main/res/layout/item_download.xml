@@ -142,6 +142,17 @@
                 android:paddingRight="16dp"
                 android:textColor="?attr/textColorThemeAccent"/>
 
+            <!-- 存储位置指示：位于状态左侧，与状态基线对齐，不进行任何网络/SMB探测，仅本地判断 -->
+            <TextView
+                android:id="@+id/storage_indicator"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_toLeftOf="@id/state"
+                android:layout_alignBaseline="@id/state"
+                android:layout_marginRight="8dp"
+                android:textSize="12sp"
+                android:visibility="gone"/>
+
             <ProgressBar
                 android:id="@+id/progress_bar"
                 style="?android:attr/progressBarStyleHorizontal"

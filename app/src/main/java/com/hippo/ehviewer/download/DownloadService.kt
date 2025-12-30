@@ -101,6 +101,8 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             if (intent != null) {
+                // Ensure Intent extras can unmarshal app Parcelables
+                intent.setExtrasClassLoader(applicationContext.classLoader)
                 // Handle the case where the intent is not null
                 handleIntent(intent)
             }

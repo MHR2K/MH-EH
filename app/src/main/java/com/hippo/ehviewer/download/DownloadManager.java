@@ -47,6 +47,7 @@ import com.hippo.lib.yorozuya.SimpleHandler;
 import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
 import com.hippo.lib.yorozuya.collect.SparseJLArray;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -346,7 +347,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 return 0;
             }
         } catch (NullPointerException e) {
-            Analytics.recordException(e);
+            CrashlyticsUtils.record(e);
             return 0;
         }
     }

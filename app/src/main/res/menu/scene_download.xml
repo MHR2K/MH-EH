@@ -110,6 +110,26 @@
                 </menu>
             </item>
 
+            <item
+                android:id="@+id/filter_by_storage"
+                android:title="@string/download_filter_by_storage"
+                app:showAsAction="ifRoom">
+                <menu>
+                    <item
+                        android:id="@+id/storage_all"
+                        android:title="@string/storage_all"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/storage_smb_only"
+                        android:title="@string/storage_smb_only"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/storage_local_only"
+                        android:title="@string/storage_local_only"
+                        app:showAsAction="ifRoom"/>
+                </menu>
+            </item>
+
             <item android:id="@+id/sort"
                 android:title="@string/sort_download_list"
                 app:showAsAction="always">

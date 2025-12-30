@@ -188,6 +188,23 @@ dependencies {
     // https://mvnrepository.com/artifact/androidx.webkit/webkit
     runtimeOnly group: 'androidx.webkit', name: 'webkit', version: '1.13.0'
 
+    // SMB minimal stack (Plan A)
+    // SMBJ 0.12.0 存在匿名认证问题，锁定 0.11.5
+    implementation('com.hierynomus:smbj:0.11.5') {
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk15on'
+    }
+    // NetBIOS 名称解析（局域网主机名解析）
+    implementation 'eu.agno3.jcifs:jcifs-ng:2.1.10'
+    // 列出共享等需要 DCERPC（可选，但对“浏览共享”有帮助）
+    implementation('com.rapid7.client:dcerpc:0.12.13') {
+        exclude group: 'com.google.guava', module: 'guava'
+        exclude group: 'com.hierynomus', module: 'smbj'
+        exclude group: 'org.bouncycastle', module: 'bcprov-jdk18on'
+    }
+    implementation 'org.bouncycastle:bcprov-jdk15to18:1.81'
+    implementation 'org.bouncycastle:bcpkix-jdk15to18:1.81'
+    implementation 'com.google.guava:guava:33.4.8-android'
+
 }
 
 configurations.configureEach {
@@ -199,4 +216,10 @@ configurations.configureEach {
 
         exclude group: 'com.github.seven332', module: 'okhttp'
     }
+}
+
+// 统一排除不兼容的 BouncyCastle JDK18 变体，使用 jdk15to18 变体
+configurations.all {
+    exclude group: 'org.bouncycastle', module: 'bcprov-jdk18on'
+    exclude group: 'org.bouncycastle', module: 'bcpkix-jdk18on'
 }
