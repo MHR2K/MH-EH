@@ -145,8 +145,8 @@ import java.util.Objects;
 
 public class DownloadsScene extends ToolbarScene
         implements DownloadManager.DownloadInfoListener, DownloadSearchCallback,
-        MyEasyRecyclerView.OnItemClickListener,
-        MyEasyRecyclerView.OnItemLongClickListener,
+        EasyRecyclerView.OnItemClickListener,
+        EasyRecyclerView.OnItemLongClickListener,
         FabLayout.OnClickFabListener, FabLayout.OnExpandListener, FastScroller.OnDragHandlerListener, SearchBar.Helper, SearchBarMover.Helper, SearchBar.OnStateChangeListener, DownloadAdapter.DownloadAdapterCallback {
 
     private static final String TAG = DownloadsScene.class.getSimpleName();
@@ -2564,7 +2564,7 @@ public class DownloadsScene extends ToolbarScene
 //        }
 //    }
 
-    private class DownloadChoiceListener implements MyEasyRecyclerView.CustomChoiceListener {
+    private class DownloadChoiceListener implements EasyRecyclerView.CustomChoiceListener {
 
         @Override
         public void onIntoCustomChoice(EasyRecyclerView view) {
