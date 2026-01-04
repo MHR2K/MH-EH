@@ -53,19 +53,26 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
 
     @Override
     public void onPageSelectedChanged(int currentPagePos, int lastPagePos, int totalPageCount, int total) {
-        /*
-        if (indexPage == currentPagePos) {
-            needInitPage = false;
-        }
+        // 如果是初始化页面，重置标志并跳过处理
         if (needInitPage) {
-            // 注意：这里需要外部传入 PaginationIndicator 实例
-            // 或者通过回调方法处理
+            needInitPage = false;
+            // 如果初始化时目标页面就是当前页面，无需任何处理
+            if (indexPage == currentPagePos) {
+                return;
+            }
+            // 否则，更新页面索引但不触发通知，避免不必要的刷新
+            indexPage = currentPagePos;
+            if (mPageChangeCallback != null) {
+                mPageChangeCallback.onPageChanged(indexPage);
+            }
             return;
         }
-        */
+        
+        // 正常页面切换：如果页面没有变化，直接返回
         if (indexPage == currentPagePos) {
             return;
         }
+        
         indexPage = currentPagePos;
         
         // 通过回调更新主类的状态
