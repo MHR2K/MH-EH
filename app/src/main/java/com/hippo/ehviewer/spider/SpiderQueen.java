@@ -52,6 +52,7 @@ import com.hippo.ehviewer.gallery.GalleryProvider2;
 import com.hippo.lib.glgallery.GalleryPageView;
 import com.hippo.lib.glgallery.GalleryProvider;
 import com.hippo.lib.image.Image;
+//import com.hippo.lib.image.Image1;
 import com.hippo.streampipe.InputStreamPipe;
 import com.hippo.streampipe.OutputStreamPipe;
 import com.hippo.unifile.UniFile;
@@ -1796,7 +1797,7 @@ public final class SpiderQueen implements Runnable {
                 if (is != null) {
                     try {
                         // Support both FileInputStream and other InputStream types (e.g., SMB, network)
-                        image = Image.decode(is, false);
+                        image = Image.decode((FileInputStream) is, false);
                     } catch (OutOfMemoryError e){
                         Analytics.recordException(e);
                     } finally {

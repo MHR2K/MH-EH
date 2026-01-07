@@ -78,6 +78,7 @@ import com.hippo.easyrecyclerview.EasyRecyclerView;
 import com.hippo.easyrecyclerview.FastScroller;
 import com.hippo.easyrecyclerview.HandlerDrawable;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
+import com.hippo.ehviewer.Analytics;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
@@ -359,7 +360,7 @@ public class DownloadsScene extends ToolbarScene
             mAdapter.notifyDataSetChanged();
         }
         mBackList = mList;
-        filterByCategory();
+//        filterByCategory();
         updateTitle();
         updatePaginationIndicator();
         Settings.putRecentDownloadLabel(mLabel);
@@ -1214,6 +1215,7 @@ public class DownloadsScene extends ToolbarScene
                                 Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     } catch (Exception ex) {
                         Toast.makeText(getEHContext(), R.string.archive_permission_lost, Toast.LENGTH_LONG).show();
+                        Analytics.recordException(ex);
                         return true;
                     }
                 } catch (Exception e) {
