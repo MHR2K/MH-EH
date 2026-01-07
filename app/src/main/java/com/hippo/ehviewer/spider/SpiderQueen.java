@@ -1795,7 +1795,8 @@ public final class SpiderQueen implements Runnable {
 
                 if (is != null) {
                     try {
-                        image = Image.decode((FileInputStream) is, false);
+                        // Support both FileInputStream and other InputStream types (e.g., SMB, network)
+                        image = Image.decode(is, false);
                     } catch (OutOfMemoryError e){
                         Analytics.recordException(e);
                     } finally {

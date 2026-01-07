@@ -500,11 +500,293 @@ public final class SpiderDen {
         }
     }
 
+    /**
+     * 自动检测 SMB 上的同名漫画目录，并直接返回 InputStreamPipe
+     * 流程：
+     * 1. 获取本地下载目录名（如：12345-gallery-title）
+     * 2. 获取第一个已保存 SMB 服务器
+     * 3. 在 SMB 服务器的指定路径中查找同名目录
+     * 4. 找到则直接打开该目录下的图片文件
+     */
+    @Nullable
+    private InputStreamPipe tryAutoDetectAndOpenSmbInputStreamPipe(int index) {
+        try {
+            // 获取本地下载目录的实际名称
+            String localDirName = null;
+            if (mDownloadDir != null) {
+                localDirName = mDownloadDir.getName();
+            }
+            if (localDirName == null) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Auto-detect SMB: cannot get local dir name for gid=" + mGid);
+                }
+                return null;
+            }
+
+            // 获取已保存的 SMB 服务器列表
+            java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
+                com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+            if (servers == null || servers.isEmpty()) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Auto-detect SMB: no SMB servers configured for gid=" + mGid);
+                }
+                return null;
+            }
+
+            // 使用第一个（通常也是唯一一个）SMB 服务器
+            com.hippo.ehviewer.smb.SmbServer server = servers.get(0);
+            com.hippo.ehviewer.smb.Authority authority = server.getAuthority();
+            String relativePath = server.getRelativePath();
+            if (relativePath == null) relativePath = "";
+
+            // 从 relativePath 解析出 share 和 basePathInShare
+            // relativePath 格式：share 或 share\\subdir
+            String share;
+            String basePathInShare;
+            
+            String normalized = relativePath.trim()
+                .replace('/', '\\')
+                .replaceAll("^\\\\+|\\\\+$", "");
+            
+            int firstSep = normalized.indexOf('\\');
+            if (firstSep == -1) {
+                share = normalized.isEmpty() ? "" : normalized;
+                basePathInShare = "";
+            } else {
+                share = normalized.substring(0, firstSep);
+                basePathInShare = normalized.substring(firstSep + 1);
+            }
+
+            // 在 SMB 上列出目录，查找同名目录
+            Client.Target dirTarget = new Client.Target(authority, share, basePathInShare);
+            try {
+                java.util.List<Client.RemoteDirEntry> entries = Client.INSTANCE.listDirectory(dirTarget);
+                for (Client.RemoteDirEntry entry : entries) {
+                    if (entry.isDirectory() && localDirName.equalsIgnoreCase(entry.getName())) {
+                        // 找到同名目录！使用此目录路径
+                        String detectedPath = basePathInShare.isEmpty() 
+                            ? localDirName 
+                            : (basePathInShare + "\\" + localDirName);
+                        
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", 
+                                "Auto-detect SMB: found matching dir for gid=" + mGid + 
+                                ", dirName=" + localDirName + 
+                                ", smbShare=" + share +
+                                ", smbPath=" + detectedPath);
+                        }
+                        
+                        // 直接打开该目录下的图片文件（复用后续逻辑）
+                        return openSmbFileFromPath(authority, share, detectedPath, index);
+                    }
+                }
+                
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", 
+                        "Auto-detect SMB: no matching dir found for gid=" + mGid + 
+                        ", localDir=" + localDirName + 
+                        ", smbShare=" + share +
+                        ", smbBase=" + basePathInShare);
+                }
+            } catch (IOException e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", 
+                        "Auto-detect SMB: error listing SMB directory for gid=" + mGid + 
+                        ", err=" + e.getMessage());
+                }
+            }
+            return null;
+        } catch (Throwable e) {
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "Auto-detect SMB: unexpected error for gid=" + mGid + ": " + e);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * 从 SMB 路径打开图片文件
+     * （内部方法，与显式映射的逻辑一致，支持直接文件和CBZ档案）
+     */
+    @Nullable
+    private InputStreamPipe openSmbFileFromPath(
+            com.hippo.ehviewer.smb.Authority authority,
+            String share,
+            String basePath,
+            int index) {
+        // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
+        String normBase = basePath.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+        final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+
+        // Step 1: 尝试 <gid>.cbz （若 base 是目录）
+        if (!normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+            String gidCbz = mGid + ".cbz";
+            String relGidCbz = normBase.isEmpty() ? gidCbz : (normBase + "\\" + gidCbz);
+            Client.Target gidCbzTarget = new Client.Target(authority, share, relGidCbz);
+            try {
+                java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz success: gid=" + mGid + ", path=" + relGidCbz);
+                }
+                // 包装为 Zip 流读取所需条目
+                final String relCbzFinal = relGidCbz;
+                return new InputStreamPipe() {
+                    private java.io.InputStream mBase;
+                    private ZipInputStream mZis;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() throws IOException {
+                        mBase = Client.INSTANCE.openInputStream(new Client.Target(authority, share, relCbzFinal));
+                        mZis = new ZipInputStream(mBase);
+                        ZipEntry entry;
+                        while ((entry = mZis.getNextEntry()) != null) {
+                            if (entry.isDirectory()) continue;
+                            String en = entry.getName();
+                            if (en == null) continue;
+                            for (String ext : exts) {
+                                String expect = generateImageFilename(index, ext);
+                                if (expect.equalsIgnoreCase(en)) {
+                                    if (BuildConfig.DEBUG) {
+                                        android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                    }
+                                    return mZis;
+                                }
+                            }
+                        }
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz miss entry: gid=" + mGid + ", index=" + (index+1) + ", path=" + relCbzFinal);
+                        }
+                        close();
+                        throw new IOException("Entry not found in remote gid.cbz for index=" + index);
+                    }
+                    @Override public void close() {
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                        mZis = null; mBase = null;
+                    }
+                };
+            } catch (Throwable ignore) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz not found: gid=" + mGid + ", path=" + relGidCbz);
+                }
+            }
+        }
+
+        // Step 2: 若 base 直接指向 .cbz 文件
+        if (!normBase.isEmpty() && normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+            final Client.Target cbzTarget = new Client.Target(authority, share, normBase);
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB auto-detect: direct CBZ mapping detected: gid=" + mGid + ", cbzPath=" + normBase);
+            }
+            return new InputStreamPipe() {
+                private java.io.InputStream mBase;
+                private ZipInputStream mZis;
+                @Override public void obtain() { /* no-op */ }
+                @Override public void release() { /* no-op */ }
+                @Override public java.io.InputStream open() throws IOException {
+                    mBase = Client.INSTANCE.openInputStream(cbzTarget);
+                    mZis = new ZipInputStream(mBase);
+                    ZipEntry entry;
+                    while ((entry = mZis.getNextEntry()) != null) {
+                        if (entry.isDirectory()) continue;
+                        String en = entry.getName();
+                        if (en == null) continue;
+                        for (String ext : exts) {
+                            String expect = generateImageFilename(index, ext);
+                            if (expect.equalsIgnoreCase(en)) {
+                                if (BuildConfig.DEBUG) {
+                                    android.util.Log.d("SpiderDen", "SMB auto-detect direct CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                }
+                                return mZis;
+                            }
+                        }
+                    }
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB auto-detect direct CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbzPath=" + normBase);
+                    }
+                    close();
+                    throw new IOException("Entry not found in remote CBZ (direct) for index=" + index);
+                }
+                @Override public void close() {
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                    mZis = null; mBase = null;
+                }
+            };
+        }
+
+        // Step 3: 尝试所有支持的扩展名（base 为目录场景）
+        for (String ext : exts) {
+            String filename = generateImageFilename(index, ext);
+            String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
+            Client.Target target = new Client.Target(authority, share, rel);
+            try {
+                java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+                return new InputStreamPipe() {
+                    private java.io.InputStream mIs;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
+                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
+                };
+            } catch (Throwable ignore) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB auto-detect open failed: share=" + share + ", rel=" + rel + ", err=" + ignore);
+                }
+            }
+        }
+
+        // Step 4: 兜底：列目录查找（处理远端大小写差异或不一致扩展名）
+        try {
+            Client.Target dirTarget = new Client.Target(authority, share, normBase);
+            java.util.List<Client.RemoteDirEntry> entries = Client.INSTANCE.listDirectory(dirTarget);
+            String indexPrefix = String.format(java.util.Locale.US, "%08d", index + 1);
+            Client.RemoteDirEntry match = null;
+            outer: for (Client.RemoteDirEntry e : entries) {
+                if (e.isDirectory()) continue;
+                String name = e.getName();
+                if (name == null) continue;
+                if (!name.toLowerCase(java.util.Locale.US).startsWith(indexPrefix)) continue;
+                for (String ext : exts) {
+                    String expect = (indexPrefix + ext).toLowerCase(java.util.Locale.US);
+                    if (name.toLowerCase(java.util.Locale.US).equals(expect)) {
+                        match = e;
+                        break outer;
+                    }
+                }
+            }
+            if (match != null) {
+                String matchRel = normBase.isEmpty() ? match.getName() : (normBase + "\\" + match.getName());
+                Client.Target matchTarget = new Client.Target(authority, share, matchRel);
+                java.io.InputStream is = Client.INSTANCE.openInputStream(matchTarget);
+                return new InputStreamPipe() {
+                    private java.io.InputStream mIs;
+                    @Override public void obtain() { /* no-op */ }
+                    @Override public void release() { /* no-op */ }
+                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
+                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
+                };
+            }
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB auto-detect directory scan: no match for index=" + (index+1) + ", base=" + normBase);
+            }
+        } catch (Throwable e) {
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("SpiderDen", "SMB auto-detect directory scan failed: " + e);
+            }
+        }
+        return null;
+    }
+
+
     @Nullable
     private InputStreamPipe openSmbInputStreamPipe(int index) {
         // 查找 gid 对应的 SMB 映射
         SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mGid);
-        if (mapping == null) return null;
+        // 如果没有显式映射，尝试自动检测：在唯一的 SMB 服务器上查找同名目录
+        if (mapping == null) {
+            return tryAutoDetectAndOpenSmbInputStreamPipe(index);
+        }
         // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
         String base = mapping.getBasePathInShare();
         if (base == null) base = "";
