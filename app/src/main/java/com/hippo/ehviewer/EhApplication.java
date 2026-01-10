@@ -100,8 +100,7 @@ import okhttp3.ConnectionSpec;
 import okhttp3.OkHttpClient;
 import okhttp3.Response;
 
-import com.hippo.ehviewer.Hosts;
-import com.hippo.scene.SceneApplication;
+import com.hippo.ehviewer.backup.BackupScheduler;
 
 public class EhApplication extends RecordingApplication {
 
@@ -145,6 +144,7 @@ public class EhApplication extends RecordingApplication {
     private final List<String> torrentList = new ArrayList<>();
 
     private boolean initialized = false;
+    private boolean deferredInitialized = false;
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -177,6 +177,7 @@ public class EhApplication extends RecordingApplication {
 //            TooLargeTool.startLogging(this);
 //        }
 
+        // ===== CRITICAL STARTUP: Must run synchronously =====
         GetText.initialize(this);
         StatusCodeException.initialize(this);
         Settings.initialize(this);
@@ -187,29 +188,12 @@ public class EhApplication extends RecordingApplication {
         try {
             com.hippo.ehviewer.util.CrashlyticsUtils.initIfPossible(this);
         } catch (Throwable ignored) {}
-    SpiderDen.initialize(this);
-    // SMB 映射存储初始化
-    SmbMappingStore.INSTANCE.init(this);
-        
-        // 初始化中文简繁体转换辅助类
-        ChineseConverterHelper.init();
-        EhDB.initialize(this);
-        EhEngine.initialize();
-        BitmapUtils.initialize(this);
-//        Image1.initialize(this);
-        Image.initialize(this);
-        Native.initialize();
-        // 实际作用不确定，但是与64位应用有冲突
-//        A7Zip.loadLibrary(A7ZipExtractLite.LIBRARY, libname -> ReLinker.loadLibrary(EhApplication.this, libname));
-        // 64位适配
-        A7Zip.initialize(this);
-        if (EhDB.needMerge()) {
-            EhDB.mergeOldDB(this);
-        }
 
-        if (Settings.getEnableAnalytics()) {
-            Analytics.start(this);
-        }
+        // 数据库基础初始化（必须同步，因为 DownloadManager 等立即需要）
+        EhDB.initialize(this);
+
+        // ===== DEFERRED INITIALIZATION: Run asynchronously =====
+        initializeDeferredServicesAsync();
 
         // Do io tasks in new thread
         new AsyncTask<Void, Void, Void>() {
@@ -261,86 +245,78 @@ public class EhApplication extends RecordingApplication {
         }
 
         initialized = true;
-        
-        // 检查并执行自动备份
-        checkAndPerformAutoBackup();
+    }
 
-        // 初始化 SMB 存储与认证
-        try {
-            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.init(this);
-            com.hippo.ehviewer.smb.Client.INSTANCE.setAuthenticator(
-                    com.hippo.ehviewer.smb.SmbServerAuthenticator.INSTANCE
-            );
-        } catch (Throwable t) {
-            // 避免初始化失败影响主流程
-            t.printStackTrace();
-        }
-    }
-    
-    private void checkAndPerformAutoBackup() {
-        if (!Settings.getAutoBackupEnabled()) {
-            return;
-        }
-        
-        long lastBackupTime = Settings.getLastBackupTime();
-        long currentTime = System.currentTimeMillis();
-        
-        // 检查是否超过24小时未备份
-        if (currentTime - lastBackupTime > 24 * 60 * 60 * 1000) {
-            performAutoBackup();
-        }
-    }
-    
-    private void performAutoBackup() {
+    /**
+     * 后台初始化重型服务，不阻塞首帧
+     */
+    private void initializeDeferredServicesAsync() {
         executorService.execute(() -> {
             try {
-                File backupDir = AppConfig.getDirInExternalAppDir("backup");
-                if (backupDir == null) {
-                    Log.e(TAG, "Backup directory creation failed");
-                    return;
+                // Initialize SpiderDen
+                SpiderDen.initialize(EhApplication.this);
+
+                // Initialize Chinese converter
+                ChineseConverterHelper.init();
+
+                // Check and merge old database asynchronously (数据库已在主线程初始化)
+                if (EhDB.needMerge()) {
+                    EhDB.mergeOldDBAsync(EhApplication.this);
                 }
-                
-                // 确保备份目录存在
-                if (!backupDir.exists() && !backupDir.mkdirs()) {
-                    Log.e(TAG, "Failed to create backup directory: " + backupDir.getAbsolutePath());
-                    return;
+
+                // Initialize image and drawing libraries
+                BitmapUtils.initialize(EhApplication.this);
+                Image.initialize(EhApplication.this);
+
+                // Initialize native code
+                Native.initialize();
+
+                // Initialize 7z compression
+                A7Zip.initialize(EhApplication.this);
+
+                // Initialize EhEngine
+                EhEngine.initialize();
+
+                // Initialize SMB mapping store
+                SmbMappingStore.INSTANCE.init(EhApplication.this);
+                com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.init(EhApplication.this);
+                com.hippo.ehviewer.smb.Client.INSTANCE.setAuthenticator(
+                        com.hippo.ehviewer.smb.SmbServerAuthenticator.INSTANCE
+                );
+
+                // Initialize analytics
+                if (Settings.getEnableAnalytics()) {
+                    Analytics.start(EhApplication.this);
                 }
-                
-                String filename = "backup_" + ReadableTime.getFilenamableTime(System.currentTimeMillis()) + ".db";
-                File backupFile = new File(backupDir, filename);
-                
-                if (EhDB.exportDB(this, backupFile)) {
-                    Settings.putLastBackupTime(System.currentTimeMillis());
-                    // 清理旧备份文件
-                    cleanupOldBackups(backupDir);
-                    Log.i(TAG, "Auto backup successful: " + backupFile.getAbsolutePath());
-                } else {
-                    Log.e(TAG, "Auto backup failed: exportDB returned false");
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Auto backup failed with exception", e);
+
+                // Schedule auto backup using WorkManager (不在启动时执行)
+                BackupScheduler.scheduleAutoBackup(EhApplication.this);
+
+                deferredInitialized = true;
+                Log.i(TAG, "Deferred initialization completed");
+            } catch (Throwable t) {
+                ExceptionUtils.throwIfFatal(t);
+                Log.e(TAG, "Error during deferred initialization", t);
             }
         });
     }
-    
-    private void cleanupOldBackups(File backupDir) {
-        try {
-            File[] backupFiles = backupDir.listFiles((dir, name) -> name.startsWith("backup_") && name.endsWith(".db"));
-            if (backupFiles == null || backupFiles.length <= Settings.getBackupRetentionDays()) {
-                return;
-            }
-            
-            // 按修改时间排序，最新的在前面
-            Arrays.sort(backupFiles, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
-            
-            // 删除超过保留天数的旧备份
-            for (int i = Settings.getBackupRetentionDays(); i < backupFiles.length; i++) {
-                if (!backupFiles[i].delete()) {
-                    Log.w(TAG, "Failed to delete old backup: " + backupFiles[i].getAbsolutePath());
+
+    /**
+     * 等待延迟初始化完成（如果需要）
+     */
+    public void ensureDeferredInitialized() {
+        if (deferredInitialized) {
+            return;
+        }
+        // 注意：这会阻塞，仅在必要时调用（如首次访问 EhDB、下载等功能）
+        synchronized (this) {
+            while (!deferredInitialized) {
+                try {
+                    this.wait(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Error cleaning up old backups", e);
         }
     }
 

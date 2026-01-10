@@ -86,6 +86,7 @@ public class EhDB {
 
     private static boolean sHasOldDB;
     private static boolean sNewDB;
+    private static boolean sMergeInProgress = false;
 
     private static class DBOpenHelper extends DaoMaster.OpenHelper {
 
@@ -214,7 +215,28 @@ public class EhDB {
     }
 
     public static boolean needMerge() {
-        return sNewDB && sHasOldDB;
+        return sNewDB && sHasOldDB && !sMergeInProgress;
+    }
+
+    public static void mergeOldDBAsync(Context context) {
+        // 在后台线程执行迁移，不阻塞主线程
+        // 通常在 Application.onCreate() 中异步调用
+        if (!needMerge()) {
+            return;
+        }
+
+        sMergeInProgress = true;
+        new Thread(() -> {
+            try {
+                mergeOldDB(context);
+                Log.i(TAG, "Old database migration completed successfully");
+            } catch (Throwable e) {
+                Log.e(TAG, "Error merging old database", e);
+                ExceptionUtils.throwIfFatal(e);
+            } finally {
+                sMergeInProgress = false;
+            }
+        }, "EhDB-Migrate").start();
     }
 
     public static void mergeOldDB(Context context) {

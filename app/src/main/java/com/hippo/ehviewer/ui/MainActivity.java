@@ -433,14 +433,31 @@ public final class MainActivity extends StageActivity
 
         if (savedInstanceState == null) {
             onInit();
-            checkDownloadLocation();
-            if (Settings.getCellularNetworkWarning()) {
-                checkCellularNetwork();
-            }
+            // 延迟非关键初始化到首帧之后
+            postDelayedNonCriticalInitialization();
         } else {
             onRestore(savedInstanceState);
         }
-        EhTagDatabase.update(this);
+    }
+
+    /**
+     * 延迟执行非关键初始化任务到首帧之后
+     * 包括：下载位置检查、网络警告、标签库更新
+     */
+    private void postDelayedNonCriticalInitialization() {
+        SimpleHandler.getInstance().postDelayed(() -> {
+            if (isFinishing()) {
+                return;
+            }
+            // 检查下载位置
+            checkDownloadLocation();
+            // 检查蜂窝网络警告
+            if (Settings.getCellularNetworkWarning()) {
+                checkCellularNetwork();
+            }
+            // 更新标签库（后台操作，不阻塞）
+            EhTagDatabase.update(this);
+        }, 300); // 延迟300ms，确保首帧已渲染
     }
 
     @Override
