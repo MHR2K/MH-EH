@@ -41,9 +41,32 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
     public Image decode(@NonNull InputStreamPipe isPipe,boolean hardware) {
         try {
             isPipe.obtain();
-            FileInputStream is = (FileInputStream) isPipe.open();
-            return Image.decode(is,hardware);
-//            return ImageBitmap.decode(is,hardware);
+            java.io.InputStream rawIs = isPipe.open();
+            
+            // 如果是 FileInputStream，直接使用；否则复制到临时文件
+            if (rawIs instanceof FileInputStream) {
+                return Image.decode((FileInputStream) rawIs, hardware);
+            } else {
+                // 对于 SMB 和其他非文件流，复制到临时文件
+                java.io.File tempFile = java.io.File.createTempFile("img_", null, 
+                    com.hippo.ehviewer.EhApplication.getInstance().getCacheDir());
+                try {
+                    try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
+                        byte[] buffer = new byte[8192];
+                        int read;
+                        while ((read = rawIs.read(buffer)) != -1) {
+                            fos.write(buffer, 0, read);
+                        }
+                    }
+                    try (FileInputStream fis = new FileInputStream(tempFile)) {
+                        return Image.decode(fis, hardware);
+                    }
+                } finally {
+                    if (!tempFile.delete()) {
+                        tempFile.deleteOnExit();
+                    }
+                }
+            }
         } catch (OutOfMemoryError e) {
             Analytics.recordException(e);
             return null;

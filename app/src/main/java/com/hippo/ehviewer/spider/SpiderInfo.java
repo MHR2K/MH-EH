@@ -29,17 +29,20 @@ import androidx.annotation.Nullable;
 
 import com.hippo.ehviewer.Analytics;
 import com.hippo.ehviewer.EhApplication;
+import com.hippo.ehviewer.BuildConfig;
 import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.ParseException;
 import com.hippo.ehviewer.client.parser.GalleryPageUrlParser;
+import com.hippo.ehviewer.smb.SmbFileHelper;
 import com.hippo.streampipe.OutputStreamPipe;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.lib.yorozuya.NumberUtils;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -230,31 +233,56 @@ public class SpiderInfo {
     }
 
     public synchronized void writeNewSpiderInfoToLocal(@NonNull SpiderDen spiderDen, Context context) {
-        UniFile downloadDir = spiderDen.getDownloadDir();
-        if (downloadDir != null) {
-            UniFile file = downloadDir.createFile(SPIDER_INFO_FILENAME);
-            try {
-                write(file.openOutputStream());
-            } catch (Throwable e) {
-                ExceptionUtils.throwIfFatal(e);
-                // Ignore
+        // Step 1: 尝试写入到 SMB
+        GalleryInfo galleryInfo = new GalleryInfo();
+        galleryInfo.gid = gid;
+        galleryInfo.token = token;
+        
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        write(baos);
+        byte[] data = baos.toByteArray();
+
+        if (SmbFileHelper.writeSmbFile(gid, SPIDER_INFO_FILENAME, data, galleryInfo)) {
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "SpiderInfo written to SMB, gid=" + gid);
             }
-            // Read from cache
-            OutputStreamPipe pipe = EhApplication.getSpiderInfoCache(context).getOutputStreamPipe(Long.toString(gid));
-            try {
-                pipe.obtain();
-                write(pipe.open());
-            } catch (IOException e) {
-                // Ignore
-            } finally {
-                pipe.close();
-                pipe.release();
+        } else {
+            // Step 2: 降级到本地文件系统
+            UniFile downloadDir = spiderDen.getDownloadDir();
+            if (downloadDir != null) {
+                UniFile file = downloadDir.createFile(SPIDER_INFO_FILENAME);
+                try {
+                    write(file.openOutputStream());
+                } catch (Throwable e) {
+                    ExceptionUtils.throwIfFatal(e);
+                    // Ignore
+                }
             }
+        }
+
+        // Step 3: 写入到缓存
+        OutputStreamPipe pipe = EhApplication.getSpiderInfoCache(context).getOutputStreamPipe(Long.toString(gid));
+        try {
+            pipe.obtain();
+            write(pipe.open());
+        } catch (IOException e) {
+            // Ignore
+        } finally {
+            pipe.close();
+            pipe.release();
         }
     }
 
     public static SpiderInfo getSpiderInfo(GalleryInfo info) {
         SpiderInfo spiderInfo;
+
+        // Step 1: 尝试从 SMB 读取
+        spiderInfo = readFromSmb(info);
+        if (spiderInfo != null) {
+            return spiderInfo;
+        }
+
+        // Step 2: 降级到本地文件系统
         UniFile mDownloadDir = getGalleryDownloadDir(info);
         if (mDownloadDir != null && mDownloadDir.isDirectory()) {
             UniFile file = mDownloadDir.findFile(SPIDER_INFO_FILENAME);
@@ -262,6 +290,41 @@ public class SpiderInfo {
             if (spiderInfo != null && spiderInfo.gid == info.gid &&
                     spiderInfo.token.equals(info.token)) {
                 return spiderInfo;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 尝试从 SMB 读取 SpiderInfo
+     */
+    @Nullable
+    private static SpiderInfo readFromSmb(@NonNull GalleryInfo info) {
+        try {
+            com.hippo.streampipe.InputStreamPipe pipe = SmbFileHelper.getSmbFileInputStream(
+                    info.gid,
+                    SPIDER_INFO_FILENAME,
+                    info
+            );
+            if (pipe != null) {
+                pipe.obtain();
+                InputStream is = null;
+                try {
+                    is = pipe.open();
+                    SpiderInfo spiderInfo = read(is);
+                    if (spiderInfo != null && spiderInfo.gid == info.gid &&
+                            spiderInfo.token.equals(info.token)) {
+                        return spiderInfo;
+                    }
+                } finally {
+                    pipe.close();
+                    pipe.release();
+                }
+            }
+        } catch (Throwable e) {
+            ExceptionUtils.throwIfFatal(e);
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "Failed to read SpiderInfo from SMB", e);
             }
         }
         return null;
