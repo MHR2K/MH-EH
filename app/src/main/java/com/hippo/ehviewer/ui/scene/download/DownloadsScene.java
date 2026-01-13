@@ -135,14 +135,15 @@ import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.Objects;
+import java.util.Set;
 
 public class DownloadsScene extends ToolbarScene
         implements DownloadManager.DownloadInfoListener, DownloadSearchCallback,
@@ -178,6 +179,10 @@ public class DownloadsScene extends ToolbarScene
     private List<DownloadInfo> mList;
     @Nullable
     private List<DownloadInfo> mBackList;
+    // 记录当前应用的过滤ID（状态/分类/排序等），用于编辑后重新应用
+    private int mCurrentFilterId = -1;
+    // 记录过滤/搜索前的锚点 gid，用于恢复滚动位置
+    private long mRestoreScrollGid = -1;
 
     /*---------------
      List pagination
@@ -320,23 +325,21 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public void onDestroy() {
         super.onDestroy();
-        mList = null;
-
-        DownloadManager manager = mDownloadManager;
-        if (null == manager) {
-            Context context = getEHContext();
-            if (null != context) {
-                manager = EhApplication.getDownloadManager(context);
-            }
-        } else {
+        if (mDownloadManager != null) {
+            mDownloadManager.removeDownloadInfoListener(this);
             mDownloadManager = null;
-        }
-
-        if (null != manager) {
-            manager.removeDownloadInfoListener(this);
         } else {
             Log.e(TAG, "Can't removeDownloadInfoListener");
         }
+
+        mList = null;
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        } else {
+            updateAdapter();
+        }
+
+        restoreScrollPositionIfNeeded();
         mActionFabDrawable = null;
     }
 
@@ -1837,7 +1840,26 @@ public class DownloadsScene extends ToolbarScene
         if (mList == null) {
             return;
         }
+        // 先保存过滤ID和滚动位置，因为后面的 updateForLabel 会改变列表
+        final int savedFilterId = mCurrentFilterId;
+        final long restoreScrollGid = captureFirstVisibleGid();
+
         updateForLabel();
+
+        // 如果之前处于某种过滤（例如"已下载"），则重新应用过滤，保持过滤视图
+        if (savedFilterId != -1) {
+            // 直接设置保存的滚动位置，不在 gotoFilterAndSort 中重新捕获
+            mRestoreScrollGid = restoreScrollGid;
+            // 设置标志避免滚动到顶部，保持当前位置
+            doNotScroll = true;
+            if (myPageChangeListener != null) {
+                myPageChangeListener.setDoNotScroll(true);
+            }
+            // 使用 false 参数表示不需要重新捕获滚动位置
+            gotoFilterAndSortWithScroll(savedFilterId, false);
+            return; // 异步刷新，后续由回调处理
+        }
+
         updateView();
 
         int index = mList.indexOf(newInfo);
@@ -2051,6 +2073,17 @@ public class DownloadsScene extends ToolbarScene
     }
 
     private void gotoFilterAndSort(int id) {
+        // 记录当前过滤ID，便于后续（如编辑信息）重新应用
+        mCurrentFilterId = id;
+        gotoFilterAndSortWithScroll(id, true);
+    }
+
+    private void gotoFilterAndSortWithScroll(int id, boolean captureScroll) {
+        // 仅在需要时捕获滚动位置（新过滤操作时）
+        // 当从 onReplace 调用时，滚动位置已保存，不需重新捕获
+        if (captureScroll) {
+            mRestoreScrollGid = captureFirstVisibleGid();
+        }
         mProgressView.setVisibility(View.VISIBLE);
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.GONE);
@@ -2075,6 +2108,50 @@ public class DownloadsScene extends ToolbarScene
         if (mRecyclerView != null) {
             mRecyclerView.setAdapter(mAdapter);
         }
+    }
+
+    /**
+     * 捕获当前第一个可见项的 gid，用于过滤/搜索后恢复滚动位置。
+     */
+    private long captureFirstVisibleGid() {
+        if (mRecyclerView == null || mLayoutManager == null || mList == null) {
+            return -1;
+        }
+        try {
+            int spanCount = mLayoutManager.getSpanCount();
+            int[] firsts = new int[spanCount];
+            mLayoutManager.findFirstVisibleItemPositions(firsts);
+            int min = Arrays.stream(firsts).filter(p -> p >= 0).min().orElse(-1);
+            if (min < 0) return -1;
+            int listPos = positionInList(min);
+            if (listPos >= 0 && listPos < mList.size()) {
+                return mList.get(listPos).gid;
+            }
+        } catch (Throwable ignore) {
+            // 容错处理，无法获取时返回 -1
+        }
+        return -1;
+    }
+
+    /**
+     * 过滤/搜索完成后，根据之前记录的 gid 恢复到相邻位置，避免回到顶部。
+     */
+    private void restoreScrollPositionIfNeeded() {
+        if (mRestoreScrollGid == -1 || mList == null || mRecyclerView == null) {
+            return;
+        }
+        int targetIndex = -1;
+        for (int i = 0; i < mList.size(); i++) {
+            if (mList.get(i).gid == mRestoreScrollGid) {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex >= 0) {
+            int adapterPos = listIndexInPage(targetIndex);
+            mRecyclerView.scrollToPosition(adapterPos);
+        }
+        mRestoreScrollGid = -1;
     }
 
     @Override
@@ -2113,11 +2190,18 @@ public class DownloadsScene extends ToolbarScene
             return;
         }
         mList = list;
-        updateAdapter();
+        // 避免重新设置 Adapter 导致滚动位置回到顶部
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        } else {
+            updateAdapter();
+        }
         mProgressView.setVisibility(View.GONE);
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }
+        // 在 UI 更新后延迟恢复滚动位置，避免被布局计算覆盖
+        mRecyclerView.post(this::restoreScrollPositionIfNeeded);
         searching = false;
         queryUnreadSpiderInfo();
     }
@@ -2129,11 +2213,18 @@ public class DownloadsScene extends ToolbarScene
             return;
         }
         mList = list;
-        updateAdapter();
+        // 避免重新设置 Adapter 导致滚动位置回到顶部
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        } else {
+            updateAdapter();
+        }
         mProgressView.setVisibility(View.GONE);
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }
+        // 在 UI 更新后延迟恢复滚动位置，避免被布局计算覆盖
+        mRecyclerView.post(this::restoreScrollPositionIfNeeded);
         queryUnreadSpiderInfo();
     }
 
@@ -2141,11 +2232,18 @@ public class DownloadsScene extends ToolbarScene
     public void onDownloadSearchFailed(List<DownloadInfo> list) {
         Toast.makeText(getEHContext(), R.string.download_searching_failed, Toast.LENGTH_LONG).show();
         mList = list;
-        updateAdapter();
+        // 避免重新设置 Adapter 导致滚动位置回到顶部
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        } else {
+            updateAdapter();
+        }
         mProgressView.setVisibility(View.GONE);
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }
+        // 在 UI 更新后延迟恢复滚动位置，避免被布局计算覆盖
+        mRecyclerView.post(this::restoreScrollPositionIfNeeded);
         searching = false;
         queryUnreadSpiderInfo();
     }
