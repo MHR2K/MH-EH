@@ -55,6 +55,7 @@ import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.userTag.UserTagList;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.spider.SpiderInfoRepository;
 import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.lib.image.Image;
@@ -131,6 +132,7 @@ public class EhApplication extends RecordingApplication {
     private Conaco<Image> mConaco;
     private LruCache<Long, GalleryDetail> mGalleryDetailCache;
     private SimpleDiskCache mSpiderInfoCache;
+    private com.hippo.ehviewer.spider.SpiderInfoRepository mSpiderInfoRepository;
     private DownloadManager mDownloadManager;
     private Hosts mHosts;
     private FavouriteStatusRouter mFavouriteStatusRouter;
@@ -646,6 +648,15 @@ public class EhApplication extends RecordingApplication {
                     new File(context.getCacheDir(), "spider_info"), 5 * 1024 * 1024); // 5M
         }
         return application.mSpiderInfoCache;
+    }
+
+    @NonNull
+    public static SpiderInfoRepository getSpiderInfoRepository(@NonNull Context context) {
+        EhApplication application = ((EhApplication) context.getApplicationContext());
+        if (application.mSpiderInfoRepository == null) {
+            application.mSpiderInfoRepository = new SpiderInfoRepository(application);
+        }
+        return application.mSpiderInfoRepository;
     }
 
     @NonNull

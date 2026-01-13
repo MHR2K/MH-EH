@@ -35,6 +35,7 @@ import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.ParseException;
 import com.hippo.ehviewer.client.parser.GalleryPageUrlParser;
+import com.hippo.ehviewer.spider.SpiderInfoRepository;
 import com.hippo.ehviewer.smb.SmbFileHelper;
 import com.hippo.streampipe.OutputStreamPipe;
 import com.hippo.unifile.UniFile;
@@ -242,10 +243,13 @@ public class SpiderInfo {
         write(baos);
         byte[] data = baos.toByteArray();
 
+        boolean persisted = false;
         if (SmbFileHelper.writeSmbFile(gid, SPIDER_INFO_FILENAME, data, galleryInfo)) {
+            persisted = true;
             if (BuildConfig.DEBUG) {
                 Log.d(TAG, "SpiderInfo written to SMB, gid=" + gid);
             }
+            EhApplication.getSpiderInfoRepository(context).save(this, "SMB");
         } else {
             // Step 2: 降级到本地文件系统
             UniFile downloadDir = spiderDen.getDownloadDir();
@@ -253,6 +257,9 @@ public class SpiderInfo {
                 UniFile file = downloadDir.createFile(SPIDER_INFO_FILENAME);
                 try {
                     write(file.openOutputStream());
+                    persisted = true;
+                    // 本地文件写入成功，立即保存到数据库
+                    EhApplication.getSpiderInfoRepository(context).save(this, "LOCAL");
                 } catch (Throwable e) {
                     ExceptionUtils.throwIfFatal(e);
                     // Ignore
@@ -260,7 +267,7 @@ public class SpiderInfo {
             }
         }
 
-        // Step 3: 写入到缓存
+        // Step 3: 写入到缓存（备份，非核心）
         OutputStreamPipe pipe = EhApplication.getSpiderInfoCache(context).getOutputStreamPipe(Long.toString(gid));
         try {
             pipe.obtain();
@@ -274,21 +281,21 @@ public class SpiderInfo {
     }
 
     public static SpiderInfo getSpiderInfo(GalleryInfo info) {
-        SpiderInfo spiderInfo;
-
-        // Step 1: 尝试从 SMB 读取
-        spiderInfo = readFromSmb(info);
-        if (spiderInfo != null) {
-            return spiderInfo;
+        // Layered loading via repository (DB -> local -> SMB)
+        SpiderInfoRepository repository = EhApplication.getSpiderInfoRepository(EhApplication.getInstance());
+        SpiderInfo fromRepo = repository.get(info);
+        if (fromRepo != null) {
+            return fromRepo;
         }
 
-        // Step 2: 降级到本地文件系统
+        // 作为兜底，保持旧逻辑
         UniFile mDownloadDir = getGalleryDownloadDir(info);
         if (mDownloadDir != null && mDownloadDir.isDirectory()) {
             UniFile file = mDownloadDir.findFile(SPIDER_INFO_FILENAME);
-            spiderInfo = SpiderInfo.read(file);
+            SpiderInfo spiderInfo = SpiderInfo.read(file);
             if (spiderInfo != null && spiderInfo.gid == info.gid &&
                     spiderInfo.token.equals(info.token)) {
+                repository.save(spiderInfo, "LOCAL");
                 return spiderInfo;
             }
         }

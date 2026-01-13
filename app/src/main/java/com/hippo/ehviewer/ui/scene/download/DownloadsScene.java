@@ -2265,6 +2265,11 @@ public class DownloadsScene extends ToolbarScene
                 if (!isImportedArchive && info != null) {
                     // Only process SpiderInfo for regular downloads, not imported archives
                     mSpiderInfoMap.remove(info.gid);
+                    // 清除Repository的内存缓存，强制重新加载最新进度
+                    Activity activity = getActivity2();
+                    if (activity != null) {
+                        EhApplication.getSpiderInfoRepository(activity).invalidate(info.gid);
+                    }
                     SpiderInfo spiderInfo = getSpiderInfo(info);
                     if (spiderInfo != null) {
                         mSpiderInfoMap.put(info.gid, spiderInfo);

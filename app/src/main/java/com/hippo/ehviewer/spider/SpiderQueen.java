@@ -887,6 +887,13 @@ public final class SpiderQueen implements Runnable {
             pipe.close();
             pipe.release();
         }
+
+        // Persist to repository database to keep list progress in sync
+        try {
+            EhApplication.getSpiderInfoRepository(EhApplication.getInstance()).save(spiderInfo, "LOCAL");
+        } catch (Throwable ignore) {
+            // ignore persistence errors
+        }
     }
 
     private void runInternal() {
