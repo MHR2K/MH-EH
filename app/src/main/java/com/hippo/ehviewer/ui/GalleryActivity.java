@@ -67,14 +67,19 @@ import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.hippo.android.resource.AttrResources;
 import com.hippo.ehviewer.AppConfig;
+import com.hippo.ehviewer.EhApplication;
+import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.data.GalleryInfo;
+import com.hippo.ehviewer.dao.DownloadInfo;
+import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.event.GalleryActivityEvent;
 import com.hippo.ehviewer.gallery.ArchiveGalleryProvider;
 import com.hippo.ehviewer.gallery.DirGalleryProvider;
 import com.hippo.ehviewer.gallery.EhGalleryProvider;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
+import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.widget.GalleryGuideView;
 import com.hippo.ehviewer.widget.GalleryHeader;
 import com.hippo.ehviewer.widget.ReversibleSeekBar;
@@ -1132,7 +1137,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         builder.setTitle(resources.getString(R.string.page_menu_title, page + 1));
 
         final CharSequence[] items;
-        items = new CharSequence[]{getString(R.string.page_menu_refresh), getString(R.string.page_menu_share), getString(R.string.page_menu_save), getString(R.string.page_menu_save_to)};
+        items = new CharSequence[]{getString(R.string.page_menu_refresh), getString(R.string.page_menu_share), getString(R.string.page_menu_save), getString(R.string.page_menu_save_to), getString(R.string.page_menu_mark_last_and_remove_ads)};
         pageDialogListener(builder, items, page);
         builder.show();
     }
@@ -1157,8 +1162,93 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
                 case 3: // Save to
                     saveImageTo(page);
                     break;
+                case 4: // Mark as last page and remove ads
+                    markLastPageAndRemoveAds(page);
+                    break;
             }
         });
+    }
+
+    private void markLastPageAndRemoveAds(final int lastPage) {
+        if (mGalleryProvider == null || mGalleryInfo == null) {
+            return;
+        }
+
+        // Get the total number of pages
+        int totalPages = mGalleryProvider.size();
+        
+        // If this is already the last page, still update uploader but no files will be deleted
+        if (lastPage >= totalPages - 1) {
+            // keep going to update uploader; pages will equal totalPages
+        }
+
+        // Update the gallery info to mark the last page
+        mGalleryInfo.pages = lastPage + 1;
+        
+        // Update the downloader if available
+        DownloadManager downloadManager = EhApplication.getDownloadManager(this);
+        DownloadInfo oldInfo = downloadManager.getDownloadInfo(mGalleryInfo.gid);
+        
+        if (oldInfo != null) {
+            // Create new DownloadInfo with updated values
+            DownloadInfo newInfo = new DownloadInfo();
+            newInfo.gid = oldInfo.gid;
+            newInfo.token = oldInfo.token;
+            newInfo.title = oldInfo.title;
+            newInfo.titleJpn = oldInfo.titleJpn;
+            newInfo.thumb = oldInfo.thumb;
+            newInfo.category = oldInfo.category;
+            newInfo.posted = oldInfo.posted;
+            
+            // Preserve original uploader name and append " - No Ads"
+            String originalUploader = oldInfo.uploader;
+            if (originalUploader == null || originalUploader.isEmpty()) {
+                originalUploader = (mGalleryInfo != null && mGalleryInfo.uploader != null)
+                    ? mGalleryInfo.uploader : "";
+            }
+            newInfo.uploader = originalUploader + " - No Ads";
+            
+            newInfo.rating = oldInfo.rating;
+            newInfo.simpleLanguage = oldInfo.simpleLanguage;
+            newInfo.state = oldInfo.state;
+            newInfo.legacy = oldInfo.legacy;
+            newInfo.time = oldInfo.time;
+            newInfo.label = oldInfo.label;
+            newInfo.speed = oldInfo.speed;
+            newInfo.remaining = oldInfo.remaining;
+            newInfo.finished = oldInfo.finished;
+            newInfo.downloaded = oldInfo.downloaded;
+            newInfo.total = oldInfo.total;
+            
+            // Update pages count - this will trigger SpiderInfo update and file deletion
+            newInfo.pages = lastPage + 1;
+
+            // Use DownloadManager.replaceInfo() which will handle:
+            // 1. Updating database
+            // 2. Updating SpiderInfo file
+            // 3. Deleting excess image files automatically
+            // 4. Setting reading progress to the last page (lastPage as startPage)
+            downloadManager.replaceInfo(newInfo, oldInfo, true, lastPage);
+
+            Toast.makeText(this, "Marked as last page and removed ads. Pages: " + (lastPage + 1),
+                    Toast.LENGTH_SHORT).show();
+            
+            // 设置阅读进度到最后一页
+            if (mGalleryView != null && lastPage >= 0) {
+                mGalleryView.setCurrentPage(lastPage);
+                mCurrentIndex = lastPage;
+            }
+            
+            // Return to download list
+            finish();
+        } else {
+            // If not downloading, just update the gallery info
+            Toast.makeText(this, "Gallery info updated. Pages: " + (lastPage + 1), 
+                    Toast.LENGTH_SHORT).show();
+            
+            // Return to download list
+            finish();
+        }
     }
 
     private class GalleryMenuHelper implements DialogInterface.OnClickListener {

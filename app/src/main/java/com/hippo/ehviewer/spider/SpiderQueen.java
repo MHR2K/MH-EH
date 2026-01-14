@@ -211,6 +211,37 @@ public final class SpiderQueen implements Runnable {
         return queen;
     }
 
+    /**
+     * 获取已存在的 SpiderQueen 实例（如果不存在则返回 null）
+     * 用于更新内存中的 SpiderInfo 而不创建新实例
+     */
+    @Nullable
+    public static SpiderQueen obtainSpiderQueenIfExists(long gid) {
+        return sQueenMap.get(gid);
+    }
+
+    /**
+     * 更新内存中 SpiderInfo 的 pages 和 startPage 字段
+     * 用于防止后续写入时覆盖已更新的页数和阅读进度
+     */
+    public synchronized void updateSpiderInfoPages(int newPages, int newStartPage) {
+        SpiderInfo spiderInfo = mSpiderInfo.get();
+        if (spiderInfo != null) {
+            spiderInfo.pages = newPages;
+            spiderInfo.startPage = newStartPage;
+            Log.d(TAG, "Updated SpiderInfo in memory: pages=" + newPages + ", startPage=" + newStartPage + " for gid=" + mGalleryInfo.gid);
+            
+            // 异步写入到本地文件，确保持久化
+            new AsyncTask<Void, Void, Void>() {
+                @Override
+                protected Void doInBackground(Void... params) {
+                    writeSpiderInfoToLocal(spiderInfo);
+                    return null;
+                }
+            }.executeOnExecutor(IoThreadPoolExecutor.getInstance());
+        }
+    }
+
     @UiThread
     public static int findStartPage(@NonNull Context context, @NonNull GalleryInfo galleryInfo) {
         SpiderInfo spiderInfo = null;

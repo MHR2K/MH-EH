@@ -169,6 +169,17 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void replaceInfo(DownloadInfo newInfo, DownloadInfo oldInfo) {
+        replaceInfo(newInfo, oldInfo, false, -1);
+    }
+
+    /**
+     * 替换下载信息，支持可选的阅读进度更新
+     * @param newInfo 新的下载信息
+     * @param oldInfo 旧的下载信息
+     * @param updateStartPage 是否更新阅读进度
+     * @param startPage 新的阅读进度（仅当 updateStartPage 为 true 时生效）
+     */
+    public void replaceInfo(DownloadInfo newInfo, DownloadInfo oldInfo, boolean updateStartPage, int startPage) {
 
         for (int i = 0; i < mAllInfoList.size(); i++) {
             if (oldInfo.gid == mAllInfoList.get(i).gid) {
@@ -189,9 +200,12 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         mAllInfoMap.remove(oldInfo.gid);
         mAllInfoMap.put(newInfo.gid, newInfo);
 
+        // 保存到数据库
+        EhDB.putDownloadInfo(newInfo);
+
         // 同步更新SpiderInfo的页数字段
         if (newInfo.pages != oldInfo.pages) {
-            updateSpiderInfoPages(newInfo);
+            updateSpiderInfoPages(newInfo, updateStartPage, startPage);
         }
 
         for (DownloadInfoListener l : mDownloadInfoListeners) {
@@ -200,6 +214,10 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     private void updateSpiderInfoPages(DownloadInfo info) {
+        updateSpiderInfoPages(info, false, -1);
+    }
+
+    private void updateSpiderInfoPages(DownloadInfo info, boolean updateStartPage, int startPage) {
         // 异步更新SpiderInfo的页数字段
         new AsyncTask<Void, Void, Void>() {
             @Override
@@ -228,10 +246,38 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                                 // 更新页数字段
                                 spiderInfo.pages = info.pages;
                                 
+                                // 如果需要更新阅读进度，则设置 startPage
+                                if (updateStartPage && startPage >= 0) {
+                                    spiderInfo.startPage = startPage;
+                                    Log.i(TAG, "Updated SpiderInfo: pages=" + info.pages + ", startPage=" + startPage + " (old pages=" + oldPages + ") for gid=" + info.gid);
+                                } else {
+                                    Log.i(TAG, "Updated SpiderInfo pages from " + oldPages + " to: " + info.pages + " for gallery: " + info.gid);
+                                }
+                                
                                 // 重新写入文件
                                 spiderInfo.write(file.openOutputStream());
-                                Log.i(TAG, "Updated SpiderInfo pages from " + oldPages + " to: " + info.pages + " for gallery: " + info.gid);
                                 
+                                // 更新 SpiderQueen 内存中的 SpiderInfo，防止被覆盖回旧值
+                                try {
+                                    SpiderQueen queen = SpiderQueen.obtainSpiderQueenIfExists(info.gid);
+                                    if (queen != null) {
+                                        if (updateStartPage && startPage >= 0) {
+                                            // 更新 pages 和 startPage
+                                            queen.updateSpiderInfoPages(info.pages, startPage);
+                                            Log.d(TAG, "[updateSpiderInfoPages] Updated SpiderQueen memory: pages=" + info.pages + ", startPage=" + startPage + " for gid=" + info.gid);
+                                        } else {
+                                            // 只更新 pages，保留当前的 startPage
+                                            int currentStartPage = queen.getStartPage();
+                                            queen.updateSpiderInfoPages(info.pages, currentStartPage);
+                                            Log.d(TAG, "[updateSpiderInfoPages] Updated SpiderQueen memory pages to " + info.pages + ", kept startPage=" + currentStartPage + " for gid=" + info.gid);
+                                        }
+                                    } else {
+                                        Log.d(TAG, "[updateSpiderInfoPages] No SpiderQueen instance for gid=" + info.gid);
+                                    }
+                                } catch (Exception ex) {
+                                    Log.w(TAG, "[updateSpiderInfoPages] Exception updating SpiderQueen memory for gid=" + info.gid, ex);
+                                }
+
                                 // 如果页数减少，删除多余的图片
                                 if (info.pages < oldPages) {
                                     deleteExcessImages(downloadDir, info.pages);

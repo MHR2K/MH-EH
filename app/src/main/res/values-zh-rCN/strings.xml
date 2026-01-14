@@ -507,6 +507,7 @@
     <string name="page_menu_share">@string/share</string>
     <string name="page_menu_save">保存</string>
     <string name="page_menu_save_to">保存到 …</string>
+    <string name="page_menu_mark_last_and_remove_ads">标记为最后一页并删除广告页</string>
     <string name="page_menu_add_bookmark">添加书签</string>
     <string name="gallery_menu_title">菜单</string>
     <string name="share_image">分享图片</string>

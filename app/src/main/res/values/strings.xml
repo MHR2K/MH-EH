@@ -606,6 +606,7 @@
     <string name="page_menu_share">@string/share</string>
     <string name="page_menu_save">Save</string>
     <string name="page_menu_save_to">Save to …</string>
+    <string name="page_menu_mark_last_and_remove_ads">Mark as last page and remove ads</string>
     <string name="page_menu_add_bookmark">Add a bookmark</string>
     <string name="gallery_menu_title">Menu</string>
     <string name="share_image">Share image</string>
