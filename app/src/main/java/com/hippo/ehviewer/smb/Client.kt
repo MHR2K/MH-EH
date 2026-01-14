@@ -5,6 +5,7 @@ import com.hierynomus.msfscc.FileAttributes
 import com.hierynomus.mssmb2.SMB2CreateDisposition
 import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.smbj.SMBClient
+import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.session.Session
@@ -18,6 +19,7 @@ import jcifs.context.SingletonContext
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
 
 /**
  * 轻量 SMB 客户端：支持连接、列出共享/目录、上传、删除、重命名。
@@ -27,7 +29,13 @@ object Client {
     @Volatile
     lateinit var authenticator: Authenticator
 
-    private val client = SMBClient()
+    // 配置 SMB 客户端超时：连接超时和读写超时都设为较短时间
+    private val smbConfig = SmbConfig.builder()
+        .withTimeout(3000, TimeUnit.MILLISECONDS)  // Socket 超时 3秒
+        .withSoTimeout(3000, TimeUnit.MILLISECONDS) // SO 超时 3秒
+        .build()
+    
+    private val client = SMBClient(smbConfig)
     private val sessions = mutableMapOf<Authority, Session>()
     // 为测试/一次性调用提供的临时密码（按线程隔离）
     private val tempPasswords = ThreadLocal<MutableMap<Authority, String>?>()

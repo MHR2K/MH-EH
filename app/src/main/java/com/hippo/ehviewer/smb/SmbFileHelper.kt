@@ -16,6 +16,10 @@ import java.io.OutputStream
 
 object SmbFileHelper {
     private const val TAG = "SmbFileHelper"
+    
+    // 缓存自动检测失败的 gid，避免重复尝试（5分钟过期）
+    private val autoDetectFailedCache = mutableMapOf<Long, Long>()
+    private const val CACHE_EXPIRY_MS = 5 * 60 * 1000L  // 5分钟
 
     /**
      * 获取 SMB 文件的输入流管道
@@ -36,11 +40,25 @@ object SmbFileHelper {
                 return openSmbInputStreamPipe(target)
             }
 
-            // Step 2: 尝试自动检测 SMB 路径
+            // Step 2: 检查是否在失败缓存中（避免重复尝试自动检测）
+            val cachedTime = autoDetectFailedCache[gid]
+            if (cachedTime != null && (System.currentTimeMillis() - cachedTime) < CACHE_EXPIRY_MS) {
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, "Skip auto-detect for gid=$gid (cached failure)")
+                }
+                return null
+            }
+
+            // Step 3: 尝试自动检测 SMB 路径
             if (galleryInfo != null) {
                 val autoTarget = tryAutoDetectSmbTarget(galleryInfo, filename)
                 if (autoTarget != null) {
+                    // 成功找到，从失败缓存中移除
+                    autoDetectFailedCache.remove(gid)
                     return openSmbInputStreamPipe(autoTarget)
+                } else {
+                    // 失败，加入缓存
+                    autoDetectFailedCache[gid] = System.currentTimeMillis()
                 }
             }
 
@@ -51,6 +69,8 @@ object SmbFileHelper {
             if (BuildConfig.DEBUG) {
                 Log.e(TAG, "Error accessing SMB file: gid=$gid, file=$filename", e)
             }
+            // 异常时也加入失败缓存
+            autoDetectFailedCache[gid] = System.currentTimeMillis()
         }
         return null
     }
