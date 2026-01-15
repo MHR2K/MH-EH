@@ -380,9 +380,9 @@
     <string name="download_remove_dialog_message">从下载列表移除 %s ？</string>
     <string name="download_remove_dialog_message_2">从下载列表移除 %d 项？</string>
     <string name="download_remove_dialog_check_text">删除图片文件</string>
-    <string name="download_remove_option_keep_item">移除下载项（保留图片文件）</string>
-    <string name="download_remove_option_remove_all">移除下载项并删除图片文件</string>
-    <string name="download_remove_option_images_only">仅删除图片文件（不移除下载项）</string>
+    <string name="download_remove_option_remove_all">移除下载项并删除文件夹</string>
+    <string name="download_remove_option_keep_item">仅删除文件夹(保留下载项)</string>
+    <string name="download_remove_option_images_only">仅删除本地图片</string>
     <string name="stat_download_action_stop_all">全部停止</string>
     <string name="drawer_download_label_title">标签</string>
     <string name="default_download_label_name">默认</string>

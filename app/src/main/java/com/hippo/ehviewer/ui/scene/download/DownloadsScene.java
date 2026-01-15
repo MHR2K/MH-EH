@@ -1549,35 +1549,24 @@ public class DownloadsScene extends ToolbarScene
                     if (downloadInfoList.isEmpty()) {
                         break;
                     }
-                    // 恢复使用“复选框”样式：保留原有“删除图片文件”勾选，同时增加“仅删除图片文件（不移除下载项）”
                     final LongList selectedGidList = gidList; // for lambda
                     final List<DownloadInfo> selectedInfoList = downloadInfoList; // for lambda
 
-                    // 动态构建包含两个复选框的视图
-                    LinearLayout container = new LinearLayout(context);
-                    container.setOrientation(LinearLayout.VERTICAL);
-                    int pad = (int) (16 * context.getResources().getDisplayMetrics().density);
-                    container.setPadding(pad, pad, pad, 0);
-
-                    final CheckBox cbDeleteImages = new CheckBox(context);
-                    cbDeleteImages.setText(R.string.download_remove_dialog_check_text);
-                    cbDeleteImages.setChecked(Settings.getRemoveImageFiles());
-                    container.addView(cbDeleteImages);
-
-                    final CheckBox cbImagesOnly = new CheckBox(context);
-                    cbImagesOnly.setText(R.string.download_remove_option_images_only);
-                    cbImagesOnly.setChecked(false);
-                    container.addView(cbImagesOnly);
-
-                    // 逻辑：若勾选“仅删除图片文件”，则禁用“删除图片文件”的复选框（避免语义冲突）
-                    cbImagesOnly.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                        cbDeleteImages.setEnabled(!isChecked);
-                    });
+                    // 三个单选选项
+                    final String[] options = new String[]{
+                            getString(R.string.download_remove_option_remove_all),
+                            getString(R.string.download_remove_option_keep_item),
+                            getString(R.string.download_remove_option_images_only)
+                    };
+                    
+                    // 默认选中第一项
+                    final int[] selectedOption = {0};
 
                     new AlertDialog.Builder(context)
                             .setTitle(R.string.download_remove_dialog_title)
-                            .setMessage(getString(R.string.download_remove_dialog_message_2, selectedGidList.size()))
-                            .setView(container)
+                            .setSingleChoiceItems(options, 0, (dialog, which) -> {
+                                selectedOption[0] = which;
+                            })
                             .setNegativeButton(android.R.string.cancel, null)
                             .setPositiveButton(android.R.string.ok, (d, w) -> {
                                 // 退出选择模式
@@ -1585,20 +1574,14 @@ public class DownloadsScene extends ToolbarScene
                                     mRecyclerView.outOfCustomChoiceMode();
                                 }
 
-                                boolean imagesOnly = cbImagesOnly.isChecked();
-                                boolean deleteImages = cbDeleteImages.isChecked();
-                                // 记住“删除图片文件”选项
-                                Settings.putRemoveImageFiles(deleteImages);
-
-                                if (!imagesOnly) {
-                                    // 普通模式：删除下载项
-                                    if (mDownloadManager != null) {
-                                        mDownloadManager.deleteRangeDownload(selectedGidList);
-                                    }
-                                }
-
-                                if (imagesOnly || deleteImages) {
-                                    // 需要删除图片文件（仅删图 或 附带删图）
+                                int option = selectedOption[0];
+                                
+                                // 0: 移除下载项并删除文件夹
+                                // 1: 仅删除文件夹（保留下载项）
+                                // 2: 仅删除本地图片
+                                
+                                if (option == 0 || option == 1) {
+                                    // 删除整个文件夹
                                     List<UniFile> fileList = new ArrayList<>();
                                     for (DownloadInfo info : selectedInfoList) {
                                         UniFile dir = getGalleryDownloadDir(info);
@@ -1607,9 +1590,9 @@ public class DownloadsScene extends ToolbarScene
                                         }
                                         // 清除路径映射
                                         EhDB.removeDownloadDirname(info.gid);
-
-                                        if (imagesOnly) {
-                                            // 仅删除图片文件保留下载项：重置状态以便重新下载
+                                        
+                                        if (option == 1) {
+                                            // 仅删除文件夹（保留下载项）：重置状态以便重新下载
                                             info.state = DownloadInfo.STATE_NONE;
                                             info.finished = 0;
                                             info.downloaded = 0;
@@ -1621,6 +1604,48 @@ public class DownloadsScene extends ToolbarScene
                                     }
                                     if (!fileList.isEmpty()) {
                                         deleteFileAsync(fileList.toArray(new UniFile[0]));
+                                    }
+                                }
+                                
+                                if (option == 2) {
+                                    // 仅删除本地图片文件（保留 info.json 等其他文件）
+                                    for (DownloadInfo info : selectedInfoList) {
+                                        UniFile dir = getGalleryDownloadDir(info);
+                                        if (dir != null) {
+                                            UniFile[] files = dir.listFiles();
+                                            if (files != null) {
+                                                List<UniFile> imageFiles = new ArrayList<>();
+                                                for (UniFile file : files) {
+                                                    if (file.isFile()) {
+                                                        String name = file.getName();
+                                                        if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || 
+                                                            name.endsWith(".png") || name.endsWith(".gif") || 
+                                                            name.endsWith(".webp") || name.endsWith(".bmp"))) {
+                                                            imageFiles.add(file);
+                                                        }
+                                                    }
+                                                }
+                                                if (!imageFiles.isEmpty()) {
+                                                    deleteFileAsync(imageFiles.toArray(new UniFile[0]));
+                                                }
+                                            }
+                                        }
+                                        
+                                        // 重置下载状态
+                                        info.state = DownloadInfo.STATE_NONE;
+                                        info.finished = 0;
+                                        info.downloaded = 0;
+                                        info.speed = 0;
+                                        info.remaining = 0;
+                                        if (info.total < 0) info.total = 0;
+                                        EhDB.putDownloadInfo(info);
+                                    }
+                                }
+                                
+                                if (option == 0) {
+                                    // 移除下载项
+                                    if (mDownloadManager != null) {
+                                        mDownloadManager.deleteRangeDownload(selectedGidList);
                                     }
                                 }
 
