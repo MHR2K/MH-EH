@@ -135,17 +135,56 @@ class ThumbDataContainer(private val mInfo: DownloadInfo) : DataContainer {
             return false
         }
 
-        // Step 2: 尝试保存到 SMB
-        try {
-            if (SmbFileHelper.writeSmbFile(mInfo.gid, ".thumb", data, mInfo)) {
-                Log.d(TAG, "Successfully saved .thumb to SMB, gid: ${mInfo.gid}")
-                return true
+        // Step 2: 检测漫画存储位置，决定缩略图保存位置
+        val storageLocation = StorageDetector.detect(mInfo)
+        Log.d(TAG, "Detected storage location for gid ${mInfo.gid}: $storageLocation")
+        
+        // Step 3: 根据漫画位置保存缩略图
+        when (storageLocation) {
+            StorageDetector.StorageLocation.SMB, 
+            StorageDetector.StorageLocation.BOTH -> {
+                // 漫画在SMB或同时存在，优先保存到SMB
+                try {
+                    if (SmbFileHelper.writeSmbFile(mInfo.gid, ".thumb", data, mInfo)) {
+                        Log.d(TAG, "Successfully saved .thumb to SMB, gid: ${mInfo.gid}")
+                        // 如果是BOTH情况，也同时保存到本地
+                        if (storageLocation == StorageDetector.StorageLocation.BOTH) {
+                            saveToLocalFile(data)
+                        }
+                        return true
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to save .thumb to SMB, gid: ${mInfo.gid}", e)
+                }
+                // SMB保存失败，降级到本地
+                Log.w(TAG, "SMB save failed, falling back to local for gid: ${mInfo.gid}")
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to save .thumb to SMB, gid: ${mInfo.gid}", e)
+            StorageDetector.StorageLocation.LOCAL -> {
+                // 漫画在本地，直接保存到本地
+                Log.d(TAG, "Manga is local, saving .thumb to local file, gid: ${mInfo.gid}")
+            }
+            StorageDetector.StorageLocation.UNKNOWN -> {
+                // 未知位置，尝试SMB优先，然后本地
+                Log.w(TAG, "Storage location unknown for gid: ${mInfo.gid}, trying SMB first")
+                try {
+                    if (SmbFileHelper.writeSmbFile(mInfo.gid, ".thumb", data, mInfo)) {
+                        Log.d(TAG, "Successfully saved .thumb to SMB (unknown location), gid: ${mInfo.gid}")
+                        return true
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to save .thumb to SMB (unknown location), gid: ${mInfo.gid}", e)
+                }
+            }
         }
 
-        // Step 3: 降级到本地文件（带重试机制）
+        // Step 4: 保存到本地文件（带重试机制）
+        return saveToLocalFile(data)
+    }
+
+    /**
+     * 保存数据到本地文件（带重试机制）
+     */
+    private fun saveToLocalFile(data: ByteArray): Boolean {
         var retryCount = 0
         while (retryCount < 2) {
             try {
