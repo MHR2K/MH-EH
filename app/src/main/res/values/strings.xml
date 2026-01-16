@@ -523,6 +523,11 @@
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
     <string name="find_same_author">Find same author</string>
+    <string name="menu_move_to_position">Move to position</string>
+    <string name="move_to_position_title">Move next to target</string>
+    <string name="move_to_position_hint">(Enter the target gallery GID to move this item before it.Leave empty to move to the newest position.)</string>
+    <string name="move_to_position_error">Target not found</string>
+    <string name="move_to_position_success">Moved successfully</string>
     <string name="searching_author">Searching for author: %s</string>
     <string name="author_not_found">Author not found in title</string>
 

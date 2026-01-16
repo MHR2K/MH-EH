@@ -1365,6 +1365,10 @@ public class DownloadsScene extends ToolbarScene
                         Toast.LENGTH_SHORT).show();
                 }
                 return true;
+            } else if (itemId == R.id.menu_move_to_position) {
+                // 显示输入对话框获取目标 gid
+                showMoveToPositionDialog(context, info, posInList);
+                return true;
             }
             return false;
         });
@@ -2758,5 +2762,132 @@ public class DownloadsScene extends ToolbarScene
         updatePaginationIndicator();
         updateView();
         queryUnreadSpiderInfo();
+    }
+
+    /**
+     * 显示"移动位置"对话框
+     * @param context 上下文
+     * @param sourceInfo 源下载项信息
+     * @param sourcePosition 源项在列表中的位置
+     */
+    private void showMoveToPositionDialog(Context context, DownloadInfo sourceInfo, int sourcePosition) {
+        // 使用对话框消息显示提示文本（支持自动换行），输入框只用于输入 gid
+        android.widget.EditText editText = new android.widget.EditText(context);
+        editText.setHint("");
+        editText.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        editText.setSingleLine(true);
+        // 居中显示输入的数字
+        editText.setGravity(Gravity.CENTER);
+        editText.setTextAlignment(View.TEXT_ALIGNMENT_CENTER);
+        // 使输入框宽度填充对话框，便于居中显示
+        editText.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(context)
+                .setTitle(R.string.move_to_position_title)
+                .setMessage(getString(R.string.move_to_position_hint))
+                .setView(editText)
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    String gidInput = editText.getText().toString().trim();
+                    moveToPosition(context, sourceInfo, sourcePosition, gidInput);
+                })
+                .setNegativeButton(android.R.string.cancel, null);
+
+        // 显示对话框
+        builder.show();
+    }
+
+    /**
+     * 执行移动操作
+     * @param context 上下文
+     * @param sourceInfo 源下载项
+     * @param sourcePosition 源项在列表中的位置
+     * @param targetGidInput 目标gid输入（可为空，则移到最新）
+     */
+    private void moveToPosition(Context context, DownloadInfo sourceInfo, int sourcePosition, String targetGidInput) {
+        if (mList == null || mBackList == null) {
+            Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        int targetPosition;
+        
+        if (targetGidInput.isEmpty()) {
+            // 没有输入，移到列表的最前面（最新的位置）
+            targetPosition = 0;
+        } else {
+            // 查找目标gid在列表中的位置
+            try {
+                long targetGid = Long.parseLong(targetGidInput);
+                targetPosition = -1;
+                for (int i = 0; i < mList.size(); i++) {
+                    if (mList.get(i).gid == targetGid) {
+                        targetPosition = i;
+                        break;
+                    }
+                }
+                
+                if (targetPosition == -1) {
+                    Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                
+                // 目标位置移动到该项的后面（下一个位置）
+                targetPosition = targetPosition + 1;
+                if (targetPosition >= mList.size()) {
+                    targetPosition = mList.size() - 1;
+                }
+            } catch (NumberFormatException e) {
+                Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
+        // 避免移到同一位置
+        if (sourcePosition == targetPosition || sourcePosition + 1 == targetPosition) {
+            return;
+        }
+
+        // 计算在 mBackList 中的位置
+        int sourcePositionInBackList = -1;
+        for (int i = 0; i < mBackList.size(); i++) {
+            if (mBackList.get(i).gid == sourceInfo.gid) {
+                sourcePositionInBackList = i;
+                break;
+            }
+        }
+
+        if (sourcePositionInBackList == -1) {
+            Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 计算目标在 mBackList 中的位置
+        int targetPositionInBackList = -1;
+        DownloadInfo targetInfo = mList.get(targetPosition);
+        for (int i = 0; i < mBackList.size(); i++) {
+            if (mBackList.get(i).gid == targetInfo.gid) {
+                targetPositionInBackList = i;
+                break;
+            }
+        }
+
+        if (targetPositionInBackList == -1) {
+            Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 执行移动操作（在mBackList中）
+        EhDB.moveDownloadInfo(mBackList, sourcePositionInBackList, targetPositionInBackList);
+        
+        // 同步更新当前显示的列表（mList）
+        mList.remove(sourcePosition);
+        mList.add(targetPosition < sourcePosition ? targetPosition : targetPosition - 1, sourceInfo);
+
+        // 更新适配器
+        if (mOriginalAdapter != null) {
+            mOriginalAdapter.notifyDataSetChanged();
+        }
+
+        Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
     }
 }
