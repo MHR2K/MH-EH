@@ -1692,34 +1692,75 @@ public class DownloadsScene extends ToolbarScene
                     setDragEnable(fab);
                     break;
                 }
-                case 7: { // Move to SMB (now last)
+                case 7: { // SMB Migration (now last)
                     if (downloadInfoList.isEmpty()){
                         break;
                     }
-                    java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
-                    if (servers == null || servers.isEmpty()) {
-                        Toast.makeText(context, "请先在 设置>高级>添加 SMB 服务器", Toast.LENGTH_LONG).show();
-                        break;
-                    }
-                    CharSequence[] choices = new CharSequence[servers.size()];
-                    for (int i = 0; i < servers.size(); i++) {
-                        com.hippo.ehviewer.smb.SmbServer s = servers.get(i);
-                        com.hippo.ehviewer.smb.Authority a = s.getAuthority();
-                        String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\\\" + a.getUsername()) : a.getUsername();
-                        String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
-                        String path = s.getRelativePath();
-                        String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
-                        String url = "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
-                        choices[i] = (s.getName() != null ? (s.getName() + ": ") : "") + url;
-                    }
-
+                    
+                    // 显示选择对话框：移动到SMB 或 从SMB移动到本地
                     final Context ctxFinal = context;
                     final List<DownloadInfo> infosFinal = downloadInfoList;
+                    
+                    CharSequence[] migrationOptions = new CharSequence[]{
+                        "移动到 SMB 服务器",
+                        "从 SMB 移动到本地"
+                    };
+                    
                     new AlertDialog.Builder(context)
-                            .setTitle("选择目标 SMB 服务器")
-                            .setItems(choices, (d, whichIdx) -> {
-                                com.hippo.ehviewer.smb.SmbServer server = servers.get(whichIdx);
-                                migrateToSmbAsync(ctxFinal, infosFinal, server);
+                            .setTitle("SMB 存储迁移")
+                            .setItems(migrationOptions, (d, which) -> {
+                                if (which == 0) {
+                                    // 移动到 SMB
+                                    java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                                    if (servers == null || servers.isEmpty()) {
+                                        Toast.makeText(ctxFinal, "请先在 设置>高级>添加 SMB 服务器", Toast.LENGTH_LONG).show();
+                                        return;
+                                    }
+                                    CharSequence[] choices = new CharSequence[servers.size()];
+                                    for (int i = 0; i < servers.size(); i++) {
+                                        com.hippo.ehviewer.smb.SmbServer s = servers.get(i);
+                                        com.hippo.ehviewer.smb.Authority a = s.getAuthority();
+                                        String userPart = (a.getDomain() != null && !a.getDomain().isEmpty()) ? (a.getDomain() + "\\\\" + a.getUsername()) : a.getUsername();
+                                        String portPart = (a.getPort() != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ? (":" + a.getPort()) : "";
+                                        String path = s.getRelativePath();
+                                        String pathPart = (path == null || path.isEmpty()) ? "" : "/" + path.replace('\\', '/');
+                                        String url = "smb://" + userPart + ":" + s.getPassword() + "@" + a.getHost() + portPart + pathPart;
+                                        choices[i] = (s.getName() != null ? (s.getName() + ": ") : "") + url;
+                                    }
+
+                                    new AlertDialog.Builder(ctxFinal)
+                                            .setTitle("选择目标 SMB 服务器")
+                                            .setItems(choices, (d2, whichIdx) -> {
+                                                com.hippo.ehviewer.smb.SmbServer server = servers.get(whichIdx);
+                                                migrateToSmbAsync(ctxFinal, infosFinal, server);
+                                            })
+                                            .show();
+                                } else if (which == 1) {
+                                    // 从 SMB 移动到本地
+                                    // 筛选出在SMB上的下载项
+                                    List<DownloadInfo> smbInfos = new ArrayList<>();
+                                    for (DownloadInfo info : infosFinal) {
+                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                                        if (mapping != null) {
+                                            smbInfos.add(info);
+                                        }
+                                    }
+                                    
+                                    if (smbInfos.isEmpty()) {
+                                        Toast.makeText(ctxFinal, "所选漫画均不在 SMB 上", Toast.LENGTH_SHORT).show();
+                                        return;
+                                    }
+                                    
+                                    new AlertDialog.Builder(ctxFinal)
+                                            .setTitle("从 SMB 移动到本地")
+                                            .setMessage("确定要将 " + smbInfos.size() + " 个漫画从 SMB 移动到本地存储吗？")
+                                            .setNegativeButton(android.R.string.cancel, null)
+                                            .setPositiveButton(android.R.string.ok, (d2, w) -> {
+                                                moveFromSmbToLocalAsync(ctxFinal, smbInfos);
+                                            })
+                                            .show();
+                                }
                             })
                             .show();
                     break;
@@ -1815,6 +1856,214 @@ public class DownloadsScene extends ToolbarScene
                 updateView();
             }
         }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
+    }
+
+    private void moveFromSmbToLocalAsync(Context context, List<DownloadInfo> infos) {
+        // 取消选择模式
+        if (mRecyclerView != null) {
+            mRecyclerView.outOfCustomChoiceMode();
+        }
+        
+        Toast.makeText(context, "开始从 SMB 移动到本地...", Toast.LENGTH_SHORT).show();
+        
+        new android.os.AsyncTask<Void, Integer, Integer>() {
+            @Override protected Integer doInBackground(Void... voids) {
+                int okCount = 0;
+                for (DownloadInfo info : infos) {
+                    try {
+                        // 获取 SMB 映射
+                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                        if (mapping == null) continue;
+                        
+                        // 构建 SMB 目标
+                        com.hippo.ehviewer.smb.Client.Target smbTarget = 
+                            new com.hippo.ehviewer.smb.Client.Target(
+                                mapping.getAuthority(),
+                                mapping.getShare(),
+                                mapping.getBasePathInShare()
+                            );
+                        
+                        // 获取对应的 SMB 服务器配置（用于密码）
+                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
+                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                        com.hippo.ehviewer.smb.SmbServer matchedServer = null;
+                        if (servers != null) {
+                            for (com.hippo.ehviewer.smb.SmbServer s : servers) {
+                                com.hippo.ehviewer.smb.Client.Target t = s.toTarget();
+                                if (t != null && t.getAuthority().equals(mapping.getAuthority()) 
+                                    && t.getShare().equals(mapping.getShare())) {
+                                    matchedServer = s;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        if (matchedServer == null) {
+                            android.util.Log.e("DownloadsScene", "找不到匹配的 SMB 服务器配置");
+                            continue;
+                        }
+                        
+                        final com.hippo.ehviewer.smb.SmbServer server = matchedServer;
+                        
+                        // 创建本地目标目录
+                        com.hippo.unifile.UniFile localDir = Settings.getDownloadLocation();
+                        if (localDir == null) continue;
+                        
+                        // 从 SMB 路径中提取文件夹名称
+                        String dirname = smbTarget.getPathInShare();
+                        if (dirname != null && dirname.contains("\\")) {
+                            String[] parts = dirname.split("\\\\");
+                            dirname = parts[parts.length - 1];
+                        } else if (dirname != null && dirname.contains("/")) {
+                            String[] parts = dirname.split("/");
+                            dirname = parts[parts.length - 1];
+                        }
+                        
+                        if (dirname == null || dirname.isEmpty()) {
+                            dirname = String.valueOf(info.gid);
+                        }
+                        
+                        com.hippo.unifile.UniFile targetDir = localDir.createDirectory(dirname);
+                        if (targetDir == null || !targetDir.ensureDir()) {
+                            android.util.Log.e("DownloadsScene", "无法创建本地目录: " + dirname);
+                            continue;
+                        }
+                        
+                        // 从 SMB 下载文件到本地
+                        boolean success = com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
+                            smbTarget.getAuthority(), 
+                            server.getPassword(), 
+                            () -> {
+                                try {
+                                    java.util.List<com.hippo.ehviewer.smb.Client.RemoteDirEntry> entries = 
+                                        com.hippo.ehviewer.smb.Client.INSTANCE.listDirectory(smbTarget);
+                                    if (entries == null || entries.isEmpty()) {
+                                        return false;
+                                    }
+                                    
+                                    for (com.hippo.ehviewer.smb.Client.RemoteDirEntry entry : entries) {
+                                        // 只下载文件，跳过目录
+                                        if (entry.isDirectory()) continue;
+                                        
+                                        String fileName = entry.getName();
+                                        com.hippo.ehviewer.smb.Client.Target fileTarget = 
+                                            new com.hippo.ehviewer.smb.Client.Target(
+                                                smbTarget.getAuthority(),
+                                                smbTarget.getShare(),
+                                                joinPath(smbTarget.getPathInShare(), fileName)
+                                            );
+                                        
+                                        com.hippo.unifile.UniFile localFile = targetDir.createFile(fileName);
+                                        if (localFile == null) continue;
+                                        
+                                        java.io.InputStream is = null;
+                                        java.io.OutputStream os = null;
+                                        try {
+                                            is = com.hippo.ehviewer.smb.Client.INSTANCE.openInputStream(fileTarget);
+                                            os = localFile.openOutputStream();
+                                            
+                                            byte[] buffer = new byte[8192];
+                                            int bytesRead;
+                                            while ((bytesRead = is.read(buffer)) != -1) {
+                                                os.write(buffer, 0, bytesRead);
+                                            }
+                                            os.flush();
+                                        } finally {
+                                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(is);
+                                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(os);
+                                        }
+                                    }
+                                    return true;
+                                } catch (Throwable t) {
+                                    t.printStackTrace();
+                                    return false;
+                                }
+                            }
+                        );
+                        
+                        if (success) {
+                            // 更新数据库：移除 SMB 映射
+                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(info.gid);
+                            
+                            // 更新下载路径
+                            com.hippo.ehviewer.EhDB.putDownloadDirname(info.gid, dirname);
+                            
+                            // 可选：删除 SMB 上的文件（实现"移动"效果）
+                            final String finalDirname = dirname;
+                            try {
+                                com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
+                                    smbTarget.getAuthority(),
+                                    server.getPassword(),
+                                    () -> {
+                                        try {
+                                            deleteSmbDirectoryRecursively(smbTarget);
+                                            return true;
+                                        } catch (Throwable t) {
+                                            android.util.Log.e("DownloadsScene", "删除 SMB 目录失败: " + finalDirname, t);
+                                            return false;
+                                        }
+                                    }
+                                );
+                            } catch (Throwable t) {
+                                // 删除失败不影响主流程
+                                android.util.Log.e("DownloadsScene", "删除 SMB 目录异常: " + finalDirname, t);
+                            }
+                            
+                            okCount++;
+                        }
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
+                }
+                return okCount;
+            }
+            
+            @Override protected void onPostExecute(Integer okCount) {
+                Toast.makeText(context, "已从 SMB 移动到本地：" + okCount + "/" + infos.size(), Toast.LENGTH_LONG).show();
+                // 刷新界面
+                updateForLabel();
+                updateView();
+            }
+        }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
+    }
+
+    /**
+     * 递归删除 SMB 目录及其所有内容
+     * 参考 MaterialFiles 的实现，先删除文件，再删除子目录，最后删除目录本身
+     */
+    private static void deleteSmbDirectoryRecursively(com.hippo.ehviewer.smb.Client.Target target) throws Exception {
+        try {
+            // 列出目录内容
+            java.util.List<com.hippo.ehviewer.smb.Client.RemoteDirEntry> entries = 
+                com.hippo.ehviewer.smb.Client.INSTANCE.listDirectory(target);
+            
+            if (entries != null && !entries.isEmpty()) {
+                // 先删除所有文件和子目录
+                for (com.hippo.ehviewer.smb.Client.RemoteDirEntry entry : entries) {
+                    com.hippo.ehviewer.smb.Client.Target entryTarget = 
+                        new com.hippo.ehviewer.smb.Client.Target(
+                            target.getAuthority(),
+                            target.getShare(),
+                            joinPath(target.getPathInShare(), entry.getName())
+                        );
+                    
+                    if (entry.isDirectory()) {
+                        // 递归删除子目录
+                        deleteSmbDirectoryRecursively(entryTarget);
+                    } else {
+                        // 删除文件
+                        com.hippo.ehviewer.smb.Client.INSTANCE.delete(entryTarget);
+                    }
+                }
+            }
+            
+            // 最后删除目录本身（此时目录应该已经为空）
+            com.hippo.ehviewer.smb.Client.INSTANCE.deleteDirectory(target);
+        } catch (Exception e) {
+            android.util.Log.e("DownloadsScene", "删除 SMB 路径失败: " + target.getPathInShare(), e);
+            throw e;
+        }
     }
 
     private static String joinPath(String base, String name) {

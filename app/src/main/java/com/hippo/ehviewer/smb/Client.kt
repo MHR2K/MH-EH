@@ -153,6 +153,16 @@ object Client {
     }
 
     @Throws(IOException::class)
+    fun deleteDirectory(target: Target) {
+        val share = getDiskShare(getSession(target.authority), target.share)
+        try {
+            share.rmdir(target.pathInShare, true)
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        }
+    }
+
+    @Throws(IOException::class)
     fun rename(target: Target, newPathInShare: String) {
         val share = getDiskShare(getSession(target.authority), target.share)
         val file = try {
