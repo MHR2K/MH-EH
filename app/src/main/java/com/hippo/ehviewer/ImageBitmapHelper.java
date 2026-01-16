@@ -47,23 +47,37 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
             if (rawIs instanceof FileInputStream) {
                 return Image.decode((FileInputStream) rawIs, hardware);
             } else {
-                // 对于 SMB 和其他非文件流，复制到临时文件
-                java.io.File tempFile = java.io.File.createTempFile("img_", null, 
-                    com.hippo.ehviewer.EhApplication.getInstance().getCacheDir());
+                // 对于 SMB 和其他非文件流，复制到临时文件以确保流可重复使用
+                java.io.File tempFile = null;
                 try {
+                    tempFile = java.io.File.createTempFile("img_", null, 
+                        com.hippo.ehviewer.EhApplication.getInstance().getCacheDir());
+                    
+                    // 复制流到临时文件，使用更大的缓冲区以提高效率
                     try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
-                        byte[] buffer = new byte[8192];
+                        byte[] buffer = new byte[65536]; // 64KB 缓冲区
                         int read;
+                        int totalRead = 0;
                         while ((read = rawIs.read(buffer)) != -1) {
                             fos.write(buffer, 0, read);
+                            totalRead += read;
+                        }
+                        // 检查是否读取了数据
+                        if (totalRead == 0) {
+                            return null;
                         }
                     }
+                    
+                    // 使用临时文件中的数据
                     try (FileInputStream fis = new FileInputStream(tempFile)) {
                         return Image.decode(fis, hardware);
                     }
                 } finally {
-                    if (!tempFile.delete()) {
-                        tempFile.deleteOnExit();
+                    // 确保临时文件被删除
+                    if (tempFile != null) {
+                        if (!tempFile.delete()) {
+                            tempFile.deleteOnExit();
+                        }
                     }
                 }
             }
@@ -71,10 +85,26 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
             Analytics.recordException(e);
             return null;
         } catch (IOException e) {
+            // 记录 IO 异常以便调试
+            Analytics.recordException(e);
+            return null;
+        } catch (Exception e) {
+            // 捕获其他异常（如图片格式不支持等）
+            Analytics.recordException(e);
             return null;
         } finally {
-            isPipe.close();
-            isPipe.release();
+            try {
+                isPipe.close();
+            } catch (Exception e) {
+                // 忽略关闭异常
+                Analytics.recordException(e);
+            }
+            try {
+                isPipe.release();
+            } catch (Exception e) {
+                // 忽略释放异常
+                Analytics.recordException(e);
+            }
         }
     }
 

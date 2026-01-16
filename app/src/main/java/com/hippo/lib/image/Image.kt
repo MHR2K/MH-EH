@@ -69,8 +69,22 @@ class Image private constructor(
                 } catch (e: DecodeException) {
                     // ImageDecoder 失败时回退到 BitmapFactory
                     try {
-                        // 重置流位置以便重新读取
-                        source.channel.position(0)
+                        // 检查流是否可用，尝试重置流位置
+                        val available = try {
+                            source.available()
+                        } catch (ex: Exception) {
+                            -1
+                        }
+                        
+                        if (available > 0) {
+                            try {
+                                source.channel.position(0)
+                            } catch (ex: Exception) {
+                                // 如果 channel.position 失败，记录异常但继续尝试
+                                Analytics.recordException(ex)
+                            }
+                        }
+                        
                         if (simpleSize != null) {
                             val option = BitmapFactory.Options().apply {
                                 inSampleSize = simpleSize
@@ -81,9 +95,15 @@ class Image private constructor(
                         } else {
                             mObtainedDrawable = BitmapDrawable.createFromStream(source, null)
                         }
+                        
+                        if (mObtainedDrawable == null) {
+                            throw Exception("BitmapFactory 解码返回 null")
+                        }
                     } catch (fallbackException: Exception) {
+                        // 记录两个异常的详细信息
+                        fallbackException.initCause(e)
                         Analytics.recordException(fallbackException)
-                        throw Exception("Android 9 解码失败", e)
+                        throw fallbackException
                     }
                 }
                 // Should we lazy decode it?
