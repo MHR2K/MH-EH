@@ -1585,15 +1585,25 @@ public class DownloadsScene extends ToolbarScene
                                 // 2: 仅删除本地图片
                                 
                                 if (option == 0 || option == 1) {
-                                    // 删除整个文件夹
+                                    // 删除整个文件夹（本地 + SMB）
                                     List<UniFile> fileList = new ArrayList<>();
+                                    List<DownloadInfo> smbInfoList = new ArrayList<>();
+                                    
                                     for (DownloadInfo info : selectedInfoList) {
+                                        // 处理本地文件
                                         UniFile dir = getGalleryDownloadDir(info);
                                         if (dir != null) {
                                             fileList.add(dir);
                                         }
                                         // 清除路径映射
                                         EhDB.removeDownloadDirname(info.gid);
+                                        
+                                        // 检查是否有 SMB 映射
+                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                                        if (mapping != null) {
+                                            smbInfoList.add(info);
+                                        }
                                         
                                         if (option == 1) {
                                             // 仅删除文件夹（保留下载项）：重置状态以便重新下载
@@ -1606,14 +1616,85 @@ public class DownloadsScene extends ToolbarScene
                                             EhDB.putDownloadInfo(info);
                                         }
                                     }
+                                    
+                                    // 删除本地文件
                                     if (!fileList.isEmpty()) {
                                         deleteFileAsync(fileList.toArray(new UniFile[0]));
+                                    }
+                                    
+                                    // 删除 SMB 文件（异步）
+                                    if (!smbInfoList.isEmpty()) {
+                                        final int finalOption = option;
+                                        new android.os.AsyncTask<Void, Void, Integer>() {
+                                            @Override protected Integer doInBackground(Void... voids) {
+                                                int count = 0;
+                                                for (DownloadInfo info : smbInfoList) {
+                                                    com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                                                        com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                                                    if (mapping == null) continue;
+                                                    
+                                                    com.hippo.ehviewer.smb.Client.Target target = 
+                                                        new com.hippo.ehviewer.smb.Client.Target(
+                                                            mapping.getAuthority(),
+                                                            mapping.getShare(),
+                                                            mapping.getBasePathInShare()
+                                                        );
+                                                    
+                                                    try {
+                                                        // 获取服务器密码
+                                                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
+                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                                                        com.hippo.ehviewer.smb.SmbServer server = null;
+                                                        for (com.hippo.ehviewer.smb.SmbServer s : servers) {
+                                                            if (s.getAuthority().equals(mapping.getAuthority())) {
+                                                                server = s;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (server == null) continue;
+                                                        
+                                                        final com.hippo.ehviewer.smb.SmbServer finalServer = server;
+                                                        com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
+                                                            mapping.getAuthority(),
+                                                            server.getPassword(),
+                                                            () -> {
+                                                                try {
+                                                                    deleteSmbDirectoryRecursively(target);
+                                                                    return true;
+                                                                } catch (Throwable t) {
+                                                                    android.util.Log.e("DownloadsScene", "删除 SMB 目录失败: gid=" + info.gid, t);
+                                                                    return false;
+                                                                }
+                                                            }
+                                                        );
+                                                        
+                                                        // 如果是 option 0 或 option 1，删除映射（移除远端目录后不再保留映射）
+                                                        if (finalOption == 0 || finalOption == 1) {
+                                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(info.gid);
+                                                        }
+                                                        
+                                                        count++;
+                                                    } catch (Exception e) {
+                                                        android.util.Log.e("DownloadsScene", "删除 SMB 文件异常: gid=" + info.gid, e);
+                                                    }
+                                                }
+                                                return count;
+                                            }
+                                            @Override protected void onPostExecute(Integer count) {
+                                                if (count > 0) {
+                                                    Toast.makeText(context, "已删除 " + count + " 个 SMB 目录", Toast.LENGTH_SHORT).show();
+                                                }
+                                            }
+                                        }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
                                     }
                                 }
                                 
                                 if (option == 2) {
                                     // 仅删除本地图片文件（保留 info.json 等其他文件）
+                                    List<DownloadInfo> smbInfoList = new ArrayList<>();
+                                    
                                     for (DownloadInfo info : selectedInfoList) {
+                                        // 处理本地文件
                                         UniFile dir = getGalleryDownloadDir(info);
                                         if (dir != null) {
                                             UniFile[] files = dir.listFiles();
@@ -1635,6 +1716,13 @@ public class DownloadsScene extends ToolbarScene
                                             }
                                         }
                                         
+                                        // 检查是否有 SMB 映射
+                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                                        if (mapping != null) {
+                                            smbInfoList.add(info);
+                                        }
+                                        
                                         // 重置下载状态
                                         info.state = DownloadInfo.STATE_NONE;
                                         info.finished = 0;
@@ -1643,6 +1731,66 @@ public class DownloadsScene extends ToolbarScene
                                         info.remaining = 0;
                                         if (info.total < 0) info.total = 0;
                                         EhDB.putDownloadInfo(info);
+                                    }
+                                    
+                                    // 删除 SMB 图片文件（异步）
+                                    if (!smbInfoList.isEmpty()) {
+                                        new android.os.AsyncTask<Void, Void, Integer>() {
+                                            @Override protected Integer doInBackground(Void... voids) {
+                                                int count = 0;
+                                                for (DownloadInfo info : smbInfoList) {
+                                                    com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
+                                                        com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
+                                                    if (mapping == null) continue;
+                                                    
+                                                    com.hippo.ehviewer.smb.Client.Target target = 
+                                                        new com.hippo.ehviewer.smb.Client.Target(
+                                                            mapping.getAuthority(),
+                                                            mapping.getShare(),
+                                                            mapping.getBasePathInShare()
+                                                        );
+                                                    
+                                                    try {
+                                                        // 获取服务器密码
+                                                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
+                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
+                                                        com.hippo.ehviewer.smb.SmbServer server = null;
+                                                        for (com.hippo.ehviewer.smb.SmbServer s : servers) {
+                                                            if (s.getAuthority().equals(mapping.getAuthority())) {
+                                                                server = s;
+                                                                break;
+                                                            }
+                                                        }
+                                                        if (server == null) continue;
+                                                        
+                                                        com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
+                                                            mapping.getAuthority(),
+                                                            server.getPassword(),
+                                                            () -> {
+                                                                try {
+                                                                    deleteSmbImageFilesOnly(target);
+                                                                    return true;
+                                                                } catch (Throwable t) {
+                                                                    android.util.Log.e("DownloadsScene", "删除 SMB 图片失败: gid=" + info.gid, t);
+                                                                    return false;
+                                                                }
+                                                            }
+                                                        );
+                                                        
+                                                        // 保留 SMB 映射（用户可能想重新下载）
+                                                        count++;
+                                                    } catch (Exception e) {
+                                                        android.util.Log.e("DownloadsScene", "删除 SMB 图片异常: gid=" + info.gid, e);
+                                                    }
+                                                }
+                                                return count;
+                                            }
+                                            @Override protected void onPostExecute(Integer count) {
+                                                if (count > 0) {
+                                                    Toast.makeText(context, "已删除 " + count + " 个 SMB 目录的图片", Toast.LENGTH_SHORT).show();
+                                                }
+                                            }
+                                        }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
                                     }
                                 }
                                 
@@ -2077,6 +2225,38 @@ public class DownloadsScene extends ToolbarScene
         String b = base.replace('/', sep).replaceAll("\\\\+$", "");
         String n = name.replace('/', sep).replaceAll("^\\\\+", "");
         return b + sep + n;
+    }
+
+    /**
+     * 只删除 SMB 目录中的图片文件（保留其他文件如 info.json）
+     */
+    private static void deleteSmbImageFilesOnly(com.hippo.ehviewer.smb.Client.Target target) throws Exception {
+        try {
+            java.util.List<com.hippo.ehviewer.smb.Client.RemoteDirEntry> entries = 
+                com.hippo.ehviewer.smb.Client.INSTANCE.listDirectory(target);
+            
+            if (entries != null && !entries.isEmpty()) {
+                for (com.hippo.ehviewer.smb.Client.RemoteDirEntry entry : entries) {
+                    if (!entry.isDirectory()) {
+                        String name = entry.getName();
+                        if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || 
+                            name.endsWith(".png") || name.endsWith(".gif") || 
+                            name.endsWith(".webp") || name.endsWith(".bmp"))) {
+                            com.hippo.ehviewer.smb.Client.Target fileTarget = 
+                                new com.hippo.ehviewer.smb.Client.Target(
+                                    target.getAuthority(),
+                                    target.getShare(),
+                                    joinPath(target.getPathInShare(), name)
+                                );
+                            com.hippo.ehviewer.smb.Client.INSTANCE.delete(fileTarget);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DownloadsScene", "删除 SMB 图片失败: " + target.getPathInShare(), e);
+            throw e;
+        }
     }
 
     private void viewRandom() {
