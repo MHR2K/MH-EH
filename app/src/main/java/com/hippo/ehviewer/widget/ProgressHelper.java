@@ -70,9 +70,38 @@ public class ProgressHelper {
         if (tvText == null) {
             return false;
         }
+        // 保持向后兼容：无具体计数时只显示百分比和保留消息
         String text = progress + "% " + progressMessage;
         tvText.setText(text);
         return true;
+    }
+
+    // 新增重载：显示百分比与当前/总数格式
+    // 当 total = 0 时显示 "已扫描 N 个目录"（无需预知总数）
+    public static boolean setProgress(int progress, int current, int total) {
+        if (tvText == null) {
+            return false;
+        }
+        String msg = (progressMessage != null && !progressMessage.isEmpty()) ? progressMessage : "扫描中 ···";
+        String text;
+        if (total > 0) {
+            text = String.format("%d%% (%d/%d) %s", progress, current, total, msg);
+        } else if (current > 0) {
+            // 无总数时显示已扫描数量
+            text = String.format("已扫描 %d 个目录", current);
+        } else {
+            text = msg;
+        }
+        tvText.setText(text);
+        return true;
+    }
+
+    // 设置/更新正在做的事情文本（可在扫描内部阶段更新）
+    public static void setMessage(String message) {
+        progressMessage = message == null ? "" : message;
+        if (tvText != null) {
+            tvText.setText(progressMessage);
+        }
     }
 
     public static boolean isDialogVisible() {

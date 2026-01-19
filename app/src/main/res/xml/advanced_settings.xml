@@ -145,6 +145,12 @@
         app:allowDividerAbove="true"
         app:activity="com.hippo.ehviewer.smb.ui.SmbToolsActivity" />
 
+    <Preference
+        android:key="smb_scan_mapping"
+        android:title="@string/settings_advanced_smb_scan_mapping_title"
+        android:summary="@string/settings_advanced_smb_scan_mapping_summary"
+        app:allowDividerAbove="true" />
+
     <com.hippo.preference.SwitchPreference
         android:key="auto_cbz_after_download"
         android:defaultValue="false"
