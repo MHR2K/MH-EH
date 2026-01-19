@@ -949,6 +949,13 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         if (info != null) {
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
+            
+            // Remove SMB mapping if exists
+            try {
+                com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(info.gid);
+            } catch (Exception e) {
+                // Ignore errors when removing SMB mapping
+            }
 
             // Remove all list and map
             mAllInfoList.remove(info);
@@ -974,6 +981,16 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
     public void deleteRangeDownload(LongList gidList) {
         stopRangeDownloadInternal(gidList);
+        
+        // Remove SMB mappings for all items
+        for (int i = 0, n = gidList.size(); i < n; i++) {
+            long gid = gidList.get(i);
+            try {
+                com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(gid);
+            } catch (Exception e) {
+                // Ignore errors when removing SMB mapping
+            }
+        }
 
         for (int i = 0, n = gidList.size(); i < n; i++) {
             long gid = gidList.get(i);

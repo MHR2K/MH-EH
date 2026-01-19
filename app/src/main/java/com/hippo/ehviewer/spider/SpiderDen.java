@@ -576,6 +576,17 @@ public final class SpiderDen {
                                 ", smbPath=" + detectedPath);
                         }
                         
+                        // 保存SMB映射（自动检测成功后持久化）
+                        SmbMappingStore.Mapping newMapping = new SmbMappingStore.Mapping(
+                            mGid, authority, share, detectedPath
+                        );
+                        SmbMappingStore.INSTANCE.put(newMapping);
+                        
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", 
+                                "Auto-detect SMB: saved mapping for gid=" + mGid);
+                        }
+                        
                         // 直接打开该目录下的图片文件（复用后续逻辑）
                         return openSmbFileFromPath(authority, share, detectedPath, index);
                     }
