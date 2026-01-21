@@ -490,8 +490,47 @@ public class EhDB {
         }
     }
 
+    /**
+     * 完全删除一个下载项及其所有关联数据（级联删除）
+     * 
+     * 关键：这确保了 Downloads 表和 SmbMappingStore 的数据一致性，防止孤立映射
+     * 
+     * 删除流程：
+     * 1. 删除 DOWNLOADS 表中的主记录
+     * 2. 删除关联的 SMB 映射（防止孤立）
+     * 3. 删除下载目录名映射
+     * 
+     * @param gid 要删除的画廊 ID
+     */
     public static synchronized void removeDownloadInfo(long gid) {
-        sDaoSession.getDownloadsDao().deleteByKey(gid);
+        DownloadsDao dao = sDaoSession.getDownloadsDao();
+        
+        try {
+            // 步骤 1：删除主记录
+            dao.deleteByKey(gid);
+            Log.d(TAG, "Deleted download record for gid=" + gid);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to delete download info for gid=" + gid, e);
+            throw e;
+        }
+        
+        // 步骤 2：删除 SMB 映射（关键：防止孤立映射）
+        try {
+            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(gid);
+            Log.d(TAG, "Removed SMB mapping for gid=" + gid);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to remove SMB mapping for gid=" + gid, e);
+            // 继续执行，不中断删除流程（非关键操作）
+        }
+        
+        // 步骤 3：删除下载目录名映射
+        try {
+            removeDownloadDirname(gid);
+            Log.d(TAG, "Removed download dirname for gid=" + gid);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to remove download dirname for gid=" + gid, e);
+            // 继续执行，不中断删除流程
+        }
     }
 
     @Nullable
