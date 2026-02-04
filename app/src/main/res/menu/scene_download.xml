@@ -162,6 +162,11 @@
                 </menu>
             </item>
 
+            <item
+                android:id="@+id/combined_filter"
+                android:title="@string/download_combined_filter"
+                app:showAsAction="ifRoom"/>
+
             <item android:id="@+id/sort"
                 android:title="@string/sort_download_list"
                 app:showAsAction="always">

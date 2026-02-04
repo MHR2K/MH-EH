@@ -98,6 +98,7 @@ import com.hippo.ehviewer.sync.DownloadSpiderInfoExecutor;
 import com.hippo.ehviewer.ui.GalleryActivity;
 import com.hippo.ehviewer.ui.MainActivity;
 import com.hippo.ehviewer.ui.annotation.ViewLifeCircle;
+import com.hippo.ehviewer.ui.dialog.DownloadFilterDialog;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
@@ -183,6 +184,10 @@ public class DownloadsScene extends ToolbarScene
     private int mCurrentFilterId = -1;
     // 记录过滤/搜索前的锚点 gid，用于恢复滚动位置
     private long mRestoreScrollGid = -1;
+
+    // 组合筛选的选中过滤器状态
+    private Set<Integer> mSelectedStatusFilters = new HashSet<>();
+    private Set<Integer> mSelectedProgressFilters = new HashSet<>();
 
     /*---------------
      List pagination
@@ -947,6 +952,9 @@ public class DownloadsScene extends ToolbarScene
             case R.id.progress_in_progress:
             case R.id.progress_finished:
                 filterByReadingProgress(id);
+                return true;
+            case R.id.combined_filter:
+                showCombinedFilterDialog();
                 return true;
             case R.id.action_convert_storage: {
                 // 必须在选择模式
@@ -3230,6 +3238,46 @@ public class DownloadsScene extends ToolbarScene
                     mList.add(info);
                 }
             }
+        }
+
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        }
+        updateTitle();
+        updatePaginationIndicator();
+        updateView();
+    }
+
+    private void showCombinedFilterDialog() {
+        Context context = getEHContext();
+        if (context == null || mBackList == null) {
+            return;
+        }
+        DownloadFilterDialog dialog = new DownloadFilterDialog(
+                context,
+                mSelectedStatusFilters,
+                mSelectedProgressFilters,
+                (statusFilters, progressFilters) -> {
+                    mSelectedStatusFilters = statusFilters;
+                    mSelectedProgressFilters = progressFilters;
+                    applyCombinedFilter();
+                }
+        );
+        dialog.show();
+    }
+
+    private void applyCombinedFilter() {
+        if (mBackList == null) {
+            return;
+        }
+
+        if (mSelectedStatusFilters.isEmpty() && mSelectedProgressFilters.isEmpty()) {
+            mList = new ArrayList<>(mBackList);
+        } else {
+            DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mBackList, mDownloadManager, mSpiderInfoMap);
+            executor.setDownloadSearchingListener(this);
+            executor.executeCombinedFilter(mSelectedStatusFilters, mSelectedProgressFilters);
+            return;
         }
 
         if (mAdapter != null) {

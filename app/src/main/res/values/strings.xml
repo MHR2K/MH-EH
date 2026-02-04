@@ -493,6 +493,12 @@
     <string name="download_progress_not_started">Not started</string>
     <string name="download_progress_in_progress">In progress</string>
     <string name="download_progress_finished">Finished</string>
+    <string name="download_combined_filter">组合筛选</string>
+    <string name="filter_status_title">状态</string>
+    <string name="filter_progress_title">阅读进度</string>
+    <string name="filter_apply">应用</string>
+    <string name="filter_reset">重置</string>
+    <string name="filter_cancel">取消</string>
     <string name="download_status_not_started">Not </string>
     <string name="default_sort">Default</string>
     <string name="sort_by_gallery_id_asc">By Id Asc</string>

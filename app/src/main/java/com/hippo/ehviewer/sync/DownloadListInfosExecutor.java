@@ -4,8 +4,6 @@ import android.annotation.SuppressLint;
 import android.os.Handler;
 import android.os.Looper;
 
-import androidx.annotation.Nullable;
-
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
@@ -16,6 +14,7 @@ import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.dao.GalleryTags;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.unifile.UniFile;
 
 import java.util.ArrayList;
@@ -25,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
+import androidx.annotation.Nullable;
 
 public class DownloadListInfosExecutor {
     private static final int sortByIdAsc = 1;
@@ -52,6 +53,7 @@ public class DownloadListInfosExecutor {
     private final String mSearchKey;
 
     private DownloadManager mDownloadManager;
+    private Map<Long, SpiderInfo> mSpiderInfoMap;
     private boolean mFuzzySearch = false;
     private boolean mIgnoreCase = true;
     private boolean mEnableChineseConversion = true;
@@ -78,6 +80,13 @@ public class DownloadListInfosExecutor {
         this.mList = mList;
         this.mSearchKey = "";
         mDownloadManager = downloadManager;
+    }
+
+    public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, DownloadManager downloadManager, Map<Long, SpiderInfo> spiderInfoMap) {
+        this.mList = mList;
+        this.mSearchKey = "";
+        mDownloadManager = downloadManager;
+        mSpiderInfoMap = spiderInfoMap;
     }
 
     public void setSearchOptions(boolean fuzzySearch, boolean ignoreCase, boolean enableChineseConversion) {
@@ -234,6 +243,111 @@ public class DownloadListInfosExecutor {
                 mDownloadSearchCallback.onDownloadSearchSuccess(resultList);
             });
         });
+    }
+
+    private static final int STATUS_DONE = 1;
+    private static final int STATUS_NOT_STARTED = 2;
+    private static final int STATUS_WAITING = 3;
+    private static final int STATUS_DOWNLOADING = 4;
+    private static final int STATUS_FAILED = 5;
+
+    private static final int PROGRESS_NOT_STARTED = 10;
+    private static final int PROGRESS_IN_PROGRESS = 11;
+    private static final int PROGRESS_FINISHED = 12;
+
+    public void executeCombinedFilter(java.util.Set<Integer> statusFilters, java.util.Set<Integer> progressFilters) {
+        service.execute(() -> {
+            resultList = filterByStatusAndProgress(statusFilters, progressFilters);
+
+            handler.post(() -> {
+                if (mDownloadSearchCallback == null) {
+                    return;
+                }
+                mDownloadSearchCallback.onDownloadSearchSuccess(resultList);
+            });
+        });
+    }
+
+    private List<DownloadInfo> filterByStatusAndProgress(java.util.Set<Integer> statusFilters, java.util.Set<Integer> progressFilters) {
+        if (mList == null) {
+            return new ArrayList<>();
+        }
+        if (statusFilters.isEmpty() && progressFilters.isEmpty()) {
+            return new ArrayList<>(mList);
+        }
+
+        List<DownloadInfo> result = new ArrayList<>();
+        for (DownloadInfo info : mList) {
+            boolean matchStatus = statusFilters.isEmpty() || matchesStatusFilter(statusFilters, info.state);
+            boolean matchProgress = true;
+
+            if (!progressFilters.isEmpty()) {
+                SpiderInfo spiderInfo = getSpiderInfo(info.gid);
+                int startPage = spiderInfo != null ? spiderInfo.startPage : 0;
+                int pages = spiderInfo != null ? spiderInfo.pages : 0;
+                boolean hasSpiderInfo = spiderInfo != null;
+
+                matchProgress = false;
+                for (int progressFilter : progressFilters) {
+                    if (matchesProgressFilter(progressFilter, startPage, pages, hasSpiderInfo)) {
+                        matchProgress = true;
+                        break;
+                    }
+                }
+            }
+
+            if (matchStatus && matchProgress) {
+                result.add(info);
+            }
+        }
+        return result;
+    }
+
+    private boolean matchesStatusFilter(java.util.Set<Integer> statusFilters, int state) {
+        for (int statusFilter : statusFilters) {
+            int targetState = mapStatusToDownloadState(statusFilter);
+            if (targetState == state) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int mapStatusToDownloadState(int filterStatus) {
+        switch (filterStatus) {
+            case STATUS_DONE:
+                return DownloadInfo.STATE_FINISH;
+            case STATUS_NOT_STARTED:
+                return DownloadInfo.STATE_NONE;
+            case STATUS_WAITING:
+                return DownloadInfo.STATE_WAIT;
+            case STATUS_DOWNLOADING:
+                return DownloadInfo.STATE_DOWNLOAD;
+            case STATUS_FAILED:
+                return DownloadInfo.STATE_FAILED;
+            default:
+                return -1;
+        }
+    }
+
+    private static boolean matchesProgressFilter(int filterProgress, int startPage, int pages, boolean hasSpiderInfo) {
+        switch (filterProgress) {
+            case PROGRESS_NOT_STARTED:
+                return !hasSpiderInfo || startPage == 0;
+            case PROGRESS_IN_PROGRESS:
+                return hasSpiderInfo && startPage > 0 && pages > 0 && startPage < pages - 1;
+            case PROGRESS_FINISHED:
+                return hasSpiderInfo && pages > 0 && startPage >= pages - 1;
+            default:
+                return false;
+        }
+    }
+
+    private SpiderInfo getSpiderInfo(long gid) {
+        if (mSpiderInfoMap != null) {
+            return mSpiderInfoMap.get(gid);
+        }
+        return null;
     }
 
     private List<DownloadInfo> sortByType(int type) {
