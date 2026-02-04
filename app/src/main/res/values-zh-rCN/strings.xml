@@ -396,6 +396,11 @@
     <string name="storage_all">全部</string>
     <string name="storage_smb_only">只看SMB</string>
     <string name="storage_local_only">只看本地</string>
+    <string name="download_filter_by_reading_progress">根据阅读进度过滤</string>
+    <string name="download_progress_all">全部</string>
+    <string name="download_progress_not_started">未阅读</string>
+    <string name="download_progress_in_progress">阅读中</string>
+    <string name="download_progress_finished">已读完</string>
     <string name="sort_download_list">对内容排序</string>
     <string name="default_sort">默认</string>
     <string name="sort_by_gallery_id_asc">按ID升序</string>

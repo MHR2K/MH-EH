@@ -488,6 +488,11 @@
     <string name="storage_images_only">Images only</string>
     <string name="storage_smb_only">SMB only</string>
     <string name="storage_local_only">Local only</string>
+    <string name="download_filter_by_reading_progress">Filter by reading progress</string>
+    <string name="download_progress_all">All</string>
+    <string name="download_progress_not_started">Not started</string>
+    <string name="download_progress_in_progress">In progress</string>
+    <string name="download_progress_finished">Finished</string>
     <string name="download_status_not_started">Not </string>
     <string name="default_sort">Default</string>
     <string name="sort_by_gallery_id_asc">By Id Asc</string>

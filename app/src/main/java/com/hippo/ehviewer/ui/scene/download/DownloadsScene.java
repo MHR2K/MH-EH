@@ -942,6 +942,12 @@ public class DownloadsScene extends ToolbarScene
                 updateTitle();
                 return true;
             }
+            case R.id.progress_all:
+            case R.id.progress_not_started:
+            case R.id.progress_in_progress:
+            case R.id.progress_finished:
+                filterByReadingProgress(id);
+                return true;
             case R.id.action_convert_storage: {
                 // 必须在选择模式
                 if (!mRecyclerView.isInCustomChoice()) return false;
@@ -3191,6 +3197,47 @@ public class DownloadsScene extends ToolbarScene
         updatePaginationIndicator();
         updateView();
         queryUnreadSpiderInfo();
+    }
+
+    private void filterByReadingProgress(int filterId) {
+        if (mBackList == null) {
+            return;
+        }
+
+        if (filterId == R.id.progress_all) {
+            mList = new ArrayList<>(mBackList);
+        } else {
+            mList = new ArrayList<>();
+            for (DownloadInfo info : mBackList) {
+                SpiderInfo spiderInfo = mSpiderInfoMap.get(info.gid);
+                int startPage = spiderInfo != null ? spiderInfo.startPage : 0;
+                int pages = spiderInfo != null ? spiderInfo.pages : 0;
+
+                boolean shouldAdd = false;
+                switch (filterId) {
+                    case R.id.progress_not_started:
+                        shouldAdd = (spiderInfo == null || startPage == 0);
+                        break;
+                    case R.id.progress_in_progress:
+                        shouldAdd = (startPage > 0 && pages > 0 && startPage < pages - 1);
+                        break;
+                    case R.id.progress_finished:
+                        shouldAdd = (pages > 0 && startPage >= pages - 1);
+                        break;
+                }
+
+                if (shouldAdd) {
+                    mList.add(info);
+                }
+            }
+        }
+
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        }
+        updateTitle();
+        updatePaginationIndicator();
+        updateView();
     }
 
     /**

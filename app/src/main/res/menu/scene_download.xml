@@ -138,6 +138,30 @@
                 </menu>
             </item>
 
+            <item
+                android:id="@+id/filter_by_reading_progress"
+                android:title="@string/download_filter_by_reading_progress"
+                app:showAsAction="ifRoom">
+                <menu>
+                    <item
+                        android:id="@+id/progress_all"
+                        android:title="@string/download_progress_all"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/progress_not_started"
+                        android:title="@string/download_progress_not_started"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/progress_in_progress"
+                        android:title="@string/download_progress_in_progress"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/progress_finished"
+                        android:title="@string/download_progress_finished"
+                        app:showAsAction="ifRoom"/>
+                </menu>
+            </item>
+
             <item android:id="@+id/sort"
                 android:title="@string/sort_download_list"
                 app:showAsAction="always">
