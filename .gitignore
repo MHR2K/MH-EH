@@ -19,3 +19,6 @@ open_source_licenses.html
 /.vscode/settings.json
 /SMB
 Log&Error.md
+# Eclipse / Java 项目环境配置
+.project
+.settings/
