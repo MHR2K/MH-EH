@@ -188,6 +188,7 @@ object Client {
 
     /**
      * 读取文件，返回一个 InputStream。调用者需在读取结束后关闭流。
+     * 优化：使用 256KB 缓冲提升大文件读取性能
      */
     @Throws(IOException::class)
     fun openInputStream(target: Target): java.io.InputStream {
@@ -207,6 +208,8 @@ object Client {
         return object : java.io.InputStream() {
             private var offset = 0L
             private var closed = false
+            // 使用 256KB 缓冲提升读取效率
+            private val bufferSize = 256 * 1024
 
             override fun read(): Int {
                 val b = ByteArray(1)
@@ -218,8 +221,8 @@ object Client {
                 if (closed) throw IOException("Stream already closed")
                 if (len == 0) return 0
                 return try {
-                    val toRead = kotlin.math.min(len, 64 * 1024)
-                    val buf = if (off == 0 && len == b.size) b else b.copyOfRange(off, off + toRead)
+                    val toRead = kotlin.math.min(len, bufferSize)
+                    val buf = if (off == 0 && len == b.size && b.size == toRead) b else ByteArray(toRead)
                     var read = 0
                     try {
                         read = file.read(buf, offset, 0, toRead)

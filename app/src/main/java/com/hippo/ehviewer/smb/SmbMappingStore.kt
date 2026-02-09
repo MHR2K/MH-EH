@@ -11,6 +11,7 @@ import org.json.JSONObject
  * 
  * 优化：
  * - 内存缓存：避免每次都重新解析 JSON
+ * - Map 索引 gid：O(1) 查询（替代原有的 O(n) List 查找）
  * - 线程安全：使用 synchronized 保护并发访问
  * - 批量操作：支持一次删除多个映射
  * - 错误处理：损坏数据自动跳过而非崩溃
@@ -22,9 +23,9 @@ object SmbMappingStore {
 
     private lateinit var sp: SharedPreferences
     
-    // 内存缓存，减少每次查询的 JSON 反序列化开销
+    // 内存缓存，使用 Map 索引 gid 实现 O(1) 查询
     @Volatile
-    private var cachedMappings: List<Mapping>? = null
+    private var cachedMappings: Map<Long, Mapping>? = null
     private val cacheLock = Any()
 
     data class Mapping(
@@ -49,10 +50,11 @@ object SmbMappingStore {
             try {
                 val json = sp.getString(KEY_MAPPINGS, "[]") ?: "[]"
                 val arr = JSONArray(json)
-                val out = mutableListOf<Mapping>()
+                val out = mutableMapOf<Long, Mapping>()
                 for (i in 0 until arr.length()) {
                     try {
-                        out += fromJson(arr.getJSONObject(i))
+                        val mapping = fromJson(arr.getJSONObject(i))
+                        out[mapping.gid] = mapping
                     } catch (e: Exception) {
                         Log.w(TAG, "Failed to parse mapping at index $i", e)
                         // 跳过损坏的条目，继续处理
@@ -62,7 +64,7 @@ object SmbMappingStore {
                 Log.d(TAG, "Cache reloaded: ${out.size} mappings")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to reload cache", e)
-                cachedMappings = emptyList()
+                cachedMappings = emptyMap()
             }
         }
     }
@@ -84,52 +86,59 @@ object SmbMappingStore {
         if (cachedMappings == null) {
             reloadCache()
         }
-        return cachedMappings ?: emptyList()
+        return cachedMappings?.values?.toList() ?: emptyList()
     }
 
     /**
      * 根据 gid 查询映射
-     * 性能：O(n)，但通常 n 很小（<100）
+     * 性能：O(1)（使用 Map 索引）
      */
     @JvmStatic
-    fun get(gid: Long): Mapping? = list().firstOrNull { it.gid == gid }
+    fun get(gid: Long): Mapping? {
+        // 确保缓存已加载
+        if (cachedMappings == null) {
+            reloadCache()
+        }
+        return cachedMappings?.get(gid)
+    }
 
     /**
      * 批量查询（减少遍历次数）
-     * 性能：O(n)，适合查询多个 gid
+     * 性能：O(m)，其中 m=gids 数量
      */
     fun getAll(gids: Collection<Long>): List<Mapping> {
-        val gidSet = gids.toSet()
-        return list().filter { it.gid in gidSet }
+        if (cachedMappings == null) {
+            reloadCache()
+        }
+        val map = cachedMappings ?: emptyMap()
+        return gids.mapNotNull { map[it] }
     }
 
     /**
      * 检查是否存在映射
-     * 性能：O(n)，但比 get() 早停止
+     * 性能：O(1)
      */
     fun exists(gid: Long): Boolean {
-        return list().any { it.gid == gid }
+        return cachedMappings?.containsKey(gid) ?: run {
+            if (cachedMappings == null) reloadCache()
+            cachedMappings?.containsKey(gid) ?: false
+        }
     }
 
     /**
      * 添加或更新映射
-     * 性能：O(n) 读 + O(1) 写
+     * 性能：O(1)
      */
     @JvmStatic
     fun put(mapping: Mapping) {
         synchronized(cacheLock) {
             try {
-                val updated = (cachedMappings ?: emptyList()).toMutableList()
-                val idx = updated.indexOfFirst { it.gid == mapping.gid }
-                if (idx >= 0) {
-                    updated[idx] = mapping
-                } else {
-                    updated.add(mapping)
-                }
+                val updatedMap = (cachedMappings ?: emptyMap()).toMutableMap()
+                updatedMap[mapping.gid] = mapping
                 val arr = JSONArray()
-                updated.forEach { arr.put(toJson(it)) }
+                updatedMap.values.forEach { arr.put(toJson(it)) }
                 sp.edit().putString(KEY_MAPPINGS, arr.toString()).apply()
-                cachedMappings = updated // 更新缓存
+                cachedMappings = updatedMap
                 Log.d(TAG, "Mapping added/updated for gid=${mapping.gid}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to put mapping", e)
@@ -140,7 +149,7 @@ object SmbMappingStore {
 
     /**
      * 删除一个映射
-     * 性能：O(n)
+     * 性能：O(1)
      * 
      * @return 如果成功删除返回 true，如果映射不存在返回 false
      */
@@ -148,15 +157,16 @@ object SmbMappingStore {
     fun remove(gid: Long): Boolean {
         synchronized(cacheLock) {
             try {
-                val current = cachedMappings ?: emptyList()
-                if (!current.any { it.gid == gid }) {
-                    return false // 无需删除
+                val current = cachedMappings ?: emptyMap()
+                if (!current.containsKey(gid)) {
+                    return false
                 }
+                val updatedMap = current.toMutableMap()
+                updatedMap.remove(gid)
                 val arr = JSONArray()
-                val updated = current.filter { it.gid != gid }
-                updated.forEach { arr.put(toJson(it)) }
+                updatedMap.values.forEach { arr.put(toJson(it)) }
                 sp.edit().putString(KEY_MAPPINGS, arr.toString()).apply()
-                cachedMappings = updated // 更新缓存
+                cachedMappings = updatedMap
                 Log.d(TAG, "Mapping removed for gid=$gid")
                 return true
             } catch (e: Exception) {
@@ -168,21 +178,21 @@ object SmbMappingStore {
 
     /**
      * 批量删除（删除下载时常用）
-     * 性能：O(n)，通常用于删除多个下载项
+     * 性能：O(m + n)，通常用于删除多个下载项
      */
     fun removeAll(gids: Collection<Long>) {
         synchronized(cacheLock) {
             try {
                 val gidSet = gids.toSet()
-                val current = cachedMappings ?: emptyList()
-                val updated = current.filter { it.gid !in gidSet }
-                if (updated.size == current.size) {
-                    return // 无需删除
+                val current = cachedMappings ?: emptyMap()
+                val updatedMap = current.filterKeys { it !in gidSet }
+                if (updatedMap.size == current.size) {
+                    return
                 }
                 val arr = JSONArray()
-                updated.forEach { arr.put(toJson(it)) }
+                updatedMap.values.forEach { arr.put(toJson(it)) }
                 sp.edit().putString(KEY_MAPPINGS, arr.toString()).apply()
-                cachedMappings = updated
+                cachedMappings = updatedMap
                 Log.d(TAG, "Removed mappings for ${gids.size} gids")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to remove mappings", e)
@@ -200,11 +210,12 @@ object SmbMappingStore {
             try {
                 val json = sp.getString(KEY_MAPPINGS, "[]") ?: "[]"
                 val arr = JSONArray(json)
-                val repaired = mutableListOf<Mapping>()
+                val repaired = mutableMapOf<Long, Mapping>()
                 var corruptCount = 0
                 for (i in 0 until arr.length()) {
                     try {
-                        repaired += fromJson(arr.getJSONObject(i))
+                        val mapping = fromJson(arr.getJSONObject(i))
+                        repaired[mapping.gid] = mapping
                     } catch (e: Exception) {
                         corruptCount++
                         Log.w(TAG, "Skipping corrupt mapping at index $i", e)
@@ -212,7 +223,7 @@ object SmbMappingStore {
                 }
                 if (corruptCount > 0) {
                     val repairedArr = JSONArray()
-                    repaired.forEach { repairedArr.put(toJson(it)) }
+                    repaired.values.forEach { repairedArr.put(toJson(it)) }
                     sp.edit().putString(KEY_MAPPINGS, repairedArr.toString()).apply()
                     cachedMappings = repaired
                     Log.i(TAG, "Repaired: removed $corruptCount corrupt mappings")

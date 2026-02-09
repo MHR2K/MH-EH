@@ -18,8 +18,17 @@ object SmbFileHelper {
     private const val TAG = "SmbFileHelper"
     
     // 缓存自动检测失败的 gid，避免重复尝试（5分钟过期）
-    private val autoDetectFailedCache = mutableMapOf<Long, Long>()
+    // 使用 ConcurrentHashMap 保证线程安全
+    private val autoDetectFailedCache = java.util.concurrent.ConcurrentHashMap<Long, Long>()
     private const val CACHE_EXPIRY_MS = 5 * 60 * 1000L  // 5分钟
+    
+    /**
+     * 清理过期的缓存条目（定期调用）
+     */
+    fun cleanExpiredCache() {
+        val now = System.currentTimeMillis()
+        autoDetectFailedCache.entries.removeIf { (now - it.value) > CACHE_EXPIRY_MS }
+    }
 
     /**
      * 获取 SMB 文件的输入流管道
