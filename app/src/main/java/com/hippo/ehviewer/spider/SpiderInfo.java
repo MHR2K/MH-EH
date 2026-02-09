@@ -234,17 +234,15 @@ public class SpiderInfo {
     }
 
     public synchronized void writeNewSpiderInfoToLocal(@NonNull SpiderDen spiderDen, Context context) {
-        // Step 1: 尝试写入到 SMB
-        GalleryInfo galleryInfo = new GalleryInfo();
-        galleryInfo.gid = gid;
-        galleryInfo.token = token;
+        // 注意：SmbFileHelper 现在只使用显式映射，自动检测由 SpiderDen 处理
         
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         write(baos);
         byte[] data = baos.toByteArray();
 
         boolean persisted = false;
-        if (SmbFileHelper.writeSmbFile(gid, SPIDER_INFO_FILENAME, data, galleryInfo)) {
+        // Step 1: 尝试写入到 SMB（使用显式映射）
+        if (SmbFileHelper.writeSmbFile(gid, SPIDER_INFO_FILENAME, data)) {
             persisted = true;
             if (BuildConfig.DEBUG) {
                 Log.d(TAG, "SpiderInfo written to SMB, gid=" + gid);
@@ -304,14 +302,14 @@ public class SpiderInfo {
 
     /**
      * 尝试从 SMB 读取 SpiderInfo
+     * 注意：SmbFileHelper 现在只使用显式映射，自动检测由 SpiderDen 处理
      */
     @Nullable
     private static SpiderInfo readFromSmb(@NonNull GalleryInfo info) {
         try {
             com.hippo.streampipe.InputStreamPipe pipe = SmbFileHelper.getSmbFileInputStream(
                     info.gid,
-                    SPIDER_INFO_FILENAME,
-                    info
+                    SPIDER_INFO_FILENAME
             );
             if (pipe != null) {
                 pipe.obtain();

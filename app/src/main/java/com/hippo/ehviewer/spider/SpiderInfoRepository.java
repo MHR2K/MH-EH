@@ -172,11 +172,13 @@ public class SpiderInfoRepository {
 
     @Nullable
     private SpiderInfo readFromSmb(@NonNull GalleryInfo info) {
+        // 注意：SmbFileHelper 现在只使用显式映射
+        // 自动检测由 SpiderDen 处理
+        // 此处仅当存在显式映射时才尝试 SMB 读取
         try {
             InputStreamPipe pipe = SmbFileHelper.getSmbFileInputStream(
                     info.gid,
-                    SpiderQueen.SPIDER_INFO_FILENAME,
-                    info
+                    SpiderQueen.SPIDER_INFO_FILENAME
             );
             if (pipe != null) {
                 pipe.obtain();
