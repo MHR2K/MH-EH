@@ -351,7 +351,7 @@
     <string name="tag_filter">Filtrer le tag</string>
 
     <!-- Download -->
-    <string name="scene_download_title">%s Galeries - %s</string>
+    <string name="scene_download_title">%1$s Galeries - %2$s</string>
     <string name="no_download_info">Vos téléchargements s\'afficheront ici</string>
     <string name="download_state_none">En veille</string>
     <string name="download_state_wait">En attente</string>

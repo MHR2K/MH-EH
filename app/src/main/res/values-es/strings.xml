@@ -350,7 +350,7 @@
     <string name="tag_filter">Filtrar etiqueta</string>
 
     <!-- Download -->
-    <string name="scene_download_title">%s Galerías - %s</string>
+    <string name="scene_download_title">%1$s Galerías - %2$s</string>
     <string name="no_download_info">Las galerías descargadas se mostrarán acá</string>
     <string name="download_state_wait">Esperando</string>
     <string name="download_state_downloading">Descargando</string>
@@ -920,7 +920,7 @@
     <string name="wifi_server_send_fail">Error al enviar mensaje: %s</string>
     <string name="wifi_server_receive_message">Mensaje recibido: %s</string>
     <string name="wifi_server_receive_message_unknown">tipo de datos desconocido</string>
-    <string name="wifi_server_opened">Punto de acceso abierto SSID: %1s \n%2s</string>
+    <string name="wifi_server_opened">Punto de acceso abierto SSID: %1$s \n%2$s</string>
     <string name="wifi_server_closed">Punto de acceso cerrado</string>
     <string name="wifi_server_password">Contraseña: %s</string>
     <string name="wifi_server_no_permission">Permisos insuficientes, por favor otorgue permisos</string>

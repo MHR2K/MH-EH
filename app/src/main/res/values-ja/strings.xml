@@ -331,7 +331,7 @@
     <string name="go_to">ページに移動</string>
     <string name="tag_filter">タグをフィルター</string>
     <!-- Download -->
-    <string name="scene_download_title">%sギャラリー - %s</string>
+    <string name="scene_download_title">%1$sギャラリー - %2$s</string>
     <string name="no_download_info">ダウンロードタスクはここに表示されます</string>
     <string name="download_state_none">一時停止中</string>
     <string name="download_state_wait">待機中</string>
@@ -823,7 +823,7 @@
     <string name="wifi_server_send_fail">送信に失敗しました: %s</string>
     <string name="wifi_server_receive_message">メッセージを受信しました: %s</string>
     <string name="wifi_server_receive_message_unknown">不明なデータタイプ</string>
-    <string name="wifi_server_opened">ホットスポットSSID: %1s\n%2s</string>
+    <string name="wifi_server_opened">ホットスポットSSID: %1$s\n%2$s</string>
     <string name="wifi_server_closed">ホットスポットが閉じられました</string>
     <string name="wifi_server_password">パスワード: %s</string>
     <string name="wifi_server_no_permission">権限の許可が不十分です。権限の許可を行なってください。</string>

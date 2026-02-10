@@ -344,7 +344,7 @@
     <string name="tag_filter">篩選標籤</string>
 
     <!-- Download -->
-    <string name="scene_download_title">共%s個圖庫 - %s</string>
+    <string name="scene_download_title">共%1$s個圖庫 - %2$s</string>
     <string name="no_download_info">下載的物件將會顯示在此</string>
     <string name="download_state_none">閒置中</string>
     <string name="download_state_wait">等待中</string>
@@ -896,7 +896,7 @@
     <string name="wifi_server_send_fail">發送消息失敗: %s</string>
     <string name="wifi_server_receive_message">收到消息: %s</string>
     <string name="wifi_server_receive_message_unknown">未知資料類型</string>
-    <string name="wifi_server_opened">熱點已開啟 SSID: %1s \n%2s</string>
+    <string name="wifi_server_opened">熱點已開啟 SSID: %1$s \n%2$s</string>
     <string name="wifi_server_closed">熱點已關閉</string>
     <string name="wifi_server_password">密碼: %s</string>
     <string name="wifi_server_no_permission">權限不足，請授予權限</string>

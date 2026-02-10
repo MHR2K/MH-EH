@@ -301,7 +301,7 @@
     <string name="gallery_previews">Vorschauen der Galerie</string>
     <string name="go_to">Gehe zu</string>
     <string name="tag_filter">Etikett filtern</string>
-    <string name="scene_download_title">%s Galleries - %s</string>
+    <string name="scene_download_title">%1$s Galleries - %2$s</string>
     <string name="no_download_info">Downloads werden hier angezeigt</string>
     <string name="download_state_none">Pausiert</string>
     <string name="download_state_wait">In der Warteschlange</string>
@@ -783,7 +783,7 @@
     <string name="wifi_server_send_fail">Nachricht konnte nicht gesendet werden: %s</string>
     <string name="wifi_server_receive_message">Nachricht empfangen: %s</string>
     <string name="wifi_server_receive_message_unknown">unbekannter Datentyp</string>
-    <string name="wifi_server_opened">Hotspot wurde geöffnet SSID: %1s \n%2s</string>
+    <string name="wifi_server_opened">Hotspot wurde geöffnet SSID: %1$s \n%2$s</string>
     <string name="wifi_server_closed">Hotspot wurde geschlossen</string>
     <string name="wifi_server_password">Passwort: %s</string>
     <string name="wifi_server_no_permission">Unzureichende Berechtigung, bitte Berechtigung erteilen</string>
