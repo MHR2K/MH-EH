@@ -36,7 +36,18 @@ object Client {
         .build()
     
     private val client = SMBClient(smbConfig)
+    
+    // 连接池管理：添加会话活动和超时清理
     private val sessions = mutableMapOf<Authority, Session>()
+    private val sessionActivity = mutableMapOf<Authority, Long>()
+    private val sessionsLock = Any()
+    
+    // DNS 缓存：避免重复解析
+    private val dnsCache = mutableMapOf<String, String>()
+    private val dnsCacheLock = Any()
+    
+    // 会话超时：5分钟无活动则清理
+    private val SESSION_TIMEOUT = 5 * 60 * 1000L
     // 为测试/一次性调用提供的临时密码（按线程隔离）
     private val tempPasswords = ThreadLocal<MutableMap<Authority, String>?>()
 
@@ -110,6 +121,9 @@ object Client {
     // endregion
 
     // region 上传/删除/重命名
+    // 上传缓冲区大小：256KB，提升大文件传输性能
+    private val UPLOAD_BUFFER_SIZE = 256 * 1024
+
     @Throws(IOException::class)
     fun upload(target: Target, input: java.io.InputStream, overwrite: Boolean = true) {
         val share = getDiskShare(getSession(target.authority), target.share)
@@ -127,7 +141,7 @@ object Client {
             throw IOException(e)
         }
         file.use { f ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            val buffer = ByteArray(UPLOAD_BUFFER_SIZE)
             var offset = 0L
             while (true) {
                 val read = input.read(buffer)
@@ -281,12 +295,20 @@ object Client {
     // region 会话/连接
     @Throws(IOException::class)
     private fun getSession(authority: Authority): Session {
-        synchronized(sessions) {
+        // 清理过期会话
+        cleanupExpiredSessions()
+        
+        synchronized(sessionsLock) {
             sessions[authority]?.let { session ->
-                if (session.connection.isConnected) return session
+                if (session.connection.isConnected) {
+                    // 更新会话活动时间
+                    sessionActivity[authority] = System.currentTimeMillis()
+                    return session
+                }
                 try { session.close() } catch (_: Throwable) {}
                 try { session.connection.close() } catch (_: Throwable) {}
                 sessions.remove(authority)
+                sessionActivity.remove(authority)
             }
             val password = tempPasswords.get()?.get(authority)
                 ?: authenticator.getPassword(authority)
@@ -306,7 +328,7 @@ object Client {
                     fromStore?.password
                 }
                 ?: throw IOException("No password for $authority")
-            val hostAddress = resolveHostName(authority.host)
+            val hostAddress = resolveHostNameWithCache(authority.host)
             val connection = try {
                 client.connect(hostAddress, authority.port)
             } catch (e: IOException) {
@@ -320,7 +342,30 @@ object Client {
                 throw IOException(e)
             }
             sessions[authority] = session
+            sessionActivity[authority] = System.currentTimeMillis()
             return session
+        }
+    }
+
+    /**
+     * 清理过期会话（5分钟无活动）
+     */
+    private fun cleanupExpiredSessions() {
+        val now = System.currentTimeMillis()
+        synchronized(sessionsLock) {
+            val expired = sessionActivity.filter { (authority, lastActivity) ->
+                now - lastActivity > SESSION_TIMEOUT
+            }.keys
+            for (authority in expired) {
+                try {
+                    sessions[authority]?.close()
+                } catch (_: Throwable) {}
+                try {
+                    sessions[authority]?.connection?.close()
+                } catch (_: Throwable) {}
+                sessions.remove(authority)
+                sessionActivity.remove(authority)
+            }
         }
     }
 
@@ -339,16 +384,33 @@ object Client {
 
     @Throws(IOException::class)
     private fun resolveHostName(hostName: String): String {
+        // 检查缓存
+        synchronized(dnsCacheLock) {
+            dnsCache[hostName]?.let { return it }
+        }
+        
         try {
             val nameServiceClient = SingletonContext.getInstance().nameServiceClient
             val addresses = nameServiceClient.getAllByName(hostName, false).mapNotNull { it.toInetAddress() }
             val address = addresses.firstOrNull { it is Inet4Address } ?: addresses.first()
-            return address.hostAddress ?: hostName
+            val result = address.hostAddress ?: hostName
+            
+            // 存入缓存
+            synchronized(dnsCacheLock) {
+                dnsCache[hostName] = result
+            }
+            return result
         } catch (e: UnknownHostException) {
             // 回退到原始主机名
             return hostName
         }
     }
+
+    /**
+     * 带缓存的 DNS 解析（别名方法）
+     */
+    @Throws(IOException::class)
+    private fun resolveHostNameWithCache(hostName: String): String = resolveHostName(hostName)
 
     @Throws(IOException::class)
     private fun getShare(session: Session, shareName: String): Share = try {
