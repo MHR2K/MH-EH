@@ -31,6 +31,7 @@ import android.widget.Toast
 import com.hippo.ehviewer.R
 import java.lang.RuntimeException
 
+@Suppress("DEPRECATION")
 class AppHelper {
     private fun isWifiProxy(context: Context?): Boolean {
         var proxyPort: Int

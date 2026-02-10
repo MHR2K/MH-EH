@@ -30,6 +30,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.IntDef
 import androidx.core.app.NotificationCompat
+import androidx.core.os.BuildCompat
 import com.hippo.ehviewer.EhApplication
 import com.hippo.ehviewer.R
 import com.hippo.ehviewer.client.EhUtils
@@ -114,6 +115,7 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
         return START_STICKY
     }
 
+    @Suppress("DEPRECATION")
     private fun handleIntent(intent: Intent?) {
         var action: String? = null
         if (intent != null) {
@@ -126,14 +128,21 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
         when (action) {
             ACTION_CLEAR -> clear()
             ACTION_DELETE_RANGE -> {
-                val gidList = intent!!.getParcelableExtra<LongList>(KEY_GID_LIST)
-                if (gidList != null && mDownloadManager != null) {
-                    mDownloadManager!!.deleteRangeDownload(gidList)
+                intent?.let { i ->
+                    val gidList = if (BuildCompat.isAtLeastT()) {
+                        i.getParcelableExtra(KEY_GID_LIST, LongList::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        i.getParcelableExtra<LongList>(KEY_GID_LIST)
+                    }
+                    if (gidList != null && mDownloadManager != null) {
+                        mDownloadManager!!.deleteRangeDownload(gidList)
+                    }
                 }
             }
 
             ACTION_DELETE -> {
-                val gid = intent!!.getLongExtra(KEY_GID, -1)
+                val gid = intent?.getLongExtra(KEY_GID, -1) ?: -1
                 if (gid != -1L && mDownloadManager != null) {
                     mDownloadManager!!.deleteDownload(gid)
                 }
@@ -144,9 +153,16 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
             }
 
             ACTION_STOP_RANGE -> {
-                val gidListS = intent!!.getParcelableExtra<LongList>(KEY_GID_LIST)
-                if (gidListS != null && mDownloadManager != null) {
-                    mDownloadManager!!.stopRangeDownload(gidListS)
+                intent?.let { i ->
+                    val gidListS = if (BuildCompat.isAtLeastT()) {
+                        i.getParcelableExtra(KEY_GID_LIST, LongList::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        i.getParcelableExtra<LongList>(KEY_GID_LIST)
+                    }
+                    if (gidListS != null && mDownloadManager != null) {
+                        mDownloadManager!!.stopRangeDownload(gidListS)
+                    }
                 }
             }
 
@@ -155,7 +171,7 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
             }
 
             ACTION_STOP -> {
-                val gidS = intent!!.getLongExtra(KEY_GID, -1)
+                val gidS = intent?.getLongExtra(KEY_GID, -1) ?: -1
                 if (gidS != -1L && mDownloadManager != null) {
                     mDownloadManager!!.stopDownload(gidS)
                 }
@@ -166,17 +182,31 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
             }
 
             ACTION_START_RANGE -> {
-                val gidListSR = intent!!.getParcelableExtra<LongList>(KEY_GID_LIST)
-                if (gidListSR != null && mDownloadManager != null) {
-                    mDownloadManager!!.startRangeDownload(gidListSR)
+                intent?.let { i ->
+                    val gidListSR = if (BuildCompat.isAtLeastT()) {
+                        i.getParcelableExtra(KEY_GID_LIST, LongList::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        i.getParcelableExtra<LongList>(KEY_GID_LIST)
+                    }
+                    if (gidListSR != null && mDownloadManager != null) {
+                        mDownloadManager!!.startRangeDownload(gidListSR)
+                    }
                 }
             }
 
             ACTION_START -> {
-                val gi = intent!!.getParcelableExtra<GalleryInfo>(KEY_GALLERY_INFO)
-                val label = intent.getStringExtra(KEY_LABEL)
-                if (gi != null && mDownloadManager != null) {
-                    mDownloadManager!!.startDownload(gi, label)
+                intent?.let { i ->
+                    val gi = if (BuildCompat.isAtLeastT()) {
+                        i.getParcelableExtra(KEY_GALLERY_INFO, GalleryInfo::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        i.getParcelableExtra<GalleryInfo>(KEY_GALLERY_INFO)
+                    }
+                    val label = i.getStringExtra(KEY_LABEL)
+                    if (gi != null && mDownloadManager != null) {
+                        mDownloadManager!!.startDownload(gi, label)
+                    }
                 }
             }
         }

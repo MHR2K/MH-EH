@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 支持 SMB 和本地存储
  * 优化：优先使用本地文件，避免 ANR
  */
+@Suppress("UNUSED_VARIABLE", "ConditionAlwaysTrue", "UNNECESSARY_SAFE_CALL")
 class ThumbDataContainer(
     private val mContext: Context,
     private val mInfo: DownloadInfo
@@ -84,7 +85,8 @@ class ThumbDataContainer(
     override fun isEnabled(): Boolean {
         // 策略：优先使用本地文件，避免主线程等待导致 ANR
         // Step 1: 先检查本地文件是否存在
-        if (ensureFile() && mFile != null) {
+        // 注意：ensureFile() 成功时会设置 mFile，所以只需检查 ensureFile() 返回值
+        if (ensureFile()) {
             return true
         }
 
@@ -122,7 +124,12 @@ class ThumbDataContainer(
         }
 
         // Step 5: 返回本地文件检查结果
-        return ensureFile() && mFile != null
+        // 注意：ensureFile() 成功时会设置 mFile，所以无需再次检查 mFile != null
+        val result = ensureFile()
+        if (!result) {
+            Log.d(TAG, "isEnabled() returning false for gid: ${mInfo.gid}")
+        }
+        return result
     }
 
     override fun onUrlMoved(requestUrl: String?, responseUrl: String?) {
@@ -194,6 +201,7 @@ class ThumbDataContainer(
     /**
      * 保存数据到本地文件（带重试机制）
      */
+    @Suppress("UNNECESSARY_SAFE_CALL")
     private fun saveToLocalFile(data: ByteArray): Boolean {
         var retryCount = 0
         while (retryCount < 2) {
@@ -248,6 +256,7 @@ class ThumbDataContainer(
         return false
     }
 
+    @Suppress("UNNECESSARY_SAFE_CALL")
     override fun get(): InputStreamPipe? {
         // Step 1: 优先使用 SMB pipe（如果已准备好）
         if (mSmbPipe != null) {
@@ -273,7 +282,7 @@ class ThumbDataContainer(
             }
         }
 
-        // Step 3: 检查本地文件
+        // Step 3: 检查本地文件（调用 ensureFile() 设置 mFile，忽略返回值）
         ensureFile()
         return mFile?.let {
             Log.d(TAG, "Using local file for gid: ${mInfo.gid}")

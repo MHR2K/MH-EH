@@ -99,6 +99,7 @@ import com.hippo.widget.SearchBarMover
 import okhttp3.OkHttpClient
 import java.util.concurrent.ExecutorService
 
+@Suppress("DEPRECATION")
 // TODO Get favorite, modify favorite, add favorite, what a mess!
 class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
     EasyRecyclerView.OnItemLongClickListener, OnDragHandlerListener, SearchBarMover.Helper,
@@ -1574,6 +1575,7 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
         }
     }
 
+    @Suppress("DEPRECATION")
     private inner class RandomFavorite : AsyncTask<Void?, Void?, GalleryInfo?> {
         var mOkHttpClient: OkHttpClient? = null
 
@@ -1583,6 +1585,7 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
 
         constructor()
 
+        @Deprecated("Deprecated in Java")
         override fun doInBackground(vararg v: Void?): GalleryInfo? {
             publishProgress()
             if (mUrlBuilder == null) {

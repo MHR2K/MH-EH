@@ -74,6 +74,7 @@ class SmbToolsActivity : AppCompatActivity() {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
             }
+            @Suppress("DEPRECATION")
             startActivityForResult(intent, REQ_PICK_FILE)
         }
 

@@ -26,6 +26,7 @@ import androidx.core.graphics.createBitmap
 import com.hippo.ehviewer.Analytics
 
 
+@Suppress("DEPRECATION")
 class Image private constructor(
     source: FileInputStream?,
     drawable: Drawable? = null,
