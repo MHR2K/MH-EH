@@ -451,10 +451,12 @@ public class EhApplication extends RecordingApplication {
 //            Dispatcher dispatcher = new Dispatcher();
 //            dispatcher.setMaxRequestsPerHost(4);
             OkHttpClient.Builder builder = new OkHttpClient.Builder()
+                    .followRedirects(true)
+                    .followSslRedirects(true)
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(10, TimeUnit.SECONDS)
                     .writeTimeout(10, TimeUnit.SECONDS)
-//                    .callTimeout(10, TimeUnit.SECONDS)
+                    .callTimeout(30, TimeUnit.SECONDS)
                     .cookieJar(getEhCookieStore(application))
                     .cache(getOkHttpCache(application))
 //                    .hostnameVerifier((hostname, session) -> true)
