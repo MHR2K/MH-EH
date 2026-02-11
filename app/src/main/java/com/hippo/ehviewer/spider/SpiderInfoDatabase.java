@@ -80,9 +80,10 @@ class SpiderInfoDatabase {
 		values.put(COLUMN_TOKEN, info.token);
 		values.put(COLUMN_START_PAGE, info.startPage);
 		values.put(COLUMN_PAGES, info.pages);
-		values.put(COLUMN_PREVIEW_PAGES, info.previewPages);
-		values.put(COLUMN_PREVIEW_PER_PAGE, info.previewPerPage);
-		values.put(COLUMN_PTOKEN_JSON, toJson(info.pTokenMap));
+		// 以下三个字段不再写入数据库，减少存储开销
+		// values.put(COLUMN_PREVIEW_PAGES, info.previewPages);
+		// values.put(COLUMN_PREVIEW_PER_PAGE, info.previewPerPage);
+		// values.put(COLUMN_PTOKEN_JSON, toJson(info.pTokenMap));
 		values.put(COLUMN_UPDATED_AT, System.currentTimeMillis());
 		values.put(COLUMN_SOURCE, source);
 		db.insertWithOnConflict(TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
