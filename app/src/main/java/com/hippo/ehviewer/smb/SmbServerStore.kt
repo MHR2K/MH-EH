@@ -2,8 +2,11 @@ package com.hippo.ehviewer.smb
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
+
+private const val TAG = "SmbServerStore"
 
 /**
  * 轻量存储：使用 SharedPreferences 保存 SMB 服务器列表。
@@ -162,6 +165,90 @@ object SmbServerStore {
             secureSp.edit().putString(KEY_SERVERS, arr.toString()).apply()
             cachedServers = updated
         }
+    }
+
+    /**
+     * 导出所有服务器到 JSON 字符串（用于备份）
+     */
+    @JvmStatic
+    fun exportToJson(): String {
+        try {
+            val arr = JSONArray()
+            list().forEach { server ->
+                arr.put(toJsonForExport(server))
+            }
+            return arr.toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export servers", e)
+            return "[]"
+        }
+    }
+
+    /**
+     * 从 JSON 字符串导入服务器（用于恢复）
+     */
+    @JvmStatic
+    fun importFromJson(json: String) {
+        if (json.isBlank()) return
+        try {
+            val arr = JSONArray(json)
+            synchronized(cacheLock) {
+                val updatedList = mutableListOf<SmbServer>()
+                for (i in 0 until arr.length()) {
+                    try {
+                        val server = fromJsonForImport(arr.getJSONObject(i))
+                        updatedList.add(server)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse server at index $i", e)
+                    }
+                }
+                // 保存到 SecureStorage
+                val saveArr = JSONArray()
+                updatedList.forEach { saveArr.put(toJson(it)) }
+                secureSp.edit().putString(KEY_SERVERS, saveArr.toString()).apply()
+                cachedServers = updatedList
+                Log.d(TAG, "Imported ${updatedList.size} servers")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import servers", e)
+        }
+    }
+
+    /**
+     * 导出时使用的 toJson，保留原始密码（解密后）
+     */
+    private fun toJsonForExport(s: SmbServer): JSONObject = JSONObject().apply {
+        put("id", s.id)
+        put("name", s.name)
+        put("host", s.authority.host)
+        put("port", s.authority.port)
+        put("username", s.authority.username)
+        put("domain", s.authority.domain)
+        put("password", s.password) // 原始密码
+        put("relativePath", s.relativePath)
+    }
+
+    /**
+     * 导入时使用的 fromJson，不尝试解密（假设备份中的密码是明文）
+     */
+    private fun fromJsonForImport(o: JSONObject): SmbServer {
+        val authority = Authority(
+            host = o.getString("host"),
+            port = o.optInt("port", Authority.DEFAULT_PORT),
+            username = o.getString("username"),
+            domain = o.optString("domain").takeIf { it.isNotBlank() }
+        )
+        
+        // 导入时密码作为明文处理
+        val password = o.optString("password", "")
+        
+        return SmbServer(
+            id = o.getLong("id"),
+            name = o.optString("name").takeIf { it.isNotBlank() },
+            authority = authority,
+            password = password,
+            relativePath = o.optString("relativePath", "")
+        )
     }
 
     private fun toJson(s: SmbServer): JSONObject = JSONObject().apply {

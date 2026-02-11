@@ -1141,4 +1141,27 @@
     <string name="storage_local">Local</string>
     <string name="storage_both">SMB+Local</string>
 
+    <!-- Full Backup -->
+    <string name="settings_advanced_full_backup_title">完整备份</string>
+    <string name="settings_advanced_full_backup_summary">导出所有数据：下载列表、收藏夹、历史记录、Cookie、SMB配置等</string>
+    <string name="settings_advanced_full_backup_success_title">备份成功</string>
+    <string name="settings_advanced_full_backup_success_message">完整备份已保存至 %s</string>
+    <string name="settings_advanced_full_backup_failed_title">备份失败</string>
+    <string name="settings_advanced_full_backup_failed_message">请重试或检查存储权限</string>
+    <string name="settings_advanced_full_backup_running">正在创建完整备份…</string>
+
+    <!-- Full Restore -->
+    <string name="settings_advanced_full_backup_restore">完整恢复</string>
+    <string name="settings_advanced_full_backup_restore_summary">从备份文件恢复所有数据（将覆盖现有数据）</string>
+    <string name="settings_advanced_full_backup_restore_warning">警告：完整恢复将覆盖所有现有数据，包括下载列表、收藏夹、历史记录和设置。\n\n此操作不可撤销，确定要继续吗？</string>
+    <string name="settings_advanced_full_backup_restore_confirm">确定恢复</string>
+    <string name="settings_advanced_full_backup_restore_success_title">恢复成功</string>
+    <string name="settings_advanced_full_backup_restore_success_message">数据已成功恢复，请重启应用使更改生效</string>
+    <string name="settings_advanced_full_backup_restore_failed_title">恢复失败</string>
+    <string name="settings_advanced_full_backup_restore_failed_message">请检查备份文件是否有效</string>
+    <string name="settings_advanced_full_backup_restore_running">正在恢复数据…</string>
+    <string name="settings_advanced_full_backup_restore_restart_message">数据已成功恢复。某些设置需要重启应用才能生效。是否立即重启？</string>
+    <string name="restart_now">立即重启</string>
+    <string name="restart_later">稍后重启</string>
+
 </resources>

@@ -236,6 +236,53 @@ object SmbMappingStore {
         }
     }
 
+    /**
+     * 导出所有映射到 JSON 字符串（用于备份）
+     */
+    @JvmStatic
+    fun exportToJson(): String {
+        try {
+            val arr = JSONArray()
+            list().forEach { mapping ->
+                arr.put(toJson(mapping))
+            }
+            return arr.toString()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to export mappings", e)
+            return "[]"
+        }
+    }
+
+    /**
+     * 从 JSON 字符串导入映射（用于恢复）
+     */
+    @JvmStatic
+    fun importFromJson(json: String) {
+        if (json.isBlank()) return
+        try {
+            val arr = JSONArray(json)
+            synchronized(cacheLock) {
+                val updatedMap = mutableMapOf<Long, Mapping>()
+                for (i in 0 until arr.length()) {
+                    try {
+                        val mapping = fromJson(arr.getJSONObject(i))
+                        updatedMap[mapping.gid] = mapping
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to parse mapping at index $i", e)
+                    }
+                }
+                // 保存到 SharedPreferences
+                val saveArr = JSONArray()
+                updatedMap.values.forEach { saveArr.put(toJson(it)) }
+                sp.edit().putString(KEY_MAPPINGS, saveArr.toString()).apply()
+                cachedMappings = updatedMap
+                Log.d(TAG, "Imported ${updatedMap.size} mappings")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to import mappings", e)
+        }
+    }
+
     private fun toJson(m: Mapping): JSONObject = JSONObject().apply {
         put("gid", m.gid)
         put("host", m.authority.host)

@@ -158,4 +158,16 @@
         android:summary="@string/settings_advanced_auto_cbz_summary"
         app:allowDividerAbove="true" />
 
+    <com.hippo.ehviewer.preference.FullBackupPreference
+        android:key="full_backup"
+        android:title="@string/settings_advanced_full_backup_title"
+        android:summary="@string/settings_advanced_full_backup_summary"
+        app:allowDividerAbove="true" />
+
+    <com.hippo.ehviewer.preference.FullRestorePreference
+        android:key="full_restore"
+        android:title="@string/settings_advanced_full_backup_restore"
+        android:summary="@string/settings_advanced_full_backup_restore_summary"
+        app:allowDividerAbove="true" />
+
 </PreferenceScreen>
