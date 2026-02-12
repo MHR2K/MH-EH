@@ -20,6 +20,7 @@ import static android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMI
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.util.Log;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -120,6 +121,8 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import okhttp3.Cookie;
 import okhttp3.HttpUrl;
@@ -127,6 +130,8 @@ import okhttp3.HttpUrl;
 public final class MainActivity extends StageActivity
         implements NavigationView.OnNavigationItemSelectedListener, ImageChangeCallBack, DrawerLayout.DrawerListener {
 
+    private static final String TAG = "MainActivity";
+    
     private static final int PERMISSION_REQUEST_WRITE_EXTERNAL_STORAGE = 0;
 
     private static final int REQUEST_CODE_SETTINGS = 0;
@@ -161,14 +166,14 @@ public final class MainActivity extends StageActivity
 
     Bitmap backgroundBit;
 
-    Handler handlerB = new Handler(Looper.getMainLooper()) {
-        @Override
-        public void handleMessage(Message msg) {
-            int mNextFrame = gifHandler.updateFrame(backgroundBit);
-            handlerB.sendEmptyMessageDelayed(1, mNextFrame);
-            mHeaderBackground.setImageBitmap(backgroundBit);
-        }
-    };
+    // 异步图片加载 Executor
+    private final ExecutorService imageExecutor = Executors.newSingleThreadExecutor();
+    
+    // 主线程 Handler 用于更新UI
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    
+    // 用于跟踪GIF动画是否正在运行
+    private boolean isGifAnimationRunning = false;
 
     // 确保 ImportComicScene 类被加载
     private static final Class<?> IMPORT_COMIC_SCENE_CLASS = ImportComicScene.class;
@@ -476,31 +481,120 @@ public final class MainActivity extends StageActivity
 
     private void initUserImage() {
         File headerBackgroundFile = Settings.getUserImageFile(Settings.USER_BACKGROUND_IMAGE);
-        initBackgroundImageData(headerBackgroundFile);
+        // 延迟500ms加载背景图片，确保首帧已渲染
+        mainHandler.postDelayed(() -> loadBackgroundImageAsync(headerBackgroundFile), 500);
     }
 
-    private void initBackgroundImageData(File file) {
-        if (file != null) {
-            String name = file.getName();
-            String[] ns = name.split("\\.");
-            if (ns[1].equals("gif") || ns[1].equals("GIF")) {
-                gifHandler = new GifHandler(file.getAbsolutePath());
-                int width = gifHandler.getWidth();
-                int height = gifHandler.getHeight();
-                backgroundBit = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-                int nextFrame = gifHandler.updateFrame(backgroundBit);
-                handlerB.sendEmptyMessageDelayed(1, nextFrame);
-            } else {
-                backgroundBit = BitmapFactory.decodeFile(file.getPath());
-                assert mHeaderBackground != null;
-                mHeaderBackground.setImageBitmap(backgroundBit);
-            }
+    /**
+     * 异步加载背景图片
+     */
+    private void loadBackgroundImageAsync(File file) {
+        if (file == null || isFinishing()) {
+            return;
         }
+        
+        imageExecutor.execute(() -> {
+            try {
+                String name = file.getName();
+                String[] ns = name.split("\\.");
+                boolean isGif = ns.length > 1 && (ns[1].equals("gif") || ns[1].equals("GIF"));
+                
+                if (isGif) {
+                    // GIF图片：先加载第一帧
+                    GifHandler localGifHandler = new GifHandler(file.getAbsolutePath());
+                    int width = localGifHandler.getWidth();
+                    int height = localGifHandler.getHeight();
+                    Bitmap localBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+                    localGifHandler.updateFrame(localBitmap);
+                    
+                    // 切换到主线程更新UI并启动动画
+                    mainHandler.post(() -> {
+                        if (!isFinishing() && mHeaderBackground != null) {
+                            backgroundBit = localBitmap;
+                            gifHandler = localGifHandler;
+                            isGifAnimationRunning = true;
+                            mHeaderBackground.setImageBitmap(backgroundBit);
+                            startGifAnimation();
+                        }
+                    });
+                } else {
+                    // 普通图片
+                    Bitmap localBitmap = BitmapFactory.decodeFile(file.getPath());
+                    if (localBitmap != null) {
+                        final Bitmap finalBitmap = localBitmap;
+                        mainHandler.post(() -> {
+                            if (!isFinishing() && mHeaderBackground != null) {
+                                backgroundBit = finalBitmap;
+                                mHeaderBackground.setImageBitmap(backgroundBit);
+                            }
+                        });
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to load background image", e);
+            }
+        });
+    }
+
+    // GIF动画相关的Runnable
+    private Runnable gifFrameRunnable;
+    private static final int MSG_UPDATE_GIF_FRAME = 1001;
+
+    /**
+     * 创建GIF动画Handler
+     */
+    private Handler createGifHandler() {
+        return new Handler(Looper.getMainLooper()) {
+            @Override
+            public void handleMessage(@NonNull Message msg) {
+                if (msg.what == MSG_UPDATE_GIF_FRAME) {
+                    updateGifFrame();
+                }
+            }
+        };
+    }
+    
+    private final Handler gifHandlerImpl = createGifHandler();
+
+    /**
+     * 更新GIF帧
+     */
+    private void updateGifFrame() {
+        if (gifHandler != null && backgroundBit != null && !isFinishing() && mHeaderBackground != null) {
+            int delay = gifHandler.updateFrame(backgroundBit);
+            mHeaderBackground.setImageBitmap(backgroundBit);
+            // 安排下一帧
+            gifHandlerImpl.sendEmptyMessageDelayed(MSG_UPDATE_GIF_FRAME, delay);
+        }
+    }
+
+    /**
+     * 启动GIF动画（运行在主线程）
+     */
+    private void startGifAnimation() {
+        if (gifHandler != null && backgroundBit != null && !isFinishing()) {
+            gifHandlerImpl.removeCallbacksAndMessages(null);
+            gifHandlerImpl.sendEmptyMessage(MSG_UPDATE_GIF_FRAME);
+        }
+    }
+
+    /**
+     * 停止GIF动画
+     */
+    private void stopGifAnimation() {
+        isGifAnimationRunning = false;
+        gifHandlerImpl.removeCallbacksAndMessages(null);
     }
 
     @Override
     public void backgroundSourceChange(File file) {
-        initBackgroundImageData(file);
+        // 停止之前的GIF动画
+        stopGifAnimation();
+        
+        // 异步加载新背景图片
+        if (file != null) {
+            loadBackgroundImageAsync(file);
+        }
     }
 
     private String getThemeText() {
@@ -608,12 +702,23 @@ public final class MainActivity extends StageActivity
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        
+        // 停止GIF动画
+        stopGifAnimation();
+        
+        // 关闭线程池
+        imageExecutor.shutdown();
+        
+        // 移除所有待处理的Handler消息
+        mainHandler.removeCallbacksAndMessages(null);
+        gifHandlerImpl.removeCallbacksAndMessages(null);
 
         mDrawerLayout = null;
         mNavView = null;
         mRightDrawer = null;
         mAvatar = null;
         mDisplayName = null;
+        mHeaderBackground = null;
     }
 
     @Override
@@ -741,22 +846,7 @@ public final class MainActivity extends StageActivity
     }
 
     public void updateProfile() {
-        if (null != mAvatar) {
-            String avatarUrl = Settings.getAvatar();
-            if (TextUtils.isEmpty(avatarUrl)) {
-                File userAvatarFile = Settings.getUserImageFile(Settings.USER_AVATAR_IMAGE);
-                if (userAvatarFile != null) {
-                    Bitmap bitmap = BitmapFactory.decodeFile(userAvatarFile.getPath());
-                    Drawable drawable = new BitmapDrawable(mAvatar.getResources(), bitmap);
-                    mAvatar.load(drawable);
-                } else {
-                    mAvatar.load(R.drawable.default_avatar);
-                }
-            } else {
-                mAvatar.load(avatarUrl, avatarUrl);
-            }
-        }
-
+        // 立即显示用户名（不耗时）
         if (null != mDisplayName) {
             String displayName = Settings.getDisplayName();
             if (TextUtils.isEmpty(displayName)) {
@@ -765,7 +855,59 @@ public final class MainActivity extends StageActivity
             Toast.makeText(this, displayName, Toast.LENGTH_LONG).show();
             mDisplayName.setText(displayName);
         }
+        
+        // 异步加载头像
+        if (null != mAvatar) {
+            String avatarUrl = Settings.getAvatar();
+            if (TextUtils.isEmpty(avatarUrl)) {
+                loadAvatarAsync();
+            } else {
+                mAvatar.load(avatarUrl, avatarUrl);
+            }
+        }
+    }
 
+    /**
+     * 异步加载头像图片
+     */
+    private void loadAvatarAsync() {
+        File userAvatarFile = Settings.getUserImageFile(Settings.USER_AVATAR_IMAGE);
+        if (userAvatarFile == null) {
+            mainHandler.post(() -> {
+                if (!isFinishing() && mAvatar != null) {
+                    mAvatar.load(R.drawable.default_avatar);
+                }
+            });
+            return;
+        }
+        
+        imageExecutor.execute(() -> {
+            try {
+                Bitmap bitmap = BitmapFactory.decodeFile(userAvatarFile.getPath());
+                if (bitmap != null) {
+                    final Bitmap finalBitmap = bitmap;
+                    mainHandler.post(() -> {
+                        if (!isFinishing() && mAvatar != null) {
+                            Drawable drawable = new BitmapDrawable(mAvatar.getResources(), finalBitmap);
+                            mAvatar.load(drawable);
+                        }
+                    });
+                } else {
+                    mainHandler.post(() -> {
+                        if (!isFinishing() && mAvatar != null) {
+                            mAvatar.load(R.drawable.default_avatar);
+                        }
+                    });
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to load avatar", e);
+                mainHandler.post(() -> {
+                    if (!isFinishing() && mAvatar != null) {
+                        mAvatar.load(R.drawable.default_avatar);
+                    }
+                });
+            }
+        });
     }
 
     public void addAboveSnackView(View view) {
