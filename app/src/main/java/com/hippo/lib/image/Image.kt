@@ -58,14 +58,37 @@ class Image private constructor(
                                 if (hardware) ALLOCATOR_DEFAULT else ALLOCATOR_SOFTWARE
                             // Sadly we must use software memory since we need copy it to tile buffer, fuck glgallery
                             // Idk it will cause how much performance regression
-                            val screenSize = min(
+                            
+                            // 计算宽高比
+                            val aspectRatio = info.size.height.toFloat() / info.size.width
+                            
+                            // 基础采样大小：取宽高比的较小值
+                            val baseSampleSize = min(
                                 info.size.width / screenWidth,
                                 info.size.height / screenHeight
                             ).coerceAtLeast(1)
-                            decoder.setTargetSampleSize(
-                                max(screenSize, simpleSize ?: 1)
-                            )
-                            // Don't
+                            
+                            // 根据屏幕密度动态调整采样
+                            // 密度越高(sampleSize越小)，需要的像素越多
+                            // densityDpi: mdpi=160, hdpi=240, xhdpi=320, xxhdpi=480, xxxhdpi=640
+                            val densityScale = screenDensity / 160f
+                            
+                            // 对于超长图，根据密度动态调整采样
+                            // 高密度屏幕使用较低采样以保持清晰度
+                            val finalSampleSize = when {
+                                aspectRatio > 8 || aspectRatio < 0.25 -> {
+                                    // 超长图：根据密度反向调整
+                                    // 密度越高，采样越低（保留更多像素）
+                                    val adjustedBase = (baseSampleSize / densityScale).coerceAtLeast(1f)
+                                    max(adjustedBase.toInt(), simpleSize ?: 1)
+                                }
+                                else -> {
+                                    // 普通图片：使用标准采样
+                                    max(baseSampleSize, simpleSize ?: 1)
+                                }
+                            }
+                            
+                            decoder.setTargetSampleSize(finalSampleSize)
                         }
                 } catch (e: DecodeException) {
                     // ImageDecoder 失败时回退到 BitmapFactory
@@ -252,11 +275,13 @@ class Image private constructor(
     companion object {
         var screenWidth: Int = 0
         var screenHeight: Int = 0
+        var screenDensity: Int = 160
 
         @JvmStatic
         fun initialize(ehApplication: EhApplication) {
             screenWidth = ehApplication.resources.displayMetrics.widthPixels
             screenHeight = ehApplication.resources.displayMetrics.heightPixels
+            screenDensity = ehApplication.resources.displayMetrics.densityDpi
         }
 
         @JvmStatic

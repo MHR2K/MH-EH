@@ -218,6 +218,7 @@ public class ImageWrapper {
     private final Image mImage;
     private final Rect mCut;
     private int mReferences;
+    private boolean mPinned = false;
 
     /**
      * Create ImageWrapper
@@ -275,9 +276,37 @@ public class ImageWrapper {
      */
     public synchronized void release() {
         --mReferences;
-        if (mReferences <= 0 && !mImage.isRecycled()) {
+        if (mReferences <= 0 && !mImage.isRecycled() && !mPinned) {
             mImage.recycle();
         }
+    }
+
+    /**
+     * Pin the image to prevent it from being recycled when evicted from cache
+     */
+    public void pin() {
+        mPinned = true;
+    }
+
+    /**
+     * Unpin the image, allowing it to be recycled if needed
+     * @return true if the image was pinned and is now unpinned
+     */
+    public boolean unpin() {
+        boolean wasPinned = mPinned;
+        mPinned = false;
+        // If there are no more references and image is not recycled, recycle it
+        if (wasPinned && mReferences <= 0 && !mImage.isRecycled()) {
+            mImage.recycle();
+        }
+        return wasPinned;
+    }
+
+    /**
+     * Check if the image is pinned
+     */
+    public boolean isPinned() {
+        return mPinned;
     }
 
     public boolean isImageRecycled() {

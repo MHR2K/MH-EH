@@ -8,8 +8,52 @@ cmake_minimum_required(VERSION 3.18.1)
 #project(root)
 project("ehviewer")
 
-add_subdirectory(jni)
+include(ExternalProject)
+include(FetchContent)
 
+# liblzma
+option(XZ_DOC OFF)
+option(XZ_LZIP_DECODER OFF)
+option(XZ_MICROLZMA_DECODER OFF)
+option(XZ_MICROLZMA_ENCODER OFF)
+option(XZ_TOOL_LZMADEC OFF)
+option(XZ_TOOL_LZMAINFO OFF)
+option(XZ_TOOL_XZ OFF)
+option(XZ_TOOL_XZDEC OFF)
+FetchContent_Declare(
+        liblzma
+        GIT_REPOSITORY https://github.com/tukaani-project/xz.git
+        GIT_TAG v5.8.2
+        GIT_SHALLOW 1
+)
+FetchContent_MakeAvailable(liblzma)
+include_directories(${liblzma_SOURCE_DIR}/src/liblzma/api)
+
+# Configure lzma support for libarchive
+SET(HAVE_LIBLZMA 1)
+SET(HAVE_LZMA_H 1)
+SET(HAVE_LZMADEC_H 1)
+SET(HAVE_LIBLZMADEC 1)
+
+# libarchive
+option(ENABLE_OPENSSL OFF)
+option(ENABLE_TAR OFF)
+option(ENABLE_CPIO OFF)
+option(ENABLE_CAT OFF)
+option(ENABLE_UNZIP OFF)
+option(ENABLE_TEST OFF)
+
+FetchContent_Declare(
+        libarchive
+        GIT_REPOSITORY https://github.com/libarchive/libarchive.git
+        GIT_TAG v3.8.5
+        GIT_SHALLOW 1
+)
+FetchContent_MakeAvailable(libarchive)
+target_link_libraries(archive_static liblzma)
+include_directories(${libarchive_SOURCE_DIR}/libarchive)
+
+add_subdirectory(jni)
 
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
@@ -26,7 +70,10 @@ add_library( # Sets the name of the library.
         image.c
         gif/native-lib.cpp
         gif/dgif_lib.c
-        gif/gifalloc.c)
+        gif/gifalloc.c
+        archive.c
+        natsort/strnatcmp.c
+)
 
 # Ensure generated binary aligns segments for 16KB page size devices.
 target_link_options(
@@ -63,4 +110,6 @@ target_link_libraries( # Specifies the target library.
         # included in the NDK.
         ${log-lib}
         ${jnigraphics-lib}
-        ${glesv2-lib})
+        ${glesv2-lib}
+        archive_static
+)

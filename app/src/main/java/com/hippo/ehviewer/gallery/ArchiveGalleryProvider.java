@@ -22,277 +22,397 @@ import android.net.Uri;
 import android.os.Process;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import com.hippo.a7zip.ArchiveException;
 import com.hippo.ehviewer.GetText;
 import com.hippo.ehviewer.R;
+import com.hippo.ehviewer.jni.Archive;
 import com.hippo.lib.glgallery.GalleryPageView;
 import com.hippo.lib.image.Image;
-//import com.hippo.lib.image.Image1;
 import com.hippo.unifile.UniFile;
 import com.hippo.unifile.UniRandomAccessFile;
-import com.hippo.util.NaturalComparator;
 import com.hippo.lib.yorozuya.thread.PriorityThread;
 
+import java.io.FileDescriptor;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.nio.ByteBuffer;
 import java.util.Stack;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ArchiveGalleryProvider extends GalleryProvider2 {
 
-  private static final AtomicInteger sIdGenerator = new AtomicInteger();
+    private static final AtomicInteger sIdGenerator = new AtomicInteger();
 
-  private final UniFile file;
+    private final UniFile file;
 
-  private Thread archiveThread;
-  private Thread decodeThread;
+    private Thread archiveThread;
+    private ExecutorService decodeExecutor;
 
-  private volatile int size = STATE_WAIT;
-  private String error;
+    private volatile int size = STATE_WAIT;
+    private String error;
 
-  private final Stack<Integer> requests = new Stack<>();
-  private final AtomicInteger extractingIndex = new AtomicInteger(GalleryPageView.INVALID_INDEX);
-  private final LinkedHashMap<Integer, InputStream> streams = new LinkedHashMap<>();
-  private final AtomicInteger decodingIndex = new AtomicInteger(GalleryPageView.INVALID_INDEX);
+    private final Stack<Integer> requests = new Stack<>();
+    private final AtomicInteger extractingIndex = new AtomicInteger(GalleryPageView.INVALID_INDEX);
+    private final LinkedHashMap<Integer, InputStream> streams = new LinkedHashMap<>();
+    // 使用ConcurrentHashMap来跟踪正在解码的索引，避免AtomicInteger的竞争问题
+    private final java.util.concurrent.ConcurrentHashMap<Integer, Boolean> decodingIndices = new java.util.concurrent.ConcurrentHashMap<>();
 
-  public ArchiveGalleryProvider(Context context, Uri uri) {
-    file = UniFile.fromUri(context, uri);
-  }
-
-  @Override
-  public void start() {
-    super.start();
-
-    int id = sIdGenerator.incrementAndGet();
-
-    archiveThread = new PriorityThread(
-        new ArchiveTask(), "ArchiveTask" + '-' + id, Process.THREAD_PRIORITY_BACKGROUND);
-    archiveThread.start();
-
-    decodeThread = new PriorityThread(
-        new DecodeTask(), "DecodeTask" + '-' + id, Process.THREAD_PRIORITY_BACKGROUND);
-    decodeThread.start();
-  }
-
-  @Override
-  public void stop() {
-    super.stop();
-
-    if (archiveThread != null) {
-      archiveThread.interrupt();
-      archiveThread = null;
-    }
-    if (decodeThread != null) {
-      decodeThread.interrupt();
-      decodeThread = null;
-    }
-  }
-
-  @Override
-  public int size() {
-    return size;
-  }
-
-  @Override
-  protected void onRequest(int index) {
-    boolean inDecodeTask;
-    synchronized (streams) {
-      inDecodeTask = streams.keySet().contains(index) || index == decodingIndex.get();
+    static {
+        // Load the native library
+        System.loadLibrary("ehviewer");
     }
 
-    synchronized (requests) {
-      boolean inArchiveTask = requests.contains(index) || index == extractingIndex.get();
-      if (!inArchiveTask && !inDecodeTask) {
-        requests.add(index);
-        requests.notify();
-      }
+    public ArchiveGalleryProvider(Context context, Uri uri) {
+        file = UniFile.fromUri(context, uri);
     }
-    notifyPageWait(index);
-  }
 
-  @Override
-  protected void onForceRequest(int index) {
-    onRequest(index);
-  }
-
-  @Override
-  protected void onCancelRequest(int index) {
-    synchronized (requests) {
-      requests.remove(Integer.valueOf(index));
-    }
-  }
-
-  @Override
-  public String getError() {
-    return error;
-  }
-
-  @NonNull
-  @Override
-  public String getImageFilename(int index) {
-    // TODO
-    return Integer.toString(index);
-  }
-
-  @Override
-  public boolean save(int index, @NonNull UniFile file) {
-    // TODO
-    return false;
-  }
-
-  @Nullable
-  @Override
-  public UniFile save(int index, @NonNull UniFile dir, @NonNull String filename) {
-    // TODO
-    return null;
-  }
-
-  private class ArchiveTask implements Runnable {
     @Override
-    public void run() {
-      UniRandomAccessFile uraf = null;
-      if (file != null) {
-        try {
-          uraf = file.createRandomAccessFile("r");
-        } catch (IOException e) {
-          e.printStackTrace();
+    public void start() {
+        super.start();
+
+        int id = sIdGenerator.incrementAndGet();
+
+        archiveThread = new PriorityThread(
+                new ArchiveTask(), "ArchiveTask" + '-' + id, Process.THREAD_PRIORITY_BACKGROUND);
+        archiveThread.start();
+
+        // 使用线程池创建2个解码线程
+        decodeExecutor = Executors.newFixedThreadPool(2);
+        for (int i = 0; i < 2; i++) {
+            decodeExecutor.execute(new DecodeTask("DecodeTask" + '-' + id + '-' + i));
         }
-      }
-      if (uraf == null) {
-        size = STATE_ERROR;
-        error = GetText.getString(R.string.error_reading_failed);
-        notifyDataChanged();
-        return;
-      }
+    }
 
-      A7ZipArchive archive = null;
-      try {
-        archive = A7ZipArchive.create(uraf);
-      } catch (ArchiveException e) {
-        e.printStackTrace();
-      }
-      if (archive == null) {
-        size = STATE_ERROR;
-        error = GetText.getString(R.string.error_invalid_archive);
-        notifyDataChanged();
-        return;
-      }
+    @Override
+    public void stop() {
+        super.stop();
 
-      List<A7ZipArchive.A7ZipArchiveEntry> entries = archive.getArchiveEntries();
-      Collections.sort(entries, naturalComparator);
+        // Close the native archive
+        try {
+            Archive.closeArchive();
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
 
-      // Update size and notify changed
-      size = entries.size();
-      notifyDataChanged();
+        if (archiveThread != null) {
+            archiveThread.interrupt();
+            archiveThread = null;
+        }
+        if (decodeExecutor != null) {
+            decodeExecutor.shutdownNow();
+            decodeExecutor = null;
+        }
+    }
 
-      while (!Thread.currentThread().isInterrupted()) {
-        int index;
+    @Override
+    public int size() {
+        return size;
+    }
+
+    @Override
+    protected void onRequest(int index) {
+        boolean inDecodeTask;
+        synchronized (streams) {
+            inDecodeTask = streams.keySet().contains(index) || decodingIndices.containsKey(index);
+        }
+
         synchronized (requests) {
-          if (requests.isEmpty()) {
-            try {
-              requests.wait();
-            } catch (InterruptedException e) {
-              // Interrupted
-              break;
+            boolean inArchiveTask = requests.contains(index) || index == extractingIndex.get();
+            if (!inArchiveTask && !inDecodeTask) {
+                requests.add(index);
+                requests.notify();
             }
-            continue;
-          }
-          index = requests.pop();
-          extractingIndex.lazySet(index);
         }
-
-        // Check index valid
-        if (index < 0 || index >= entries.size()) {
-          extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
-          notifyPageFailed(index, GetText.getString(R.string.error_out_of_range));
-          continue;
-        }
-
-        Pipe pipe = new Pipe(4 * 1024);
-
-        synchronized (streams) {
-          if (streams.get(index) != null) {
-            continue;
-          }
-          streams.put(index, pipe.inputStream);
-          streams.notify();
-        }
-
-        try {
-          entries.get(index).extract(pipe.outputStream);
-        } catch (ArchiveException e) {
-          e.printStackTrace();
-        } finally {
-          extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
-        }
-      }
+        notifyPageWait(index);
     }
-  }
 
-  private class DecodeTask implements Runnable {
     @Override
-    public void run() {
-      while (!Thread.currentThread().isInterrupted()) {
-        int index;
-        InputStream stream;
-        synchronized (streams) {
-          if (streams.isEmpty()) {
-            try {
-              streams.wait();
-            } catch (InterruptedException e) {
-              // Interrupted
-              break;
+    protected void onForceRequest(int index) {
+        onRequest(index);
+    }
+
+    @Override
+    protected void onCancelRequest(int index) {
+        synchronized (requests) {
+            requests.remove(Integer.valueOf(index));
+        }
+    }
+
+    @Override
+    public String getError() {
+        return error;
+    }
+
+    @NonNull
+    @Override
+    public String getImageFilename(int index) {
+        try {
+            String ext = Archive.getExtension(index);
+            return index + (ext != null ? "." + ext : "");
+        } catch (Throwable e) {
+            return Integer.toString(index);
+        }
+    }
+
+    @Override
+    public boolean save(int index, @NonNull UniFile file) {
+        // TODO
+        return false;
+    }
+
+    @Nullable
+    @Override
+    public UniFile save(int index, @NonNull UniFile dir, @NonNull String filename) {
+        // TODO
+        return null;
+    }
+
+    private class ArchiveTask implements Runnable {
+        @Override
+        public void run() {
+            UniRandomAccessFile uraf = null;
+            FileDescriptor fd = null;
+            
+            if (file != null) {
+                try {
+                    uraf = file.createRandomAccessFile("r");
+                    // Try to get FileDescriptor from UniRandomAccessFile
+                    if (uraf instanceof java.io.RandomAccessFile) {
+                        fd = ((java.io.RandomAccessFile) uraf).getFD();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
-            continue;
-          }
+            
+            if (uraf == null || fd == null) {
+                size = STATE_ERROR;
+                error = GetText.getString(R.string.error_reading_failed);
+                notifyDataChanged();
+                return;
+            }
 
-          Iterator<Map.Entry<Integer, InputStream>> iterator = streams.entrySet().iterator();
-          Map.Entry<Integer, InputStream> entry = iterator.next();
-          iterator.remove();
-          index = entry.getKey();
-          try{
-            stream = entry.getValue();
-          } catch (ClassCastException e) {
-            notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
-            decodingIndex.lazySet(index);
-            return;
-          }
-          decodingIndex.lazySet(index);
+            try {
+                // Get file descriptor int value
+                int fdInt = -1;
+                try {
+                    // Use reflection to get the file descriptor's int
+                    java.lang.reflect.Field fdField = FileDescriptor.class.getDeclaredField("fd");
+                    fdField.setAccessible(true);
+                    fdInt = fdField.getInt(fd);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                
+                if (fdInt < 0) {
+                    size = STATE_ERROR;
+                    error = "Cannot get valid file descriptor";
+                    notifyDataChanged();
+                    return;
+                }
+                
+                long fileSize = uraf.length();
+
+                // Open archive using native library
+                int count = Archive.openArchive(fdInt, fileSize, true);
+                if (count <= 0) {
+                    size = STATE_ERROR;
+                    error = GetText.getString(R.string.error_invalid_archive);
+                    notifyDataChanged();
+                    return;
+                }
+
+                // Update size and notify changed
+                size = count;
+                notifyDataChanged();
+
+                while (!Thread.currentThread().isInterrupted()) {
+                    int index;
+                    synchronized (requests) {
+                        if (requests.isEmpty()) {
+                            try {
+                                requests.wait();
+                            } catch (InterruptedException e) {
+                                // Interrupted
+                                break;
+                            }
+                            continue;
+                        }
+                        index = requests.pop();
+                        extractingIndex.lazySet(index);
+                    }
+
+                    // Check index valid
+                    if (index < 0 || index >= size) {
+                        extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
+                        notifyPageFailed(index, GetText.getString(R.string.error_out_of_range));
+                        continue;
+                    }
+
+                    try {
+                        // Extract to ByteBuffer using native method
+                        ByteBuffer buffer = Archive.extractToByteBuffer(index);
+                        if (buffer != null) {
+                            // Create InputStream from ByteBuffer
+                            InputStream is = new ByteBufferInputStream(buffer, index);
+                            synchronized (streams) {
+                                if (streams.get(index) != null) {
+                                    continue;
+                                }
+                                streams.put(index, is);
+                                streams.notify();
+                            }
+                        } else {
+                            extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
+                            notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
+                        }
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                        extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
+                        notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
+                    } finally {
+                        extractingIndex.lazySet(GalleryPageView.INVALID_INDEX);
+                    }
+                }
+            } catch (Throwable e) {
+                e.printStackTrace();
+                size = STATE_ERROR;
+                error = e.getMessage();
+                notifyDataChanged();
+            }
+        }
+    }
+
+    private class DecodeTask implements Runnable {
+        private final String name;
+        
+        DecodeTask(String name) {
+            this.name = name;
+        }
+        
+        @Override
+        public void run() {
+            while (!Thread.currentThread().isInterrupted()) {
+                int index;
+                InputStream stream;
+                synchronized (streams) {
+                    if (streams.isEmpty()) {
+                        try {
+                            streams.wait();
+                        } catch (InterruptedException e) {
+                            // Interrupted
+                            break;
+                        }
+                        continue;
+                    }
+
+                    java.util.Iterator<java.util.Map.Entry<Integer, InputStream>> iterator = streams.entrySet().iterator();
+                    java.util.Map.Entry<Integer, InputStream> entry = iterator.next();
+                    iterator.remove();
+                    index = entry.getKey();
+                    try {
+                        stream = entry.getValue();
+                    } catch (ClassCastException e) {
+                        notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
+                        decodingIndices.remove(index);
+                        return;
+                    }
+                    // 标记正在解码
+                    decodingIndices.put(index, Boolean.TRUE);
+                }
+
+                try {
+                    Image image = Image.decode(BitmapDrawable.createFromStream(stream, null), false);
+                    if (image != null) {
+                        notifyPageSucceed(index, image);
+                    } else {
+                        notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
+                    }
+                } catch (Throwable e) {
+                    e.printStackTrace();
+                    notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
+                } finally {
+                    decodingIndices.remove(index);
+                }
+            }
+        }
+    }
+
+    /**
+     * InputStream wrapper for ByteBuffer
+     */
+    private static class ByteBufferInputStream extends InputStream {
+        private final ByteBuffer buffer;
+        private final int index;
+
+        ByteBufferInputStream(ByteBuffer buffer, int index) {
+            this.buffer = buffer;
+            this.index = index;
         }
 
-        try {
-//          BitmapFactory.Options option = new BitmapFactory.Options();
-//          if (stream.available()>40960){
-//            option.inSampleSize = 4;
-//          }
-//          Bitmap bitmap = BitmapFactory.decodeStream(stream,null,option);
-//          BitmapDrawable drawable = new BitmapDrawable(EhApplication.getInstance().getResources(),bitmap);
-//          Image image = Image.decode(drawable, false);
-          Image image = Image.decode(BitmapDrawable.createFromStream(stream,null), false);
-//            Image imag = Image1.decode(stream, true);
-          if (image != null) {
-            notifyPageSucceed(index, image);
-          } else {
-            notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
-          }
-        } finally {
-          decodingIndex.lazySet(GalleryPageView.INVALID_INDEX);
+        @Override
+        public int read() throws IOException {
+            if (buffer.hasRemaining()) {
+                return buffer.get() & 0xFF;
+            }
+            return -1;
         }
-      }
-    }
-  }
 
-  private static Comparator<A7ZipArchive.A7ZipArchiveEntry> naturalComparator = new Comparator<A7ZipArchive.A7ZipArchiveEntry>() {
-    private NaturalComparator comparator = new NaturalComparator();
-    @Override
-    public int compare(A7ZipArchive.A7ZipArchiveEntry o1, A7ZipArchive.A7ZipArchiveEntry o2) {
-      return comparator.compare(o1.getPath(), o2.getPath());
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int available = buffer.remaining();
+            if (available <= 0) {
+                return -1;
+            }
+            int toRead = Math.min(len, available);
+            buffer.get(b, off, toRead);
+            return toRead;
+        }
+
+        @Override
+        public int available() throws IOException {
+            return buffer.remaining();
+        }
+
+        @Override
+        public void close() {
+            // Release the ByteBuffer back to native
+            try {
+                Archive.releaseByteBuffer(buffer);
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        }
     }
-  };
+
+    /**
+     * Simple LinkedHashMap without import
+     */
+    private static class LinkedHashMap<K, V> extends java.util.HashMap<K, V> {
+        @Override
+        public V put(K key, V value) {
+            return super.put(key, value);
+        }
+
+        @Override
+        public V get(Object key) {
+            return super.get(key);
+        }
+
+        @Override
+        public boolean containsKey(Object key) {
+            return super.containsKey(key);
+        }
+
+        @Override
+        public java.util.Set<java.util.Map.Entry<K, V>> entrySet() {
+            return super.entrySet();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            return super.isEmpty();
+        }
+    }
 }
