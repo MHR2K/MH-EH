@@ -54,8 +54,10 @@ import com.hippo.unifile.UniFile;
 import com.hippo.ehviewer.download.DownloadService;
 import com.hippo.ehviewer.gallery.A7ZipArchive;
 import com.hippo.ehviewer.gallery.Pipe;
+import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.ui.scene.TransitionNameFactory;
+import com.hippo.ehviewer.util.CbzUtils;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.EnterGalleryDetailTransaction;
@@ -321,6 +323,26 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                 default:
                     label = "";
             }
+            
+            // 检测是否为CBZ格式
+            boolean isCbz = false;
+            if (loc != StorageLocation.UNKNOWN && loc != StorageLocation.SMB) {
+                // 仅对本地存储检测CBZ
+                try {
+                    UniFile dir = SpiderDen.getGalleryDownloadDir(info);
+                    if (dir != null) {
+                        isCbz = CbzUtils.isCbzMode(dir);
+                    }
+                } catch (Exception e) {
+                    // 忽略检测错误
+                }
+            }
+            
+            // 如果是CBZ，添加📦emoji
+            if (isCbz) {
+                label = label + "📦";
+            }
+            
             if (label.isEmpty()) {
                 holder.storageIndicator.setVisibility(View.GONE);
             } else {
