@@ -1466,6 +1466,42 @@ public class Settings {
         putBoolean(KEY_DOWNLOAD_ORDER_ASC, value);
     }
 
+    // 组合筛选状态 - 状态过滤器
+    private static final String KEY_DOWNLOAD_FILTER_STATUS = "download_filter_status";
+    private static final String DEFAULT_DOWNLOAD_FILTER_STATUS = "";
+
+    /**
+     * 获取上次保存的状态过滤器（格式：逗号分隔的数字，如 "1,2,3"）
+     */
+    public static String getDownloadFilterStatus() {
+        return getString(KEY_DOWNLOAD_FILTER_STATUS, DEFAULT_DOWNLOAD_FILTER_STATUS);
+    }
+
+    /**
+     * 保存状态过滤器
+     */
+    public static void putDownloadFilterStatus(String value) {
+        putString(KEY_DOWNLOAD_FILTER_STATUS, value);
+    }
+
+    // 组合筛选状态 - 进度过滤器
+    private static final String KEY_DOWNLOAD_FILTER_PROGRESS = "download_filter_progress";
+    private static final String DEFAULT_DOWNLOAD_FILTER_PROGRESS = "";
+
+    /**
+     * 获取上次保存的进度过滤器（格式：逗号分隔的数字，如 "10,11"）
+     */
+    public static String getDownloadFilterProgress() {
+        return getString(KEY_DOWNLOAD_FILTER_PROGRESS, DEFAULT_DOWNLOAD_FILTER_PROGRESS);
+    }
+
+    /**
+     * 保存进度过滤器
+     */
+    public static void putDownloadFilterProgress(String value) {
+        putString(KEY_DOWNLOAD_FILTER_PROGRESS, value);
+    }
+
     public static final String KEY_DOWNLOAD_LIST_PAGINATION = "download_list_pagination";
 
     private static boolean IS_DOWNLOAD_LIST_PAGINATION = true;

@@ -417,6 +417,74 @@ public class DownloadsScene extends ToolbarScene
             mLabel = Settings.getRecentDownloadLabel();
             updateForLabel();
         }
+        // 加载上次保存的组合筛选状态
+        loadSavedFilterState();
+    }
+
+    /**
+     * 从Settings中加载上次保存的组合筛选状态
+     * 注意：仅加载保存的状态用于显示在筛选对话框中，不自动应用筛选
+     */
+    private void loadSavedFilterState() {
+        // 加载状态过滤器
+        String savedStatus = Settings.getDownloadFilterStatus();
+        if (savedStatus != null && !savedStatus.isEmpty()) {
+            mSelectedStatusFilters = new HashSet<>();
+            try {
+                for (String part : savedStatus.split(",")) {
+                    int value = Integer.parseInt(part.trim());
+                    mSelectedStatusFilters.add(value);
+                }
+            } catch (NumberFormatException e) {
+                // 忽略解析错误
+            }
+        }
+        
+        // 加载进度过滤器
+        String savedProgress = Settings.getDownloadFilterProgress();
+        if (savedProgress != null && !savedProgress.isEmpty()) {
+            mSelectedProgressFilters = new HashSet<>();
+            try {
+                for (String part : savedProgress.split(",")) {
+                    int value = Integer.parseInt(part.trim());
+                    mSelectedProgressFilters.add(value);
+                }
+            } catch (NumberFormatException e) {
+                // 忽略解析错误
+            }
+        }
+        
+        // 不再自动应用筛选条件，每次打开页面时显示所有项目
+        // 用户可以通过菜单手动选择筛选条件
+    }
+
+    /**
+     * 保存组合筛选状态到Settings
+     */
+    private void saveFilterState() {
+        // 保存状态过滤器
+        if (mSelectedStatusFilters != null && !mSelectedStatusFilters.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (Integer value : mSelectedStatusFilters) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(value);
+            }
+            Settings.putDownloadFilterStatus(sb.toString());
+        } else {
+            Settings.putDownloadFilterStatus("");
+        }
+        
+        // 保存进度过滤器
+        if (mSelectedProgressFilters != null && !mSelectedProgressFilters.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            for (Integer value : mSelectedProgressFilters) {
+                if (sb.length() > 0) sb.append(",");
+                sb.append(value);
+            }
+            Settings.putDownloadFilterProgress(sb.toString());
+        } else {
+            Settings.putDownloadFilterProgress("");
+        }
     }
 
     private void onRestore(@NonNull Bundle savedInstanceState) {
@@ -3261,6 +3329,8 @@ public class DownloadsScene extends ToolbarScene
                     mSelectedStatusFilters = statusFilters;
                     mSelectedProgressFilters = progressFilters;
                     applyCombinedFilter();
+                    // 保存筛选状态
+                    saveFilterState();
                 }
         );
         dialog.show();
