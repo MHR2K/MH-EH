@@ -44,12 +44,13 @@
             <TextView
                 android:id="@+id/label"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp"
                 android:layout_weight="1"
                 android:paddingLeft="16dp"
                 android:paddingRight="16dp"
                 android:gravity="center_vertical"
-                android:singleLine="true"
+                android:maxLines="3"
                 android:ellipsize="end"
                 android:textSize="@dimen/text_little_small"
                 android:textColor="?android:attr/textColorPrimary"/>
