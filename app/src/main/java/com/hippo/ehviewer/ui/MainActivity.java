@@ -852,7 +852,6 @@ public final class MainActivity extends StageActivity
             if (TextUtils.isEmpty(displayName)) {
                 displayName = getString(R.string.default_display_name);
             }
-            Toast.makeText(this, displayName, Toast.LENGTH_LONG).show();
             mDisplayName.setText(displayName);
         }
         

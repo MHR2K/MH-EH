@@ -35,22 +35,17 @@ class SplashActivity : EhActivity() {
 //        Distribute.setEnabled(!Settings.getCloseAutoUpdate())
         super.onCreate(savedInstanceState)
         setContentView(R.layout.splash_layout)
-        Thread(Runnable {
-            //耗时任务，比如加载网络数据
-            runOnUiThread(Runnable {
-                val intentIn = intent
-                val restart = intentIn.getBooleanExtra(KEY_RESTART, false)
-                //跳转至 MainActivity
-                val intent = Intent(this@SplashActivity, MainActivity::class.java)
-                if (restart) {
-                    intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-                    intent.putExtra(KEY_RESTART, true)
-                }
-                startActivity(intent)
-                //结束当前的 Activity
-                this@SplashActivity.finish()
-            })
-        }).start()
+        
+        // 跳转到 MainActivity
+        val intentIn = intent
+        val restart = intentIn.getBooleanExtra(KEY_RESTART, false)
+        val intent = Intent(this@SplashActivity, MainActivity::class.java)
+        if (restart) {
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            intent.putExtra(KEY_RESTART, true)
+        }
+        startActivity(intent)
+        finish()
         if (!openNews && Settings.getShowEhEvents()) {
             signInNews()
         }
