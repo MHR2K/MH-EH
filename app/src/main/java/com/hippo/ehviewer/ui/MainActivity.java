@@ -17,10 +17,14 @@
 package com.hippo.ehviewer.ui;
 
 import static android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION;
+import static android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION;
+
+import static com.hippo.ehviewer.util.ClipboardUtil.createAnnouncerFromClipboardUrl;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.util.Log;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -69,8 +73,6 @@ import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.EhUrlOpener;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.ListUrlBuilder;
-import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser;
-import com.hippo.ehviewer.client.parser.GalleryPageUrlParser;
 import com.hippo.ehviewer.ui.main.UserImageChange;
 import com.hippo.ehviewer.ui.scene.AnalyticsScene;
 import com.hippo.ehviewer.ui.scene.BaseScene;
@@ -648,12 +650,10 @@ public final class MainActivity extends StageActivity
     private void onInit() {
         // Check permission
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()){
-                Intent intent = new Intent(ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
-                intent.setData(Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
+            if (!Environment.isExternalStorageManager()) {
+                requestAllFilesAccessPermissionSafely();
             }
-        }else {
+        } else {
             PermissionRequester.request(this, Manifest.permission.WRITE_EXTERNAL_STORAGE,
                     getString(R.string.write_rationale), PERMISSION_REQUEST_WRITE_EXTERNAL_STORAGE);
         }
@@ -689,12 +689,38 @@ public final class MainActivity extends StageActivity
         Settings.setLoginState(ipbMemberId != null || ipbPassHash != null || igneous != null);
     }
 
+    /**
+     * Some ROMs reject the app-specific all-files-access page with SecurityException.
+     * Try app-specific page first, then fallback to global management page.
+     */
+    private void requestAllFilesAccessPermissionSafely() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R){
+            Intent appSpecificIntent = new Intent(ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+            appSpecificIntent.setData(Uri.parse("package:" + getPackageName()));
+            if (startActivityQuietly(appSpecificIntent)) {
+                return;
+            }
+
+            Intent globalIntent = new Intent(ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+            startActivityQuietly(globalIntent);
+        }
+    }
+
+    private boolean startActivityQuietly(@NonNull Intent intent) {
+        try {
+            startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException | SecurityException ignored) {
+            return false;
+        }
+    }
+
     private void onRestore(Bundle savedInstanceState) {
         mNavCheckedItem = savedInstanceState.getInt(KEY_NAV_CHECKED_ITEM);
     }
 
     @Override
-    public void onSaveInstanceState(Bundle outState, PersistableBundle outPersistentState) {
+    public void onSaveInstanceState(Bundle outState, @NonNull PersistableBundle outPersistentState) {
 //        super.onSaveInstanceState(outState, outPersistentState);
         outState.putInt(KEY_NAV_CHECKED_ITEM, mNavCheckedItem);
     }
@@ -764,29 +790,7 @@ public final class MainActivity extends StageActivity
         return null;
     }
 
-    @Nullable
-    public static Announcer createAnnouncerFromClipboardUrl(String url) {
-        GalleryDetailUrlParser.Result result1 = GalleryDetailUrlParser.parse(url, false);
-        if (result1 != null) {
-            Bundle args = new Bundle();
-            args.putString(GalleryDetailScene.KEY_ACTION, GalleryDetailScene.ACTION_GID_TOKEN);
-            args.putLong(GalleryDetailScene.KEY_GID, result1.gid);
-            args.putString(GalleryDetailScene.KEY_TOKEN, result1.token);
-            return new Announcer(GalleryDetailScene.class).setArgs(args);
-        }
 
-        GalleryPageUrlParser.Result result2 = GalleryPageUrlParser.parse(url, false);
-        if (result2 != null) {
-            Bundle args = new Bundle();
-            args.putString(ProgressScene.KEY_ACTION, ProgressScene.ACTION_GALLERY_TOKEN);
-            args.putLong(ProgressScene.KEY_GID, result2.gid);
-            args.putString(ProgressScene.KEY_PTOKEN, result2.pToken);
-            args.putInt(ProgressScene.KEY_PAGE, result2.page);
-            return new Announcer(ProgressScene.class).setArgs(args);
-        }
-
-        return null;
-    }
 
     private void checkClipboardUrlInternal() {
         String text = getTextFromClipboard();
