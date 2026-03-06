@@ -66,6 +66,7 @@ class IoThreadPoolExecutor private constructor(
     }
 
     companion object {
+        @JvmStatic
         val instance: ThreadPoolExecutor = newInstance(
             3, 32, 1L, TimeUnit.SECONDS,
             PriorityThreadFactory("IO", Process.THREAD_PRIORITY_BACKGROUND)
