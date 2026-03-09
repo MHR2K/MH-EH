@@ -2382,6 +2382,9 @@ public class DownloadsScene extends ToolbarScene
         }
         // 先保存过滤ID和滚动位置，因为后面的 updateForLabel 会改变列表
         final int savedFilterId = mCurrentFilterId;
+        // 保存组合筛选的状态（用于恢复）
+        final Set<Integer> savedStatusFilters = new HashSet<>(mSelectedStatusFilters);
+        final Set<Integer> savedProgressFilters = new HashSet<>(mSelectedProgressFilters);
         final long restoreScrollGid = captureFirstVisibleGid();
 
         updateForLabel();
@@ -2398,6 +2401,23 @@ public class DownloadsScene extends ToolbarScene
             // 使用 false 参数表示不需要重新捕获滚动位置
             gotoFilterAndSortWithScroll(savedFilterId, false);
             return; // 异步刷新，后续由回调处理
+        }
+
+        // 如果之前处于组合筛选状态，也需要恢复
+        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+            // 恢复组合筛选状态
+            mSelectedStatusFilters = savedStatusFilters;
+            mSelectedProgressFilters = savedProgressFilters;
+            // 直接设置保存的滚动位置
+            mRestoreScrollGid = restoreScrollGid;
+            // 设置标志避免滚动到顶部，保持当前位置
+            doNotScroll = true;
+            if (myPageChangeListener != null) {
+                myPageChangeListener.setDoNotScroll(true);
+            }
+            // 重新应用组合筛选
+            applyCombinedFilterWithScroll(false);
+            return;
         }
 
         updateView();
@@ -2443,8 +2463,27 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public void onChange() {
+        // 保存组合筛选的状态（用于恢复）
+        final Set<Integer> savedStatusFilters = new HashSet<>(mSelectedStatusFilters);
+        final Set<Integer> savedProgressFilters = new HashSet<>(mSelectedProgressFilters);
+        final long restoreScrollGid = captureFirstVisibleGid();
+
         mLabel = null;
         updateForLabel();
+
+        // 恢复组合筛选状态
+        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+            mSelectedStatusFilters = savedStatusFilters;
+            mSelectedProgressFilters = savedProgressFilters;
+            // 设置标志避免滚动到顶部，保持当前位置
+            doNotScroll = true;
+            if (myPageChangeListener != null) {
+                myPageChangeListener.setDoNotScroll(true);
+            }
+            // 重新应用组合筛选
+            applyCombinedFilterWithScroll(false);
+        }
+
         updateView();
     }
 
@@ -2454,8 +2493,27 @@ public class DownloadsScene extends ToolbarScene
             return;
         }
 
+        // 保存组合筛选的状态（用于恢复）
+        final Set<Integer> savedStatusFilters = new HashSet<>(mSelectedStatusFilters);
+        final Set<Integer> savedProgressFilters = new HashSet<>(mSelectedProgressFilters);
+        final long restoreScrollGid = captureFirstVisibleGid();
+
         mLabel = to;
         updateForLabel();
+
+        // 恢复组合筛选状态
+        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+            mSelectedStatusFilters = savedStatusFilters;
+            mSelectedProgressFilters = savedProgressFilters;
+            // 设置标志避免滚动到顶部，保持当前位置
+            doNotScroll = true;
+            if (myPageChangeListener != null) {
+                myPageChangeListener.setDoNotScroll(true);
+            }
+            // 重新应用组合筛选
+            applyCombinedFilterWithScroll(false);
+        }
+
         updateView();
     }
 
@@ -3337,25 +3395,43 @@ public class DownloadsScene extends ToolbarScene
     }
 
     private void applyCombinedFilter() {
+        applyCombinedFilterWithScroll(true);
+    }
+
+    /**
+     * 应用组合筛选，可选是否捕获滚动位置
+     * @param captureScroll 是否捕获滚动位置
+     */
+    private void applyCombinedFilterWithScroll(boolean captureScroll) {
         if (mBackList == null) {
             return;
         }
 
+        if (captureScroll) {
+            mRestoreScrollGid = captureFirstVisibleGid();
+        }
+
         if (mSelectedStatusFilters.isEmpty() && mSelectedProgressFilters.isEmpty()) {
             mList = new ArrayList<>(mBackList);
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            }
+            updateTitle();
+            updatePaginationIndicator();
+            updateView();
+            // 恢复滚动位置
+            if (mRestoreScrollGid != -1 && mRecyclerView != null) {
+                mRecyclerView.post(this::restoreScrollPositionIfNeeded);
+            }
         } else {
+            mProgressView.setVisibility(View.VISIBLE);
+            if (mRecyclerView != null) {
+                mRecyclerView.setVisibility(View.GONE);
+            }
             DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mBackList, mDownloadManager, mSpiderInfoMap);
             executor.setDownloadSearchingListener(this);
             executor.executeCombinedFilter(mSelectedStatusFilters, mSelectedProgressFilters);
-            return;
         }
-
-        if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
-        }
-        updateTitle();
-        updatePaginationIndicator();
-        updateView();
     }
 
     /**
