@@ -541,7 +541,7 @@
     <string name="find_same_author">Find same author</string>
     <string name="menu_move_to_position">Move to position</string>
     <string name="move_to_position_title">Move next to target</string>
-    <string name="move_to_position_hint">(Enter the target gallery GID to move this item before it.Leave empty to move to the newest position.)</string>
+    <string name="move_to_position_hint">(Enter the target gallery GID to move this item before it. Enter 0 to move to the latest position of default label, leave empty to move to the latest position of current label.)</string>
     <string name="move_to_position_error">Target not found</string>
     <string name="move_to_position_success">Moved successfully</string>
     <string name="searching_author">Searching for author: %s</string>

@@ -434,7 +434,7 @@
     <string name="find_same_author">查找相同作者</string>
     <string name="menu_move_to_position">移动位置</string>
     <string name="move_to_position_title">移动画廊位置</string>
-    <string name="move_to_position_hint">(输入目标画廊的GID来移动到它之前。留空则移动到最新位置。)</string>
+    <string name="move_to_position_hint">(输入目标画廊的GID来移动到它之前。输入0则移动到默认标签最新位置，留空则移动到当前标签最新位置。。)</string>
     <string name="move_to_position_error">未找到目标</string>
     <string name="move_to_position_success">移动成功</string>
     <string name="searching_author">搜索作者中...</string>
