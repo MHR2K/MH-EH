@@ -1279,14 +1279,18 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
                 mGalleryView.setCurrentPage(lastPage);
                 mCurrentIndex = lastPage;
             }
-            
+
             // Return to download list
+            // 设置返回结果，让下载列表刷新阅读进度
+            Intent intent = new Intent();
+            intent.putExtra("info", mGalleryInfo);
+            setResult(LOCAL_GALLERY_INFO_CHANGE, intent);
             finish();
         } else {
             // If not downloading, just update the gallery info
-            Toast.makeText(this, "Gallery info updated. Pages: " + (lastPage + 1), 
+            Toast.makeText(this, "Gallery info updated. Pages: " + (lastPage + 1),
                     Toast.LENGTH_SHORT).show();
-            
+
             // Return to download list
             finish();
         }
