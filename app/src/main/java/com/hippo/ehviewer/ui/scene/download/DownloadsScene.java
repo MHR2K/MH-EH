@@ -2800,6 +2800,9 @@ public class DownloadsScene extends ToolbarScene
         }
         // 在 UI 更新后延迟恢复滚动位置，避免被布局计算覆盖
         mRecyclerView.post(this::restoreScrollPositionIfNeeded);
+        // 更新标题和分页指示器
+        updateTitle();
+        updatePaginationIndicator();
         searching = false;
         queryUnreadSpiderInfo();
     }
