@@ -29,11 +29,15 @@ object Client {
     @Volatile
     lateinit var authenticator: Authenticator
 
-    // 配置 SMB 客户端超时：连接超时和读写超时都设为较短时间
+    // 配置 SMB 客户端超时：增加超时时间以提高稳定性
     private val smbConfig = SmbConfig.builder()
-        .withTimeout(3000, TimeUnit.MILLISECONDS)  // Socket 超时 3秒
-        .withSoTimeout(3000, TimeUnit.MILLISECONDS) // SO 超时 3秒
+        .withTimeout(10000, TimeUnit.MILLISECONDS)  // Socket 超时 10秒（原3秒）
+        .withSoTimeout(15000, TimeUnit.MILLISECONDS) // SO 超时 15秒（原3秒）
         .build()
+    
+    // 重试配置
+    private const val MAX_RETRY_COUNT = 3       // 最大重试次数
+    private const val RETRY_DELAY_MS = 1000L   // 重试间隔（毫秒）
     
     private val client = SMBClient(smbConfig)
     
@@ -203,9 +207,39 @@ object Client {
     /**
      * 读取文件，返回一个 InputStream。调用者需在读取结束后关闭流。
      * 优化：使用 256KB 缓冲提升大文件读取性能
+     * 改进：添加重试机制提高稳定性
      */
     @Throws(IOException::class)
     fun openInputStream(target: Target): java.io.InputStream {
+        var lastException: IOException? = null
+        
+        for (attempt in 1..MAX_RETRY_COUNT) {
+            try {
+                return doOpenInputStream(target)
+            } catch (e: IOException) {
+                lastException = e
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.w("Client", "openInputStream attempt $attempt failed: ${e.message}")
+                }
+                if (attempt < MAX_RETRY_COUNT) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw IOException("Interrupted during retry", ie)
+                    }
+                }
+            }
+        }
+        
+        throw lastException ?: IOException("Failed to open input stream after $MAX_RETRY_COUNT attempts")
+    }
+    
+    /**
+     * 实际执行文件打开操作
+     */
+    @Throws(IOException::class)
+    private fun doOpenInputStream(target: Target): java.io.InputStream {
         val share = getDiskShare(getSession(target.authority), target.share)
         val file: File = try {
             share.openFile(
@@ -218,6 +252,9 @@ object Client {
             )
         } catch (e: SMBRuntimeException) {
             throw IOException(e)
+        }
+        if (BuildConfig.DEBUG) {
+            android.util.Log.d("Client", "SMB openInputStream success: path=${target.pathInShare}")
         }
         return object : java.io.InputStream() {
             private var offset = 0L
@@ -423,5 +460,65 @@ object Client {
     private fun getDiskShare(session: Session, shareName: String): DiskShare =
         (getShare(session, shareName) as? DiskShare)
             ?: throw IOException("$shareName is not a DiskShare")
+    // endregion
+
+    // region 路径存在性检查
+    
+    /**
+     * 检查 SMB 路径是否存在（文件或目录）
+     * 改进：添加重试机制提高稳定性
+     */
+    @Throws(IOException::class)
+    fun exists(target: Target): Boolean {
+        var lastException: IOException? = null
+        
+        for (attempt in 1..MAX_RETRY_COUNT) {
+            try {
+                return doExists(target)
+            } catch (e: IOException) {
+                lastException = e
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.w("Client", "exists attempt $attempt failed: ${e.message}")
+                }
+                if (attempt < MAX_RETRY_COUNT) {
+                    try {
+                        Thread.sleep(RETRY_DELAY_MS)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        throw IOException("Interrupted during retry", ie)
+                    }
+                }
+            }
+        }
+        
+        throw lastException ?: IOException("Failed to check path existence after $MAX_RETRY_COUNT attempts")
+    }
+    
+    /**
+     * 实际执行路径检查操作
+     */
+    @Throws(IOException::class)
+    private fun doExists(target: Target): Boolean {
+        val share = getDiskShare(getSession(target.authority), target.share)
+        return try {
+            share.fileExists(target.pathInShare) || share.folderExists(target.pathInShare)
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        }
+    }
+    
+    /**
+     * 检查目录是否存在
+     */
+    @Throws(IOException::class)
+    fun folderExists(target: Target): Boolean {
+        return try {
+            val share = getDiskShare(getSession(target.authority), target.share)
+            share.folderExists(target.pathInShare)
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        }
+    }
+    
     // endregion
 }

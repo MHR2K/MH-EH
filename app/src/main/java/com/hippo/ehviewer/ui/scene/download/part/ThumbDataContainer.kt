@@ -53,8 +53,10 @@ class ThumbDataContainer(
     companion object {
         private const val TAG = "ThumbDataContainer"
         private const val RETRY_DELAY_MS = 100L
-        private const val SMB_CHECK_TIMEOUT_MS = 200L  // SMB 检查超时时间（200ms，减少等待）
-        private const val SMB_WAIT_IN_ENABLED_MS = 50L // isEnabled() 中最大等待时间（50ms，避免ANR）
+        // 改进：增加 SMB 检查超时时间，提高稳定性（原 200ms -> 2000ms）
+        private const val SMB_CHECK_TIMEOUT_MS = 2000L  // SMB 检查超时时间（2秒）
+        // 改进：增加 isEnabled() 中的最大等待时间（原 50ms -> 500ms）
+        private const val SMB_WAIT_IN_ENABLED_MS = 500L // isEnabled() 中最大等待时间（500ms）
     }
 
     private fun ensureFile(): Boolean {

@@ -189,6 +189,85 @@ public final class SpiderDen {
         return String.format(Locale.US, "%08d%s", index + 1, extension);
     }
 
+    /**
+     * 在 ZipInputStream 中查找匹配的图片条目（支持模糊匹配）
+     * 
+     * 匹配策略（按优先级）：
+     * 1. 精确匹配 "00000001.jpg"（8位前导零 + 索引）
+     * 2. 去除前导零匹配 "1.jpg"
+     * 3. 1-indexed 匹配 "2.jpg"（index+1，有些漫画是1-indexed）
+     * 4. 简短数字匹配 "01.jpg" 或 "001.jpg"
+     * 5. 返回第一个图片文件（作为首页兜底）
+     * 
+     * @param zis Zip输入流（当前位置之后的条目）
+     * @param index 图片索引（0-based）
+     * @param exts 支持的图片扩展名数组
+     * @return 匹配的图片条目名称，未找到返回 null
+     */
+    @Nullable
+    private static String findMatchingEntryInZip(ZipInputStream zis, int index, String[] exts) {
+        String exactExpect = generateImageFilename(index, ""); // "00000001"
+        String zeroStripped = String.valueOf(index + 1);       // "1"
+        String oneIndexed = String.valueOf(index + 2);          // "2" (1-indexed fallback)
+        
+        String firstImage = null;
+        ZipEntry entry;
+        try {
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.isDirectory()) continue;
+                String en = entry.getName();
+                if (en == null) continue;
+                
+                // 检查扩展名是否支持
+                String lowerEn = en.toLowerCase(java.util.Locale.US);
+                boolean hasValidExt = false;
+                for (String ext : exts) {
+                    if (lowerEn.endsWith(ext.toLowerCase(java.util.Locale.US))) {
+                        hasValidExt = true;
+                        break;
+                    }
+                }
+                if (!hasValidExt) continue;
+                
+                // 记录第一个图片文件作为兜底
+                if (firstImage == null) {
+                    firstImage = en;
+                }
+                
+                // 提取文件名部分（不含扩展名）
+                int lastDot = en.lastIndexOf('.');
+                String namePart = lastDot > 0 ? en.substring(0, lastDot) : en;
+                String nameLower = namePart.toLowerCase(java.util.Locale.US);
+                
+                // 策略1: 精确匹配 "00000001"
+                if (nameLower.equals(exactExpect.toLowerCase(java.util.Locale.US))) {
+                    return en;
+                }
+                
+                // 策略2: 去除前导零匹配 "1"
+                String zeroStrippedLower = nameLower.replaceFirst("^0+", "");
+                if (zeroStrippedLower.equals(zeroStripped)) {
+                    return en;
+                }
+                
+                // 策略3: 1-indexed 匹配 "2"
+                if (nameLower.equals(oneIndexed)) {
+                    return en;
+                }
+                
+                // 策略4: 简短数字匹配 "01", "001"
+                if (nameLower.matches("^0+" + (index + 1) + "$")) {
+                    return en;
+                }
+            }
+        } catch (IOException e) {
+            // 忽略 IO 异常
+        }
+        
+        // 兜底：返回第一个图片文件
+        return firstImage;
+    }
+
     @Nullable
     public static UniFile findImageFile(UniFile dir, int index) {
         for (String extension : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
@@ -981,6 +1060,7 @@ public final class SpiderDen {
                     android.util.Log.d("SpiderDen", "SMB directory CBZ selected: gid=" + mGid + ", cbz=" + relCbz + ", count=" + cbzCount + ", prefer=" + prefer);
                 }
                 // 返回一个按需打开的 Zip 流：每次 open() 重新打开远端 CBZ 并定位到目标条目
+                // 改进：使用模糊匹配支持多种文件名格式
                 return new InputStreamPipe() {
                     private java.io.InputStream mBase;
                     private ZipInputStream mZis;
@@ -989,25 +1069,32 @@ public final class SpiderDen {
                     @Override public java.io.InputStream open() throws IOException {
                         mBase = Client.INSTANCE.openInputStream(cbzTarget);
                         mZis = new ZipInputStream(mBase);
-                        ZipEntry entry;
-                        // 依次尝试不同扩展名
-                        while ((entry = mZis.getNextEntry()) != null) {
-                            if (entry.isDirectory()) continue;
-                            String en = entry.getName();
-                            if (en == null) continue;
-                            for (String ext : exts) {
-                                String expect = generateImageFilename(index, ext);
-                                if (expect.equalsIgnoreCase(en)) {
-                                    if (BuildConfig.DEBUG) {
-                                        android.util.Log.d("SpiderDen", "SMB directory CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
-                                    }
-                                    // 命中：返回当前 ZipInputStream（指向该 entry 数据段）
+                        
+                        // 使用模糊匹配查找条目
+                        String matchedEntry = findMatchingEntryInZip(mZis, index, exts);
+                        
+                        if (matchedEntry != null) {
+                            if (BuildConfig.DEBUG) {
+                                android.util.Log.d("SpiderDen", "SMB directory CBZ fuzzy match hit: gid=" + mGid + ", index=" + (index+1) + ", name=" + matchedEntry);
+                            }
+                            // 重置流以从头读取
+                            close();
+                            mBase = Client.INSTANCE.openInputStream(cbzTarget);
+                            mZis = new ZipInputStream(mBase);
+                            
+                            // 再次遍历直到找到目标条目
+                            ZipEntry entry;
+                            while ((entry = mZis.getNextEntry()) != null) {
+                                if (entry.isDirectory()) continue;
+                                String en = entry.getName();
+                                if (en != null && en.equals(matchedEntry)) {
                                     return mZis;
                                 }
                             }
                         }
+                        
                         if (BuildConfig.DEBUG) {
-                            android.util.Log.d("SpiderDen", "SMB directory CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbz=" + relCbz);
+                            android.util.Log.d("SpiderDen", "SMB directory CBZ fuzzy match miss: gid=" + mGid + ", index=" + (index+1) + ", cbz=" + relCbz);
                         }
                         // 未找到目标 entry
                         close();

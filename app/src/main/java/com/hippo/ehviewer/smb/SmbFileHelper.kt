@@ -27,14 +27,23 @@ object SmbFileHelper {
         filename: String
     ): InputStreamPipe? {
         // 仅使用显式映射，自动检测由 SpiderDen 处理
-        val mapping = SmbMappingStore.get(gid) ?: return null
+        val mapping = SmbMappingStore.get(gid) ?: run {
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "No SMB mapping found for gid=$gid")
+            }
+            return null
+        }
         return try {
             val rel = if (mapping.basePathInShare.isEmpty()) filename else mapping.basePathInShare + "\\" + filename
             val target = Client.Target(mapping.authority, mapping.share, rel)
+            if (BuildConfig.DEBUG) {
+                Log.d(TAG, "Opening SMB file: gid=$gid, target=${target.share}/${target.pathInShare}")
+            }
             openSmbInputStreamPipe(target)
         } catch (e: Exception) {
             if (BuildConfig.DEBUG) {
-                Log.e(TAG, "Error accessing SMB file: gid=$gid, file=$filename", e)
+                Log.e(TAG, "Error accessing SMB file: gid=$gid, file=$filename, " +
+                    "mapping=${mapping.authority.host}/${mapping.share}/${mapping.basePathInShare}", e)
             }
             null
         }

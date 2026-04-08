@@ -283,6 +283,75 @@ object SmbMappingStore {
         }
     }
 
+    // region 映射验证功能
+    
+    /**
+     * 验证映射有效性结果
+     */
+    enum class ValidationStatus {
+        VALID,           // 映射有效
+        MISSING,         // 映射不存在
+        SERVER_UNREACHABLE,  // 服务器不可达
+        AUTH_FAILED,         // 认证失败
+        PATH_NOT_FOUND,      // 路径不存在
+        UNKNOWN_ERROR        // 未知错误
+    }
+
+    data class ValidationResult(
+        val status: ValidationStatus,
+        val message: String? = null,
+        val exception: Exception? = null
+    )
+
+    /**
+     * 验证单个映射是否有效
+     */
+    fun validateMapping(gid: Long): ValidationResult {
+        val mapping = get(gid) ?: return ValidationResult(ValidationStatus.MISSING)
+        return try {
+            val target = Client.Target(
+                authority = mapping.authority,
+                share = mapping.share,
+                pathInShare = mapping.basePathInShare
+            )
+            val exists = Client.exists(target)
+            if (exists) {
+                ValidationResult(ValidationStatus.VALID)
+            } else {
+                ValidationResult(ValidationStatus.PATH_NOT_FOUND, "目录不存在或无法访问")
+            }
+        } catch (e: Exception) {
+            val status = when {
+                e.message?.contains("timeout", ignoreCase = true) == true -> ValidationStatus.SERVER_UNREACHABLE
+                e.message?.contains("auth", ignoreCase = true) == true -> ValidationStatus.AUTH_FAILED
+                e.message?.contains("Access is denied", ignoreCase = true) == true -> ValidationStatus.AUTH_FAILED
+                e.message?.contains("not found", ignoreCase = true) == true -> ValidationStatus.PATH_NOT_FOUND
+                e.message?.contains("No password", ignoreCase = true) == true -> ValidationStatus.AUTH_FAILED
+                e.message?.contains("unreachable", ignoreCase = true) == true -> ValidationStatus.SERVER_UNREACHABLE
+                else -> ValidationStatus.UNKNOWN_ERROR
+            }
+            ValidationResult(status, e.message, e)
+        }
+    }
+
+    /**
+     * 批量验证所有映射
+     */
+    fun validateAllMappings(): Map<Long, ValidationResult> {
+        return list().associate { it.gid to validateMapping(it.gid) }
+    }
+
+    /**
+     * 获取无效映射列表
+     */
+    fun getInvalidMappings(): List<Pair<Long, ValidationResult>> {
+        return validateAllMappings()
+            .filter { it.value.status != ValidationStatus.VALID }
+            .map { it.key to it.value }
+    }
+
+    // endregion
+
     private fun toJson(m: Mapping): JSONObject = JSONObject().apply {
         put("gid", m.gid)
         put("host", m.authority.host)

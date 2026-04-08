@@ -13,9 +13,64 @@ import com.hippo.ehviewer.client.data.GalleryInfo
  * 性能优化：
  * - 预先构建本地目录缓存（仅加载一次77000+条下载项）
  * - 缓存映射表供后续快速查询，避免重复加载
+ * - 详细错误指导：区分不同错误类型并提供解决建议
  */
 object SmbMappingScanner {
     private const val TAG = "SmbMappingScanner"
+
+    /**
+     * 根据异常类型生成用户友好的错误信息和解决建议
+     * @return Pair(简短错误信息, 解决建议)
+     */
+    private fun getErrorGuidance(e: Exception, serverName: String): Pair<String, String> {
+        val (shortMsg, guidance) = when {
+            // 网络超时
+            e.message?.contains("timeout", ignoreCase = true) == true ||
+            e.message?.contains("timed out", ignoreCase = true) == true ||
+            e.message?.contains("Connection timed out", ignoreCase = true) == true -> {
+                "连接超时" to "请检查网络连接，或在SMB设置中增加超时时间"
+            }
+            // 连接被拒绝
+            e.message?.contains("refused", ignoreCase = true) == true ||
+            e.message?.contains("ECONNREFUSED", ignoreCase = true) == true -> {
+                "连接被拒绝" to "请检查SMB服务器是否运行，或检查防火墙设置"
+            }
+            // 认证失败 - 拒绝访问
+            e.message?.contains("Access is denied", ignoreCase = true) == true -> {
+                "访问被拒绝" to "请检查用户名和密码是否正确"
+            }
+            // 认证失败 - 认证相关
+            e.message?.contains("auth", ignoreCase = true) == true ||
+            e.message?.contains("NT_STATUS_ACCESS_DENIED", ignoreCase = true) == true -> {
+                "认证失败" to "请检查用户名和密码是否正确"
+            }
+            // 用户名密码错误
+            e.message?.contains("user", ignoreCase = true) == true &&
+            e.message?.contains("password", ignoreCase = true) == true -> {
+                "用户名或密码错误" to "请在设置中重新配置SMB服务器"
+            }
+            // 路径不存在
+            e.message?.contains("not found", ignoreCase = true) == true ||
+            e.message?.contains("No such file or directory", ignoreCase = true) == true -> {
+                "共享或路径不存在" to "请检查共享名称和路径是否正确"
+            }
+            // 网络不可达
+            e.message?.contains("unreachable", ignoreCase = true) == true ||
+            e.message?.contains("No route to host", ignoreCase = true) == true ||
+            e.message?.contains("ENETUNREACH", ignoreCase = true) == true -> {
+                "无法到达服务器" to "请检查服务器IP地址是否正确，网络是否连通"
+            }
+            // No password
+            e.message?.contains("No password", ignoreCase = true) == true -> {
+                "未配置密码" to "请在设置中为该服务器配置密码"
+            }
+            // 默认
+            else -> {
+                "未知错误" to "请查看完整日志或联系开发者"
+            }
+        }
+        return "⚠️ $serverName: $shortMsg" to guidance
+    }
 
     data class ScanResult(
         val totalSmbDirs: Int,           // 扫描的SMB目录总数
@@ -113,7 +168,10 @@ object SmbMappingScanner {
                     val entries = try {
                         Client.listDirectory(target)
                     } catch (e: Exception) {
-                        details.add("⚠️ 无法列举 $serverName 的目录: ${e.message}")
+                        val (shortMsg, guidance) = getErrorGuidance(e, serverName)
+                        details.add("$shortMsg")
+                        details.add("   💡 $guidance")
+                        details.add("   详情: ${e.message}")
                         Log.w(TAG, "Failed to list $serverName: ${e.message}")
                         failedCount++
                         continue
@@ -288,7 +346,11 @@ object SmbMappingScanner {
                     val entries = try {
                         Client.listDirectory(target)
                     } catch (e: Exception) {
-                        details.add("⚠️ 无法列举 ${server.name ?: server.authority.host} 的目录: ${e.message}")
+                        val serverName = server.name ?: server.authority.host
+                        val (shortMsg, guidance) = getErrorGuidance(e, serverName)
+                        details.add("$shortMsg")
+                        details.add("   💡 $guidance")
+                        details.add("   详情: ${e.message}")
                         Log.w(TAG, "Failed to list server ${server.name}: ${e.message}")
                         continue
                     }
