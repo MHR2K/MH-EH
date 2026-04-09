@@ -30,6 +30,7 @@ import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.gallery.GalleryProvider2;
+import com.hippo.ehviewer.smb.CbzCacheManager;
 import com.hippo.ehviewer.smb.Client;
 import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.io.UniFileInputStreamPipe;
@@ -713,13 +714,70 @@ public final class SpiderDen {
             String gidCbz = mGid + ".cbz";
             String relGidCbz = normBase.isEmpty() ? gidCbz : (normBase + "\\" + gidCbz);
             Client.Target gidCbzTarget = new Client.Target(authority, share, relGidCbz);
+            
+            // 尝试从本地缓存获取 CBZ
+            try {
+                java.io.FileInputStream cachedStream = CbzCacheManager.INSTANCE.getCachedInputStream(authority, share, relGidCbz);
+                if (cachedStream != null) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit: gid=" + mGid + ", path=" + relGidCbz);
+                    }
+                    // 从缓存的 CBZ 解压
+                    final java.io.FileInputStream fis = cachedStream;
+                    return new InputStreamPipe() {
+                        private java.io.FileInputStream mFis;
+                        private ZipInputStream mZis;
+                        @Override public void obtain() { /* no-op */ }
+                        @Override public void release() { /* no-op */ }
+                        @Override public java.io.InputStream open() throws IOException {
+                            mFis = fis;
+                            mZis = new ZipInputStream(mFis);
+                            ZipEntry entry;
+                            while ((entry = mZis.getNextEntry()) != null) {
+                                if (entry.isDirectory()) continue;
+                                String en = entry.getName();
+                                if (en == null) continue;
+                                for (String ext : exts) {
+                                    String expect = generateImageFilename(index, ext);
+                                    if (expect.equalsIgnoreCase(en)) {
+                                        if (BuildConfig.DEBUG) {
+                                            android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                                        }
+                                        return mZis;
+                                    }
+                                }
+                            }
+                            if (BuildConfig.DEBUG) {
+                                android.util.Log.d("SpiderDen", "SMB gid.cbz cache miss entry: gid=" + mGid + ", index=" + (index+1));
+                            }
+                            close();
+                            throw new IOException("Entry not found in cached CBZ for index=" + index);
+                        }
+                        @Override public void close() {
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mFis);
+                            mZis = null; mFis = null;
+                        }
+                    };
+                }
+            } catch (Throwable e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Failed to get cached CBZ, falling back to SMB: " + e);
+                }
+            }
+            
+            // 缓存未命中，从 SMB 读取并异步缓存
             try {
                 java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
                 if (BuildConfig.DEBUG) {
                     android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz success: gid=" + mGid + ", path=" + relGidCbz);
                 }
-                // 包装为 Zip 流读取所需条目
+                // 异步缓存 CBZ
                 final String relCbzFinal = relGidCbz;
+                final java.io.InputStream probeFinal = probe;
+                CbzCacheManager.INSTANCE.cacheCbzAsync(authority, share, relCbzFinal, probeFinal, -1L, null);
+                
+                // 同步从 SMB 读取并返回
                 return new InputStreamPipe() {
                     private java.io.InputStream mBase;
                     private ZipInputStream mZis;
