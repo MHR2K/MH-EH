@@ -108,7 +108,8 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
                 doNotScroll = false;
                 return;
             }
-            mRecyclerView.scrollToPosition(0);
+            // 延迟滚动到布局完成后执行，确保滚动位置正确
+            mRecyclerView.post(() -> mRecyclerView.scrollToPosition(0));
         }
     }
 
