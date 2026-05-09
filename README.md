@@ -43,11 +43,12 @@ An E-Hentai Application for Android.
 点击前往下载：
 
 [//]: # (- [Appteka]&#40;https://appteka.store/app/acdr168648&#41;)
-- [百度云](https://pan.baidu.com/s/1_rbxH65GXWjx_pxYIf0Pug) 提取码：wzv4
-- [夸克网盘](https://pan.quark.cn/s/95915acfe88b) 提取码：HmUu
-- [蓝奏云](https://wwbfg.lanzouu.com/iYopw3jiyizi)，电脑端可正常下载 提取码：fhbq
+- [百度云](https://pan.baidu.com/s/17a5zwo0HeTp_Iqh9P2QwXQ) 提取码：7y92
+- [夸克网盘](https://pan.quark.cn/s/036dd4d5f09d) 提取码：B6J6
+- [蓝奏云](https://wwbfg.lanzouu.com/iFc783oecgmh)，电脑端可正常下载 提取码：dfg8
 - [GitHub](https://github.com/xiaojieonly/Ehviewer_CN_SXJ/releases)
-- Torrent链接:magnet:?xt=urn:btih:4869fe5d6cebba6e1f2b672e3523cca83838b466&xt=urn:btmh:1220df01410d828d8544b9efe8e15fe3e7323eab74d2ae962947f324dd36e0a99b74&dn=EhViewer-2.0.1.5.apk&xl=27934862
+- Torrent链接:magnet:?xt=urn:btih:c3aab1194eb843bac7274b87873dc94041310e52&xt=urn:btmh:1220c3640ed2ef7f588376f7dadeffc99463d764608b577beb038378788996fc1ad5&dn=EhViewer-2.0.1.7.apk&xl=27705830
+
 
 点击前往赏饭：
 
@@ -58,6 +59,39 @@ Telegram群: https://t.me/+WyclP8pPlk-JfbwS
 Telegram通知群: https://t.me/Ehviewer_xiaojieonly_channel
 
 # Changelog
+
+## 2026/05/01 祝大家五一劳动节快乐~
+### 新版发布2.0.1.7
+
+- 修复SpiderInfo读取时的OOM风险并升级JDK至21
+- 修复图片搜索无法使用的问题
+- orbisai0security：the vendored giflib library performs multiple m... in gifalloc.c
+- 增加对 WebView/CookieManager 初始化失败的异常处理
+- En：修复了已下载项目的按标签搜索功能
+- 猫尾草：restore gradle wrapper jar and properties
+- 升级Gradle至9.3.1及Android插件至9.1.1
+
+## 2026/04/01 祝大家愚人节伤心
+### 新版发布2.0.1.6
+
+- 搜索时过滤文本中的换行符
+- 修复下载列表排序奔溃的问题
+- 优化 EGL 初始化逻辑并增加 OpenGL 渲染故障时的回退机制
+- 排行榜中，画廊排行从原先的跳转画廊搜索，改为直接跳转对应画廊
+- 优化归档下载逻辑与文件名生成
+- 优化解析错误日志清理逻辑并增加异常处理
+- 优化搜索文本过滤，直接移除换行符而非替换为空格
+- 修正登录WebView客户端设置及资料获取逻辑
+- 升级SDK版本并启用coreLibraryDesugaring
+- miki sayaga：新增一个多标签搜索组合页面（未完成）
+- 修复部分多标签搜索组合页面bug
+- 将部分代码从java迁移到kotlin
+- [百度云](https://pan.baidu.com/s/1koygBtTteJtDHZTQYL8wXQ) 提取码：iqev
+- [夸克网盘](https://pan.quark.cn/s/b41421a61e70) 提取码：MrnK
+- [蓝奏云](https://wwbfg.lanzouu.com/iNSBF3m1jveb)，电脑端可正常下载 提取码：i4f8
+- [GitHub](https://github.com/xiaojieonly/Ehviewer_CN_SXJ/releases)
+- Torrent链接:magnet:?xt=urn:btih:8488a933608f5b3901de8a2bedc669e20ff94839&xt=urn:btmh:1220dbe6fffcb6aff255e089e3bb0cefeb33940c27d82e37163252abe4813c987e33&dn=EhViewer-2.0.1.6.apk&xl=27702785
+
 
 ## 2026/03/01 提前祝大家元宵节快乐
 ### 新版发布2.0.1.5
@@ -70,6 +104,12 @@ Telegram通知群: https://t.me/Ehviewer_xiaojieonly_channel
 - 清理请求头中的换行符避免崩溃
 - 调整下载列表页面的标题格式
 - zyl-hub：修复了在搜索框不为空时的搜索历史补全
+- [百度云](https://pan.baidu.com/s/1_rbxH65GXWjx_pxYIf0Pug) 提取码：wzv4
+- [夸克网盘](https://pan.quark.cn/s/95915acfe88b) 提取码：HmUu
+- [蓝奏云](https://wwbfg.lanzouu.com/iYopw3jiyizi)，电脑端可正常下载 提取码：fhbq
+- [GitHub](https://github.com/xiaojieonly/Ehviewer_CN_SXJ/releases)
+- Torrent链接:magnet:?xt=urn:btih:4869fe5d6cebba6e1f2b672e3523cca83838b466&xt=urn:btmh:1220df01410d828d8544b9efe8e15fe3e7323eab74d2ae962947f324dd36e0a99b74&dn=EhViewer-2.0.1.5.apk&xl=27934862
+
 
 ## 2026/02/01 给大家提前拜个早年，祝大家新春快乐~
 ### 新版发布2.0.1.4
@@ -88,14 +128,9 @@ Telegram通知群: https://t.me/Ehviewer_xiaojieonly_channel
 
 
 ## 2026/01/05 紧急修复
-### 新版发布2.0.1.3
+### 新版发布2.0.1.2
 
 - 暂时回滚图片解码方式，等后续优化好了再上
-- [百度云](https://pan.baidu.com/s/1cPrJQY1vIj-wGCaeHGCuvg) 提取码：q48u
-- [夸克网盘](https://pan.quark.cn/s/e979bc34a387) 提取码：EKWz
-- [蓝奏云](https://wwbfg.lanzouu.com/iS7Ec3fdxo0j)，电脑端可正常下载 提取码：74wp
-- [GitHub](https://github.com/xiaojieonly/Ehviewer_CN_SXJ/releases)
-- Torrent链接: magnet:?xt=urn:btih:2e1ff3f33a2b805248f8924a59c9af10a253aeba&xt=urn:btmh:1220b85731bf95b0beddae106ae6c369c9e01177e133a26b70ecc8a8a4314e237410&dn=EhViewer-2.0.1.3.apk&xl=27623258
 
 ## 2026/01/04 紧急修复
 ### 新版发布2.0.1.1
@@ -195,6 +230,3 @@ Here is the libraries
 ## 状态
 
 [![Alt](https://repobeats.axiom.co/api/embed/e6becb5b041dae430dff7f85581aa1f91975d416.svg "Repobeats analytics image")](https://github.com/xiaojieonly/Ehviewer_CN_SXJ/pulse)
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=xiaojieonly/Ehviewer_CN_SXJ&type=date&legend=top-left)](https://www.star-history.com/#xiaojieonly/Ehviewer_CN_SXJ&type=date&legend=top-left)

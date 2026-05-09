@@ -1,19 +1,18 @@
 {
-  "version": "2.0.1.5",
+  "version": "2.0.1.7",
   "versionCode": 111,
   "mustUpdate": false,
   "updateContent": {
     "fileDownloadUrl": "",
-    "title": "新版发布2.0.1.5，提前祝大家元宵节快乐",
+    "title": "新版发布2.0.1.6，祝大家愚人节伤心",
     "content": [
-      "调整 Analytics上报字段",
-      "将部分代码从java迁移到kotlin",
-      "修复 `BitmapUtils` 中的潜在整数溢出问题",
-      "优化VPN检测逻辑，增加权限检查和异常处理",
-      "优化登录流程异常处理和进度显示",
-      "清理请求头中的换行符避免崩溃",
-      "调整下载列表页面的标题格式",
-      "zyl-hub：修复了在搜索框不为空时的搜索历史补全"
+      "修复SpiderInfo读取时的OOM风险并升级JDK至21",
+      "修复图片搜索无法使用的问题",
+      "orbisai0security：the vendored giflib library performs multiple m... in gifalloc.c",
+      "En：修复了已下载项目的按标签搜索功能",
+      "增加对 WebView/CookieManager 初始化失败的异常处理",
+      "猫尾草：restore gradle wrapper jar and properties",
+      "升级Gradle至9.3.1及Android插件至9.1.1"
     ]
   }
 }

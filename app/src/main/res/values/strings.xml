@@ -122,6 +122,8 @@
     <string name="register">Register</string>
     <string name="sign_in_via_webview">Sign in via WebView</string>
     <string name="sign_in_via_cookies">Sign in via cookies</string>
+    <string name="webview_unavailable_title">System WebView unavailable</string>
+    <string name="webview_unavailable_message">The system Android System WebView failed to load (it may be broken or mismatched). Try updating \"Android System WebView\" in the app store, switch the WebView implementation in Developer options, or sign in via cookies.</string>
     <string name="display_name_dialog_title">Enter Display Name</string>
     <string name="display_name">Display name</string>
     <string name="display_name_is_empty">Display name is empty</string>
@@ -451,6 +453,11 @@
     <string name="gallery_previews">Gallery Previews</string>
     <string name="go_to">Go to</string>
     <string name="tag_filter">Filter tag</string>
+    <string name="tag_selector_search_hint">Search tags…</string>
+    <string name="tag_selector_selected_count">Selected: %d</string>
+    <string name="tag_selector_selected_section_title">Selected tags</string>
+    <string name="tag_selector_empty_selected">No tags selected</string>
+    <string name="tag_selector_other_group">Other</string>
 
     <!-- Download -->
     <string name="scene_download_title">%1$s Galleries - %2$s</string>
@@ -641,8 +648,8 @@
     <string name="settings_eh_sign_out_tip">You have signed out. Restart the application to sign in again</string>
     <string name="settings_eh_identity_cookies">Identity cookies</string>
     <string name="settings_eh_identity_cookies_summary">Cookies can be used to sign in</string>
-<!--    <string name="settings_eh_lock_cookies_igneous">Lock the Cookie igneous field</string>-->
-<!--    <string name="settings_eh_lock_cookies_igneous_summary">It is not recommended to enable it except in special circumstances.</string>-->
+    <!--    <string name="settings_eh_lock_cookies_igneous">Lock the Cookie igneous field</string>-->
+    <!--    <string name="settings_eh_lock_cookies_igneous_summary">It is not recommended to enable it except in special circumstances.</string>-->
     <string name="settings_eh_identity_cookies_signed">Identity cookies can be used to sign in to this account.&lt;br&gt;&lt;b&gt;KEEP IT SAFE&lt;/b&gt;&lt;br&gt;&lt;br&gt;%s</string>
     <string name="settings_eh_identity_cookies_tourist">Not signed in.</string>
     <string name="settings_eh_identity_cookies_copy">Copy</string>
@@ -1140,7 +1147,6 @@
     <string name="imported_archive_info_title">Local Import Info</string>
     <string name="imported_archive_info_message">This is an item imported from local storage</string>
     <string name="imported_archive_category">Local Import</string>
-
     <!-- Storage indicator labels -->
     <string name="storage_smb">SMB</string>
     <string name="storage_local">Local</string>
@@ -1169,4 +1175,6 @@
     <string name="restart_now">立即重启</string>
     <string name="restart_later">稍后重启</string>
 
+    <!-- TagSelectActivity -->
+    <string name="tag_search_entrance">Tag Selector</string>
 </resources>

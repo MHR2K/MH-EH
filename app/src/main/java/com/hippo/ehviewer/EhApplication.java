@@ -456,7 +456,7 @@ public class EhApplication extends RecordingApplication {
                     .connectTimeout(10, TimeUnit.SECONDS)
                     .readTimeout(10, TimeUnit.SECONDS)
                     .writeTimeout(10, TimeUnit.SECONDS)
-                    .callTimeout(30, TimeUnit.SECONDS)
+//                    .callTimeout(10, TimeUnit.SECONDS)
                     .cookieJar(getEhCookieStore(application))
                     .cache(getOkHttpCache(application))
 //                    .hostnameVerifier((hostname, session) -> true)
@@ -473,12 +473,16 @@ public class EhApplication extends RecordingApplication {
                         Response response = chain.proceed(chain.request());
                         // 同步Cookie到WebView
                         if (response.headers("Set-Cookie") != null) {
-                            CookieManager cookieManager = CookieManager.getInstance();
-                            String url =chain.request().url().toString();
-                            for (String header : response.headers("Set-Cookie")) {
-                                cookieManager.setCookie(url, header);
+                            try {
+                                CookieManager cookieManager = CookieManager.getInstance();
+                                String url = chain.request().url().toString();
+                                for (String header : response.headers("Set-Cookie")) {
+                                    cookieManager.setCookie(url, header);
+                                }
+                                cookieManager.flush();
+                            } catch (Throwable t) {
+                                Log.e(TAG, "CookieManager/WebView sync skipped", t);
                             }
-                            cookieManager.flush();
                         }
                         return response;
                     })

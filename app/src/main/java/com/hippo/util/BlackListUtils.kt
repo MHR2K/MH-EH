@@ -4,6 +4,7 @@ import com.hippo.ehviewer.client.data.GalleryComment
 import com.hippo.ehviewer.dao.BlackList
 import com.hippo.util.TimeUtils.timeNow
 
+//只是稍微修一下，不然会运行报错
 object BlackListUtils {
     @JvmStatic
     fun parseBlacklist(comment: GalleryComment): BlackList {
