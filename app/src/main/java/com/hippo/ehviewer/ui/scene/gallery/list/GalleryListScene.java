@@ -63,6 +63,14 @@ import com.github.amlcurran.showcaseview.targets.PointTarget;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.chip.ChipGroup;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.h6ah4i.android.widget.advrecyclerview.animator.GeneralItemAnimator;
+import com.h6ah4i.android.widget.advrecyclerview.animator.SwipeDismissItemAnimator;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.RecyclerViewSwipeManager;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.SwipeableItemConstants;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.action.SwipeResultAction;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.action.SwipeResultActionDefault;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.action.SwipeResultActionRemoveItem;
+import com.h6ah4i.android.widget.advrecyclerview.touchguard.RecyclerViewTouchActionGuardManager;
 import com.hippo.android.resource.AttrResources;
 import com.hippo.app.CheckBoxDialogBuilder;
 import com.hippo.app.EditTextDialogBuilder;
@@ -194,6 +202,8 @@ public final class GalleryListScene extends BaseScene
      ---------------*/
     @Nullable
     private EasyRecyclerView mRecyclerView;
+    private RecyclerViewSwipeManager mSwipeManager;
+    private RecyclerViewTouchActionGuardManager mGuardManager;
     @Nullable
     private SearchLayout mSearchLayout;
     @Nullable
@@ -204,6 +214,7 @@ public final class GalleryListScene extends BaseScene
     private FabLayout mFabLayout;
     @Nullable
     private FloatingActionButton mFloatingActionButton;
+    private boolean mSwipeDownloadEnabled = false;
     @Nullable
     private ViewTransition mViewTransition;
     @Nullable
@@ -667,6 +678,23 @@ public final class GalleryListScene extends BaseScene
 
         mAdapter = new GalleryListAdapter(inflater, resources,
                 mRecyclerView, Settings.getListMode());
+        mAdapter.setHasStableIds(true);
+        if (mSwipeDownloadEnabled) {
+            mAdapter.setSwipeEnabled(true);
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
+        }
+
+        mGuardManager = new RecyclerViewTouchActionGuardManager();
+        mGuardManager.setInterceptVerticalScrollingWhileAnimationRunning(true);
+        mGuardManager.setEnabled(true);
+        mSwipeManager = new RecyclerViewSwipeManager();
+        mRecyclerView.setAdapter(mSwipeManager.createWrappedAdapter(mAdapter));
+        final GeneralItemAnimator animator = new SwipeDismissItemAnimator();
+        animator.setSupportsChangeAnimations(false);
+        mRecyclerView.setItemAnimator(animator);
+        mGuardManager.attachRecyclerView(mRecyclerView);
+        mSwipeManager.attachRecyclerView(mRecyclerView);
 
         mAdapter.setThumbItemClickListener(this::onThumbItemClick);
         mRecyclerView.setSelector(Ripple.generateRippleDrawable(context, !AttrResources.getAttrBoolean(context, androidx.appcompat.R.attr.isLightTheme), new ColorDrawable(Color.TRANSPARENT)));
@@ -728,6 +756,17 @@ public final class GalleryListScene extends BaseScene
         return view;
     }
 
+    @SuppressLint("RtlHardcoded")
+    @Override
+    public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        // MainActivity.onSceneViewCreated unconditionally unlocks the right drawer,
+        // so we need to re-lock if swipe download is enabled
+        if (mSwipeDownloadEnabled) {
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
+        }
+    }
 
     private void onThumbItemClick(int position, View view, GalleryInfo gi) {
         LoadImageViewNew thumb = view.findViewById(R.id.thumb_new);
@@ -1540,6 +1579,9 @@ public final class GalleryListScene extends BaseScene
                 }
                 onItemClick(null, gInfoL.get((int) (Math.random() * gInfoL.size())));
                 break;
+            case 4: // 滑动下载开关
+                toggleSwipeDownload();
+                break;
         }
 
         view.setExpanded(false);
@@ -1601,14 +1643,49 @@ public final class GalleryListScene extends BaseScene
         }
 
         if (expanded) {
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
+            if (!mSwipeDownloadEnabled) {
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
+            }
             mActionFabDrawable.setDelete(ANIMATE_TIME);
         } else {
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+            if (!mSwipeDownloadEnabled) {
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+            }
             mActionFabDrawable.setAdd(ANIMATE_TIME);
         }
+    }
+
+    @SuppressLint("RtlHardcoded")
+    private void toggleSwipeDownload() {
+        if (mSwipeDownloadEnabled) {
+            disableSwipeDownload();
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+            showTip("滑动下载已关闭", LENGTH_SHORT);
+        } else {
+            enableSwipeDownload();
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
+            showTip("滑动下载已开启 - 左滑添加到下载列表,右滑直接下载", LENGTH_SHORT);
+        }
+    }
+
+    private void enableSwipeDownload() {
+        if (mSwipeDownloadEnabled || mAdapter == null) {
+            return;
+        }
+        mSwipeDownloadEnabled = true;
+        mAdapter.setSwipeEnabled(true);
+    }
+
+    private void disableSwipeDownload() {
+        if (!mSwipeDownloadEnabled || mAdapter == null) {
+            return;
+        }
+        mSwipeDownloadEnabled = false;
+        mAdapter.setSwipeEnabled(false);
     }
 
     private void showActionFab() {
@@ -1879,7 +1956,9 @@ public final class GalleryListScene extends BaseScene
     @Override
     public void onEndDragHandler() {
         // Restore right drawer
-        setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+        if (!mSwipeDownloadEnabled) {
+            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+        }
 
         if (null != mSearchBarMover) {
             mSearchBarMover.returnSearchBarPosition();
@@ -1914,8 +1993,10 @@ public final class GalleryListScene extends BaseScene
         }
 
         if (newState == STATE_NORMAL || newState == STATE_SIMPLE_SEARCH) {
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+            if (!mSwipeDownloadEnabled) {
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
+                setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
+            }
         } else {
             setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
             setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
@@ -2125,12 +2206,79 @@ public final class GalleryListScene extends BaseScene
             return null != mHelper ? mHelper.size() : 0;
         }
 
+        @Override
+        public long getItemId(int position) {
+            GalleryInfo gi = getDataAt(position);
+            return gi != null ? gi.gid : super.getItemId(position);
+        }
+
         @Nullable
         @Override
         public GalleryInfo getDataAt(int position) {
             return null != mHelper ? mHelper.getDataAtEx(position) : null;
         }
 
+        @Override
+        public SwipeResultAction onSwipeItem(GalleryHolder holder, final int position, int result) {
+            switch (result) {
+                case SwipeableItemConstants.RESULT_SWIPED_LEFT:
+                    return new SwipeResultActionAddDownload(position);
+                case SwipeableItemConstants.RESULT_SWIPED_RIGHT:
+                    return new SwipeResultActionStartDownload(position);
+                case SwipeableItemConstants.RESULT_CANCELED:
+                default:
+                    return new SwipeResultActionDefault();
+            }
+        }
+    }
+
+    private class SwipeResultActionAddDownload extends SwipeResultActionRemoveItem {
+        private final int mPosition;
+
+        protected SwipeResultActionAddDownload(int position) {
+            mPosition = position;
+        }
+
+        @Override
+        protected void onPerformAction() {
+            super.onPerformAction();
+            GalleryInfo gi = mAdapter.getDataAt(mPosition);
+            if (gi != null) {
+                MainActivity activity = getActivity2();
+                if (activity != null) {
+                    String label = null;
+                    if (Settings.getHasDefaultDownloadLabel()) {
+                        label = Settings.getDefaultDownloadLabel();
+                    }
+                    mDownloadManager.addDownload(gi, label);
+                    showTip(R.string.added_to_download_list, LENGTH_SHORT);
+                    mHelper.removeAt(mPosition);
+                    mAdapter.notifyItemRemoved(mPosition);
+                }
+            }
+        }
+    }
+
+    private class SwipeResultActionStartDownload extends SwipeResultActionRemoveItem {
+        private final int mPosition;
+
+        protected SwipeResultActionStartDownload(int position) {
+            mPosition = position;
+        }
+
+        @Override
+        protected void onPerformAction() {
+            super.onPerformAction();
+            GalleryInfo gi = mAdapter.getDataAt(mPosition);
+            if (gi != null) {
+                MainActivity activity = getActivity2();
+                if (activity != null) {
+                    CommonOperations.startDownload(activity, gi, false);
+                    mHelper.removeAt(mPosition);
+                    mAdapter.notifyItemRemoved(mPosition);
+                }
+            }
+        }
     }
 
     class GalleryListHelper extends GalleryInfoContentHelper {

@@ -28,6 +28,8 @@ import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Debug;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.method.LinkMovementMethod;
 import android.util.Log;
 import android.view.View;

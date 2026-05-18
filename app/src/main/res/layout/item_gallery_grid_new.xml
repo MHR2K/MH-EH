@@ -15,39 +15,46 @@
   ~ limitations under the License.
   -->
 
-<androidx.cardview.widget.CardView
+<FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:layout_margin="2dp"
-    style="@style/CardView.Normal">
+    android:layout_height="wrap_content">
 
-    <com.hippo.ehviewer.widget.TileThumbNew
+    <androidx.cardview.widget.CardView
         xmlns:app="http://schemas.android.com/apk/res-auto"
-        android:id="@+id/thumb_new"
+        android:id="@+id/card"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scaleType="centerCrop"
-        android:foreground="@drawable/tile_background"
-        app:retryType="none"/>
+        android:layout_margin="2dp"
+        style="@style/CardView.Normal">
 
-    <TextView
-        android:id="@+id/category"
-        android:layout_width="32dp"
-        android:layout_height="24dp"
-        android:layout_gravity="top|right"/>
+        <com.hippo.ehviewer.widget.TileThumbNew
+            xmlns:app="http://schemas.android.com/apk/res-auto"
+            android:id="@+id/thumb_new"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scaleType="centerCrop"
+            android:foreground="@drawable/tile_background"
+            app:retryType="none"/>
 
-    <TextView
-        xmlns:tools="http://schemas.android.com/tools"
-        android:id="@+id/simple_language"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="top|right"
-        android:layout_marginRight="2dp"
-        android:textSize="10dp"
-        android:textColor="@android:color/white"
-        android:textStyle="bold"
-        tools:ignore="SpUsage"/>
+        <TextView
+            android:id="@+id/category"
+            android:layout_width="32dp"
+            android:layout_height="24dp"
+            android:layout_gravity="top|right"/>
 
-</androidx.cardview.widget.CardView>
+        <TextView
+            xmlns:tools="http://schemas.android.com/tools"
+            android:id="@+id/simple_language"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|right"
+            android:layout_marginRight="2dp"
+            android:textSize="10dp"
+            android:textColor="@android:color/white"
+            android:textStyle="bold"
+            tools:ignore="SpUsage"/>
+
+    </androidx.cardview.widget.CardView>
+</FrameLayout>

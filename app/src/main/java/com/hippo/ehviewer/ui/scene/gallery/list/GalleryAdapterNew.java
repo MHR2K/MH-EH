@@ -34,6 +34,11 @@ import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.SwipeableItemAdapter;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.SwipeableItemConstants;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.action.SwipeResultAction;
+import com.h6ah4i.android.widget.advrecyclerview.swipeable.action.SwipeResultActionDefault;
+import com.h6ah4i.android.widget.advrecyclerview.utils.AbstractSwipeableItemViewHolder;
 import com.hippo.drawable.TriangleDrawable;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
 import com.hippo.ehviewer.EhApplication;
@@ -56,7 +61,8 @@ import java.util.concurrent.ExecutorService;
 
 import com.hippo.ehviewer.spider.SpiderQueen;
 
-abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.GalleryHolder> {
+abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.GalleryHolder>
+        implements SwipeableItemAdapter<GalleryAdapterNew.GalleryHolder> {
 
     @IntDef({TYPE_LIST, TYPE_GRID})
     @Retention(RetentionPolicy.SOURCE)
@@ -98,7 +104,7 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
         mPaddingTopSB = resources.getDimensionPixelOffset(R.dimen.gallery_padding_top_search_bar);
         mShowFavourite = showFavourited;
 
-        mRecyclerView.setAdapter(this);
+        setHasStableIds(true);
         mRecyclerView.setLayoutManager(mLayoutManager);
 
         View calculator = inflater.inflate(R.layout.item_gallery_list_thumb_height, null);
@@ -292,7 +298,7 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
         void onThumbItemClick(int position, View view, GalleryInfo gi);
     }
 
-    public class GalleryHolder extends RecyclerView.ViewHolder {
+    public class GalleryHolder extends AbstractSwipeableItemViewHolder {
 
         public final LoadImageViewNew thumb;
         public TextView title;
@@ -304,9 +310,11 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
         public final TextView simpleLanguage;
         public final ImageView favourite;
         public final ImageView downloaded;
+        public final View cardView;
 
         public GalleryHolder(View itemView, final OnThumbItemClickListener onThumbItemClickListener, int mType) {
             super(itemView);
+            cardView = itemView.findViewById(R.id.card);
             thumb = itemView.findViewById(R.id.thumb_new);
             title = itemView.findViewById(R.id.title);
             uploader = itemView.findViewById(R.id.uploader);
@@ -327,6 +335,36 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
             }
         }
 
+        @Override
+        public View getSwipeableContainerView() {
+            return cardView;
+        }
+
+    }
+
+    private boolean mSwipeEnabled = false;
+
+    public void setSwipeEnabled(boolean enabled) {
+        mSwipeEnabled = enabled;
+    }
+
+    @Override
+    public int onGetSwipeReactionType(GalleryHolder holder, int position, int x, int y) {
+        return mSwipeEnabled ? SwipeableItemConstants.REACTION_CAN_SWIPE_BOTH_H :
+                SwipeableItemConstants.REACTION_CAN_NOT_SWIPE_BOTH_H;
+    }
+
+    @Override
+    public void onSwipeItemStarted(GalleryHolder holder, int position) {
+    }
+
+    @Override
+    public void onSetSwipeBackground(GalleryHolder holder, int position, int type) {
+    }
+
+    @Override
+    public SwipeResultAction onSwipeItem(GalleryHolder holder, int position, int result) {
+        return new SwipeResultActionDefault();
     }
 
 }
