@@ -679,9 +679,8 @@ public class DownloadsScene extends ToolbarScene
             }
         }
 
-        if (mInitPosition >= 0 && indexPage != 1) {
+        if (mInitPosition >= 0) {
             initPage(mInitPosition);
-            mRecyclerView.scrollToPosition(listIndexInPage(mInitPosition));
             mInitPosition = -1;
         }
 
@@ -2939,7 +2938,9 @@ public class DownloadsScene extends ToolbarScene
         if (mPaginationIndicator != null) {
             mPaginationIndicator.skip2Pos(indexPage);
         }
-        mRecyclerView.scrollToPosition(listIndexInPage(position));
+        int scrollTo = listIndexInPage(position);
+        int scrollTarget = Math.max(0, scrollTo - 1);
+        mRecyclerView.post(() -> mRecyclerView.scrollToPosition(scrollTarget));
     }
 
 
