@@ -20,6 +20,7 @@ import android.os.Process;
 import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.GetText;
 import com.hippo.ehviewer.R;
 import com.hippo.lib.glgallery.GalleryPageView;
@@ -33,7 +34,9 @@ import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.lib.yorozuya.StringUtils;
 import com.hippo.lib.yorozuya.thread.PriorityThread;
 
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -224,9 +227,23 @@ public class DirGalleryProvider extends GalleryProvider2 implements Runnable {
             InputStream is = null;
             try {
                 is = files[index].openInputStream();
-//                Image image = Image.decode(is, true);
-                Image image = Image.decode((FileInputStream) is, false);
-//                Image1 image1 = Image1.decode((FileInputStream) is, false);
+                Image image;
+                if (is instanceof FileInputStream) {
+                    image = Image.decode((FileInputStream) is, false);
+                } else {
+                    // SMB / 非本地文件流：先落盘再解码，避免 ClassCastException
+                    File temp = File.createTempFile("dir_img", null, EhApplication.getInstance().getCacheDir());
+                    try (FileOutputStream os = new FileOutputStream(temp)) {
+                        IOUtils.copy(is, os);
+                    }
+                    try (FileInputStream fis = new FileInputStream(temp)) {
+                        image = Image.decode(fis, false);
+                    } finally {
+                        if (!temp.delete()) {
+                            temp.deleteOnExit();
+                        }
+                    }
+                }
                 mDecodingIndex.lazySet(GalleryPageView.INVALID_INDEX);
                 if (image != null) {
                     notifyPageSucceed(index, image);

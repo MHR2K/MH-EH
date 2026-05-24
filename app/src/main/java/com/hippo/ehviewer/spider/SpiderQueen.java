@@ -40,6 +40,8 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhRequestBuilder;
 import com.hippo.ehviewer.client.EhUrl;
+import com.hippo.ehviewer.smb.Client;
+import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.Image509Exception;
@@ -488,9 +490,11 @@ public final class SpiderQueen implements Runnable {
         }
     }
 
+    private volatile String mInitError;
+
     public String getError() {
         if (mQueenThread == null) {
-            return "Error";
+            return mInitError != null ? mInitError : "Error";
         } else {
             return null;
         }
@@ -780,6 +784,7 @@ public final class SpiderQueen implements Runnable {
             spiderInfo = SpiderInfo.read(file);
             if (spiderInfo != null && spiderInfo.gid == mGalleryInfo.gid &&
                     spiderInfo.token.equals(mGalleryInfo.token)) {
+                Log.i(TAG, "SpiderInfo loaded from download dir for gid=" + mGalleryInfo.gid);
                 return spiderInfo;
             }
         }
@@ -792,16 +797,60 @@ public final class SpiderQueen implements Runnable {
                 spiderInfo = SpiderInfo.read(pipe.open());
                 if (spiderInfo != null && spiderInfo.gid == mGalleryInfo.gid &&
                         spiderInfo.token.equals(mGalleryInfo.token)) {
+                    Log.i(TAG, "SpiderInfo loaded from cache for gid=" + mGalleryInfo.gid);
                     return spiderInfo;
                 }
             } catch (IOException e) {
-                // Ignore
+                Log.w(TAG, "SpiderInfo cache read failed for gid=" + mGalleryInfo.gid, e);
             } finally {
                 pipe.close();
                 pipe.release();
             }
         }
 
+        // Read from SMB (.ehviewer file in the SMB-mapped directory)
+        spiderInfo = readSpiderInfoFromSmb();
+        if (spiderInfo != null) {
+            return spiderInfo;
+        }
+
+        Log.w(TAG, "SpiderInfo not found locally for gid=" + mGalleryInfo.gid
+                + " (downloadDir=" + (downloadDir != null) + ")");
+        return null;
+    }
+
+    /**
+     * 尝试从 SMB 上的映射目录读取 .ehviewer 文件
+     */
+    @Nullable
+    private SpiderInfo readSpiderInfoFromSmb() {
+        SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mGalleryInfo.gid);
+        if (mapping == null) {
+            if (DEBUG_LOG) {
+                Log.d(TAG, "SMB SpiderInfo: no mapping for gid=" + mGalleryInfo.gid);
+            }
+            return null;
+        }
+        String base = mapping.getBasePathInShare();
+        if (base == null) base = "";
+        String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+        String rel = normBase.isEmpty() ? SPIDER_INFO_FILENAME : (normBase + "\\" + SPIDER_INFO_FILENAME);
+        Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+        try {
+            java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+            try {
+                SpiderInfo info = SpiderInfo.read(is);
+                if (info != null && info.gid == mGalleryInfo.gid &&
+                        info.token.equals(mGalleryInfo.token)) {
+                    Log.i(TAG, "SpiderInfo loaded from SMB for gid=" + mGalleryInfo.gid);
+                    return info;
+                }
+            } finally {
+                com.hippo.lib.yorozuya.IOUtils.closeQuietly(is);
+            }
+        } catch (Throwable e) {
+            Log.w(TAG, "SMB SpiderInfo read failed for gid=" + mGalleryInfo.gid + ": " + e.getMessage());
+        }
         return null;
     }
 
@@ -845,6 +894,7 @@ public final class SpiderQueen implements Runnable {
             return spiderInfo;
         } catch (Throwable e) {
             ExceptionUtils.throwIfFatal(e);
+            Log.e(TAG, "readSpiderInfoFromInternet failed for gid=" + mGalleryInfo.gid, e);
             Analytics.recordException(e);
             return null;
         }
@@ -943,6 +993,9 @@ public final class SpiderQueen implements Runnable {
 
         // Error! Can't get spiderInfo
         if (spiderInfo == null) {
+            mInitError = "无法获取漫画信息(SpiderInfo)，请检查网络连接或SMB配置";
+            Log.e(TAG, "Failed to obtain SpiderInfo for gid=" + mGalleryInfo.gid
+                    + ", token=" + mGalleryInfo.token + ". Thread will exit.");
             return;
         }
         mSpiderInfo.lazySet(spiderInfo);
@@ -1769,6 +1822,9 @@ public final class SpiderQueen implements Runnable {
     private class SpiderDecoder implements Runnable {
 
         private final int mThreadIndex;
+        // Track consecutive null-pipe failures per index to detect silent loops
+        private int mConsecutiveNullPipeFailures = 0;
+        private int mLastNullPipeIndex = -1;
 
         public SpiderDecoder(int index) {
             mThreadIndex = index;
@@ -1812,10 +1868,26 @@ public final class SpiderQueen implements Runnable {
                 InputStreamPipe pipe = mSpiderDen.openInputStreamPipe(index);
                 if (pipe == null) {
                     resetDecodeIndex();
-                    // Can't find the file, it might be removed from cache,
-                    // Reset it state and request it
-                    updatePageState(index, STATE_NONE, null);
-                    request(index, false, false, false);
+                    // Track consecutive failures to detect silent loops
+                    if (index == mLastNullPipeIndex) {
+                        mConsecutiveNullPipeFailures++;
+                    } else {
+                        mConsecutiveNullPipeFailures = 1;
+                        mLastNullPipeIndex = index;
+                    }
+                    if (mConsecutiveNullPipeFailures >= 3) {
+                        // After 3 consecutive failures, report error instead of silent loop
+                        Log.e(TAG, "SMB pipe null after " + mConsecutiveNullPipeFailures
+                                + " retries for index=" + index + ", reporting failure");
+                        mConsecutiveNullPipeFailures = 0;
+                        mLastNullPipeIndex = -1;
+                        notifyGetImageFailure(index, GetText.getString(R.string.error_reading_failed));
+                    } else {
+                        // Can't find the file, it might be removed from cache,
+                        // Reset it state and request it
+                        updatePageState(index, STATE_NONE, null);
+                        request(index, false, false, false);
+                    }
                     continue;
                 }
 
@@ -1826,8 +1898,11 @@ public final class SpiderQueen implements Runnable {
                 pipe.obtain();
                 try {
                     is = pipe.open();
+                    // Reset failure counter on successful open
+                    mConsecutiveNullPipeFailures = 0;
                 } catch (IOException e) {
                     // Can't open pipe
+                    Log.e(TAG, "Pipe open failed for index=" + index, e);
                     error = GetText.getString(R.string.error_reading_failed);
                     is = null;
                     pipe.close();
@@ -1840,6 +1915,7 @@ public final class SpiderQueen implements Runnable {
                         if (is instanceof FileInputStream) {
                             image = Image.decode((FileInputStream) is, false);
                         } else {
+                            Log.d(TAG, "Non-FileInputStream detected for index=" + index + ", streaming to temp file");
                             File temp = File.createTempFile("smb_img", null, EhApplication.getInstance().getCacheDir());
                             try (FileOutputStream os = new FileOutputStream(temp)) {
                                 IOUtils.copy(is, os);
