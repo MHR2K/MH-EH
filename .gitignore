@@ -22,3 +22,11 @@ Log&Error.md
 # Eclipse / Java 项目环境配置
 .project
 .settings/
+
+# claude-flow runtime (each machine has its own state)
+.claude-flow/
+.swarm/
+ruvector.db
+.claude/helpers/
+.claude/statusline.mjs
+.claude/statusline.sh
