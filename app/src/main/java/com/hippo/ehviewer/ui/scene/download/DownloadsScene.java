@@ -35,6 +35,8 @@ import android.graphics.drawable.NinePatchDrawable;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.util.SparseBooleanArray;
 import android.view.Display;
@@ -2592,6 +2594,26 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public MyEasyRecyclerView getRecyclerView() {
         return mRecyclerView;
+    }
+
+    @Override
+    public void onSpiderInfoFromSmb(long gid, SpiderInfo spiderInfo) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            SpiderInfo existing = mSpiderInfoMap.get(gid);
+            if (existing != null && existing.startPage == spiderInfo.startPage
+                    && existing.pages == spiderInfo.pages) {
+                return; // 数据未变化，跳过刷新
+            }
+            mSpiderInfoMap.put(gid, spiderInfo);
+            // 持久化到 Repository，后续查询可直接命中缓存
+            Activity activity = getActivity2();
+            if (activity != null) {
+                EhApplication.getSpiderInfoRepository(activity).save(spiderInfo, "SMB");
+            }
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            }
+        });
     }
 
 

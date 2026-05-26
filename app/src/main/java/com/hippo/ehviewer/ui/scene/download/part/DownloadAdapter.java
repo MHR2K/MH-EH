@@ -114,6 +114,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         Map<Long, SpiderInfo> getSpiderInfoMap();
         DownloadManager getDownloadManager();
         EasyRecyclerView getRecyclerView();
+        default void onSpiderInfoFromSmb(long gid, SpiderInfo spiderInfo) {}
     }
 
     public DownloadAdapter(DownloadsScene scene, DownloadAdapterCallback callback) {
@@ -194,7 +195,10 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             } else {
                 // Normal thumbnail loading for regular downloads
                 holder.thumb.load(EhCacheKeyFactory.getThumbKey(info.gid), info.thumb,
-                        new ThumbDataContainer(mScene.getEHContext(), info), true, false);
+                        new ThumbDataContainer(mScene.getEHContext(), info,
+                                (ThumbDataContainer.OnSpiderInfoLoadedListener) spiderInfo ->
+                                        mCallback.onSpiderInfoFromSmb(info.gid, spiderInfo)),
+                        true, false);
             }
 
 
