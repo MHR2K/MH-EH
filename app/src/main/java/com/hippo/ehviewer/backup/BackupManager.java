@@ -40,7 +40,6 @@ public class BackupManager {
     private static final String ENTRY_EH_DB = "eh.db";
     private static final String ENTRY_SETTINGS = "settings";
     // 注意：SMB 数据通过 shared_prefs 目录备份，包含：
-    // - smb_gallery_mappings.xml (SmbMappingStore)
     // - smb_servers.xml (SmbServerStore)
     // - smb_secure_prefs.xml (SmbServerStore 加密数据)
     private static final String ENTRY_COOKIES = "cookies.db";

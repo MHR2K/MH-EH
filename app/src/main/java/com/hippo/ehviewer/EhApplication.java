@@ -58,7 +58,6 @@ import com.hippo.ehviewer.client.data.userTag.UserTagList;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.spider.SpiderInfoRepository;
-import com.hippo.ehviewer.smb.SmbMappingStore;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.lib.image.Image;
 //import com.hippo.lib.image.Image1;
@@ -281,8 +280,7 @@ public class EhApplication extends RecordingApplication {
                 // Initialize EhEngine
                 EhEngine.initialize();
 
-                // Initialize SMB mapping store
-                SmbMappingStore.INSTANCE.init(EhApplication.this);
+                // Initialize SMB server store
                 com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.init(EhApplication.this);
                 com.hippo.ehviewer.smb.Client.INSTANCE.setAuthenticator(
                         com.hippo.ehviewer.smb.SmbServerAuthenticator.INSTANCE

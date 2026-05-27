@@ -1681,10 +1681,10 @@ public class DownloadsScene extends ToolbarScene
                                         // 清除路径映射
                                         EhDB.removeDownloadDirname(info.gid);
                                         
-                                        // 检查是否有 SMB 映射
-                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                                        if (mapping != null) {
+                                        // 检查是否在 SMB 上
+                                        com.hippo.ehviewer.smb.Client.Target smbCheck =
+                                            com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                                        if (smbCheck != null) {
                                             smbInfoList.add(info);
                                         }
                                         
@@ -1712,33 +1712,18 @@ public class DownloadsScene extends ToolbarScene
                                             @Override protected Integer doInBackground(Void... voids) {
                                                 int count = 0;
                                                 for (DownloadInfo info : smbInfoList) {
-                                                    com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                                                        com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                                                    if (mapping == null) continue;
-                                                    
-                                                    com.hippo.ehviewer.smb.Client.Target target = 
-                                                        new com.hippo.ehviewer.smb.Client.Target(
-                                                            mapping.getAuthority(),
-                                                            mapping.getShare(),
-                                                            mapping.getBasePathInShare()
-                                                        );
-                                                    
+                                                    com.hippo.ehviewer.smb.Client.Target target =
+                                                        com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                                                    if (target == null) continue;
+
                                                     try {
                                                         // 获取服务器密码
-                                                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
-                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
-                                                        com.hippo.ehviewer.smb.SmbServer server = null;
-                                                        for (com.hippo.ehviewer.smb.SmbServer s : servers) {
-                                                            if (s.getAuthority().equals(mapping.getAuthority())) {
-                                                                server = s;
-                                                                break;
-                                                            }
-                                                        }
+                                                        com.hippo.ehviewer.smb.SmbServer server =
+                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.findByAuthority(target.getAuthority());
                                                         if (server == null) continue;
-                                                        
-                                                        final com.hippo.ehviewer.smb.SmbServer finalServer = server;
+
                                                         com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
-                                                            mapping.getAuthority(),
+                                                            target.getAuthority(),
                                                             server.getPassword(),
                                                             () -> {
                                                                 try {
@@ -1751,10 +1736,7 @@ public class DownloadsScene extends ToolbarScene
                                                             }
                                                         );
                                                         
-                                                        // 如果是 option 0 或 option 1，删除映射（移除远端目录后不再保留映射）
-                                                        if (finalOption == 0 || finalOption == 1) {
-                                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(info.gid);
-                                                        }
+                                                        // option 0 或 option 1：已删除远端目录，无需额外操作
                                                         
                                                         count++;
                                                     } catch (Exception e) {
@@ -1799,10 +1781,10 @@ public class DownloadsScene extends ToolbarScene
                                             }
                                         }
                                         
-                                        // 检查是否有 SMB 映射
-                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                                        if (mapping != null) {
+                                        // 检查是否在 SMB 上
+                                        com.hippo.ehviewer.smb.Client.Target smbCheck =
+                                            com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                                        if (smbCheck != null) {
                                             smbInfoList.add(info);
                                         }
                                         
@@ -1822,32 +1804,18 @@ public class DownloadsScene extends ToolbarScene
                                             @Override protected Integer doInBackground(Void... voids) {
                                                 int count = 0;
                                                 for (DownloadInfo info : smbInfoList) {
-                                                    com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                                                        com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                                                    if (mapping == null) continue;
-                                                    
-                                                    com.hippo.ehviewer.smb.Client.Target target = 
-                                                        new com.hippo.ehviewer.smb.Client.Target(
-                                                            mapping.getAuthority(),
-                                                            mapping.getShare(),
-                                                            mapping.getBasePathInShare()
-                                                        );
-                                                    
+                                                    com.hippo.ehviewer.smb.Client.Target target =
+                                                        com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                                                    if (target == null) continue;
+
                                                     try {
                                                         // 获取服务器密码
-                                                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
-                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
-                                                        com.hippo.ehviewer.smb.SmbServer server = null;
-                                                        for (com.hippo.ehviewer.smb.SmbServer s : servers) {
-                                                            if (s.getAuthority().equals(mapping.getAuthority())) {
-                                                                server = s;
-                                                                break;
-                                                            }
-                                                        }
+                                                        com.hippo.ehviewer.smb.SmbServer server =
+                                                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.findByAuthority(target.getAuthority());
                                                         if (server == null) continue;
-                                                        
+
                                                         com.hippo.ehviewer.smb.Client.INSTANCE.withTempPassword(
-                                                            mapping.getAuthority(),
+                                                            target.getAuthority(),
                                                             server.getPassword(),
                                                             () -> {
                                                                 try {
@@ -1971,9 +1939,9 @@ public class DownloadsScene extends ToolbarScene
                                     // 筛选出在SMB上的下载项
                                     List<DownloadInfo> smbInfos = new ArrayList<>();
                                     for (DownloadInfo info : infosFinal) {
-                                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                                        if (mapping != null) {
+                                        com.hippo.ehviewer.smb.Client.Target smbCheck =
+                                            com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                                        if (smbCheck != null) {
                                             smbInfos.add(info);
                                         }
                                     }
@@ -2060,16 +2028,7 @@ public class DownloadsScene extends ToolbarScene
                             }
                         });
                         if (success) {
-                            // 写入 SMB 映射
-                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.put(
-                                    new com.hippo.ehviewer.smb.SmbMappingStore.Mapping(
-                                            info.gid,
-                                            targetBase.getAuthority(),
-                                            targetBase.getShare(),
-                                            targetBase.getPathInShare()
-                                    )
-                            );
-                            // 删除本地目录以实现“移动”效果
+                            // 删除本地目录以实现”移动”效果
                             dir.delete();
                             okCount++;
                         }
@@ -2102,40 +2061,18 @@ public class DownloadsScene extends ToolbarScene
                 int okCount = 0;
                 for (DownloadInfo info : infos) {
                     try {
-                        // 获取 SMB 映射
-                        com.hippo.ehviewer.smb.SmbMappingStore.Mapping mapping = 
-                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.get(info.gid);
-                        if (mapping == null) continue;
-                        
-                        // 构建 SMB 目标
-                        com.hippo.ehviewer.smb.Client.Target smbTarget = 
-                            new com.hippo.ehviewer.smb.Client.Target(
-                                mapping.getAuthority(),
-                                mapping.getShare(),
-                                mapping.getBasePathInShare()
-                            );
-                        
+                        // 通过 dirname 推导 SMB 路径
+                        com.hippo.ehviewer.smb.Client.Target smbTarget =
+                            com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
+                        if (smbTarget == null) continue;
+
                         // 获取对应的 SMB 服务器配置（用于密码）
-                        java.util.List<com.hippo.ehviewer.smb.SmbServer> servers = 
-                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.list();
-                        com.hippo.ehviewer.smb.SmbServer matchedServer = null;
-                        if (servers != null) {
-                            for (com.hippo.ehviewer.smb.SmbServer s : servers) {
-                                com.hippo.ehviewer.smb.Client.Target t = s.toTarget();
-                                if (t != null && t.getAuthority().equals(mapping.getAuthority()) 
-                                    && t.getShare().equals(mapping.getShare())) {
-                                    matchedServer = s;
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        if (matchedServer == null) {
+                        com.hippo.ehviewer.smb.SmbServer server =
+                            com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.findByAuthority(smbTarget.getAuthority());
+                        if (server == null) {
                             android.util.Log.e("DownloadsScene", "找不到匹配的 SMB 服务器配置");
                             continue;
                         }
-                        
-                        final com.hippo.ehviewer.smb.SmbServer server = matchedServer;
                         
                         // 创建本地目标目录
                         com.hippo.unifile.UniFile localDir = Settings.getDownloadLocation();
@@ -2214,9 +2151,6 @@ public class DownloadsScene extends ToolbarScene
                         );
                         
                         if (success) {
-                            // 更新数据库：移除 SMB 映射
-                            com.hippo.ehviewer.smb.SmbMappingStore.INSTANCE.remove(info.gid);
-                            
                             // 更新下载路径
                             com.hippo.ehviewer.EhDB.putDownloadDirname(info.gid, dirname);
                             

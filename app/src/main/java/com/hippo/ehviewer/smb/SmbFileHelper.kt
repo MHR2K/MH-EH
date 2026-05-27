@@ -26,16 +26,15 @@ object SmbFileHelper {
         gid: Long,
         filename: String
     ): InputStreamPipe? {
-        // 仅使用显式映射，自动检测由 SpiderDen 处理
-        val mapping = SmbMappingStore.get(gid) ?: run {
+        val dirTarget = SmbPathResolver.resolve(gid) ?: run {
             if (BuildConfig.DEBUG) {
-                Log.d(TAG, "No SMB mapping found for gid=$gid")
+                Log.d(TAG, "No SMB path resolved for gid=$gid")
             }
             return null
         }
         return try {
-            val rel = if (mapping.basePathInShare.isEmpty()) filename else mapping.basePathInShare + "\\" + filename
-            val target = Client.Target(mapping.authority, mapping.share, rel)
+            val rel = if (dirTarget.pathInShare.isEmpty()) filename else dirTarget.pathInShare + "\\" + filename
+            val target = Client.Target(dirTarget.authority, dirTarget.share, rel)
             if (BuildConfig.DEBUG) {
                 Log.d(TAG, "Opening SMB file: gid=$gid, target=${target.share}/${target.pathInShare}")
             }
@@ -43,7 +42,7 @@ object SmbFileHelper {
         } catch (e: Exception) {
             if (BuildConfig.DEBUG) {
                 Log.e(TAG, "Error accessing SMB file: gid=$gid, file=$filename, " +
-                    "mapping=${mapping.authority.host}/${mapping.share}/${mapping.basePathInShare}", e)
+                    "target=${dirTarget.authority.host}/${dirTarget.share}/${dirTarget.pathInShare}", e)
             }
             null
         }
@@ -59,10 +58,10 @@ object SmbFileHelper {
         filename: String,
         data: ByteArray
     ): Boolean {
-        val mapping = SmbMappingStore.get(gid) ?: return false
+        val dirTarget = SmbPathResolver.resolve(gid) ?: return false
         return try {
-            val rel = if (mapping.basePathInShare.isEmpty()) filename else mapping.basePathInShare + "\\" + filename
-            val target = Client.Target(mapping.authority, mapping.share, rel)
+            val rel = if (dirTarget.pathInShare.isEmpty()) filename else dirTarget.pathInShare + "\\" + filename
+            val target = Client.Target(dirTarget.authority, dirTarget.share, rel)
             writeSmbData(target, data)
             true
         } catch (e: Exception) {
@@ -82,10 +81,10 @@ object SmbFileHelper {
         gid: Long,
         filename: String
     ): Boolean {
-        val mapping = SmbMappingStore.get(gid) ?: return false
+        val dirTarget = SmbPathResolver.resolve(gid) ?: return false
         return try {
-            val rel = if (mapping.basePathInShare.isEmpty()) filename else mapping.basePathInShare + "\\" + filename
-            val target = Client.Target(mapping.authority, mapping.share, rel)
+            val rel = if (dirTarget.pathInShare.isEmpty()) filename else dirTarget.pathInShare + "\\" + filename
+            val target = Client.Target(dirTarget.authority, dirTarget.share, rel)
             Client.delete(target)
             true
         } catch (e: Exception) {

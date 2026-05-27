@@ -41,7 +41,7 @@ import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhRequestBuilder;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.smb.Client;
-import com.hippo.ehviewer.smb.SmbMappingStore;
+import com.hippo.ehviewer.smb.SmbPathResolver;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.Image509Exception;
@@ -824,18 +824,16 @@ public final class SpiderQueen implements Runnable {
      */
     @Nullable
     private SpiderInfo readSpiderInfoFromSmb() {
-        SmbMappingStore.Mapping mapping = SmbMappingStore.INSTANCE.get(mGalleryInfo.gid);
-        if (mapping == null) {
+        Client.Target dirTarget = SmbPathResolver.resolve(mGalleryInfo.gid);
+        if (dirTarget == null) {
             if (DEBUG_LOG) {
-                Log.d(TAG, "SMB SpiderInfo: no mapping for gid=" + mGalleryInfo.gid);
+                Log.d(TAG, "SMB SpiderInfo: no path resolved for gid=" + mGalleryInfo.gid);
             }
             return null;
         }
-        String base = mapping.getBasePathInShare();
-        if (base == null) base = "";
-        String normBase = base.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
-        String rel = normBase.isEmpty() ? SPIDER_INFO_FILENAME : (normBase + "\\" + SPIDER_INFO_FILENAME);
-        Client.Target target = new Client.Target(mapping.getAuthority(), mapping.getShare(), rel);
+        String base = dirTarget.getPathInShare();
+        String rel = base.isEmpty() ? SPIDER_INFO_FILENAME : (base + "\\" + SPIDER_INFO_FILENAME);
+        Client.Target target = new Client.Target(dirTarget.getAuthority(), dirTarget.getShare(), rel);
         try {
             java.io.InputStream is = Client.INSTANCE.openInputStream(target);
             try {
