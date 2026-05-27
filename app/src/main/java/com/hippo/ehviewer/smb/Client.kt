@@ -7,6 +7,8 @@ import com.hierynomus.mssmb2.SMB2ShareAccess
 import com.hierynomus.smbj.SMBClient
 import com.hierynomus.smbj.SmbConfig
 import com.hierynomus.smbj.auth.AuthenticationContext
+import com.hierynomus.mserref.NtStatus
+import com.hierynomus.mssmb2.SMBApiException
 import com.hierynomus.smbj.common.SMBRuntimeException
 import com.hierynomus.smbj.session.Session
 import com.hierynomus.smbj.share.DiskShare
@@ -45,6 +47,10 @@ object Client {
     private val sessions = mutableMapOf<Authority, Session>()
     private val sessionActivity = mutableMapOf<Authority, Long>()
     private val sessionsLock = Any()
+
+    // DiskShare 缓存：避免每次 openInputStream 都重新 connectShare
+    private val shares = mutableMapOf<Pair<Authority, String>, DiskShare>()
+    private val sharesLock = Any()
     
     // DNS 缓存：避免重复解析
     private val dnsCache = mutableMapOf<String, String>()
@@ -212,26 +218,35 @@ object Client {
     @Throws(IOException::class)
     fun openInputStream(target: Target): java.io.InputStream {
         var lastException: IOException? = null
-        
+
         for (attempt in 1..MAX_RETRY_COUNT) {
             try {
                 return doOpenInputStream(target)
+            } catch (e: SMBApiException) {
+                // 文件不存在直接失败，不重试（扩展名探测场景）
+                if (e.status == NtStatus.STATUS_NO_SUCH_FILE) {
+                    throw IOException("File not found: ${target.pathInShare}", e)
+                }
+                lastException = IOException(e)
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.w("Client", "openInputStream attempt $attempt SMB error: ${e.status}")
+                }
             } catch (e: IOException) {
                 lastException = e
                 if (BuildConfig.DEBUG) {
                     android.util.Log.w("Client", "openInputStream attempt $attempt failed: ${e.message}")
                 }
-                if (attempt < MAX_RETRY_COUNT) {
-                    try {
-                        Thread.sleep(RETRY_DELAY_MS)
-                    } catch (ie: InterruptedException) {
-                        Thread.currentThread().interrupt()
-                        throw IOException("Interrupted during retry", ie)
-                    }
+            }
+            if (attempt < MAX_RETRY_COUNT) {
+                try {
+                    Thread.sleep(RETRY_DELAY_MS)
+                } catch (ie: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("Interrupted during retry", ie)
                 }
             }
         }
-        
+
         throw lastException ?: IOException("Failed to open input stream after $MAX_RETRY_COUNT attempts")
     }
     
@@ -402,6 +417,10 @@ object Client {
                 } catch (_: Throwable) {}
                 sessions.remove(authority)
                 sessionActivity.remove(authority)
+                // 清理该 authority 的 DiskShare 缓存
+                synchronized(sharesLock) {
+                    shares.keys.removeAll { it.first == authority }
+                }
             }
         }
     }
@@ -457,9 +476,28 @@ object Client {
     }
 
     @Throws(IOException::class)
-    private fun getDiskShare(session: Session, shareName: String): DiskShare =
-        (getShare(session, shareName) as? DiskShare)
+    private fun getDiskShare(session: Session, shareName: String): DiskShare {
+        // 从当前活跃 session 对应的 authority 查找缓存
+        val authority = sessions.entries.find { it.value === session }?.key
+        if (authority != null) {
+            val key = Pair(authority, shareName)
+            synchronized(sharesLock) {
+                shares[key]?.let { share ->
+                    if (share.isConnected) return share
+                    // 连接已断开，移除缓存
+                    shares.remove(key)
+                }
+            }
+        }
+        val share = (getShare(session, shareName) as? DiskShare)
             ?: throw IOException("$shareName is not a DiskShare")
+        if (authority != null) {
+            synchronized(sharesLock) {
+                shares[Pair(authority, shareName)] = share
+            }
+        }
+        return share
+    }
     // endregion
 
     // region 路径存在性检查

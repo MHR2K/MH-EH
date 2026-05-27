@@ -157,6 +157,14 @@ public class EhGalleryProvider extends GalleryProvider2 implements SpiderQueen.O
     @Override
     public void onGetPages(int pages) {
         notifyDataChanged();
+        // SMB 场景：getStartPage() 可能因异步读取失败返回 0，
+        // 此时 SpiderInfo 已由后台线程成功读取，重新推送正确的起始页
+        if (mSpiderQueen != null) {
+            int startPage = mSpiderQueen.getStartPage();
+            if (startPage > 0) {
+                notifyStartPage(startPage);
+            }
+        }
     }
 
     @Override

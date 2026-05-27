@@ -156,6 +156,13 @@ public class SimpleAdapter extends GalleryView.Adapter implements GalleryProvide
         }
     }
 
+    @Override
+    public void onStartPage(int startPage) {
+        if (mGalleryView != null) {
+            mGalleryView.onStartPage(startPage);
+        }
+    }
+
     private GalleryPageView findPageByIndex(int index) {
         return mGalleryView != null ? mGalleryView.findPageByIndex(index) : null;
     }

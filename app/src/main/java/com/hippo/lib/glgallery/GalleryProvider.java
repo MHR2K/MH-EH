@@ -136,6 +136,10 @@ public abstract class GalleryProvider {
         notify(NotifyTask.TYPE_FAILED, index, 0.0f, null, error);
     }
 
+    public void notifyStartPage(int startPage) {
+        notify(NotifyTask.TYPE_START_PAGE, startPage, 0.0f, null, null);
+    }
+
     private void notify(@NotifyTask.Type int type, int index, float percent, ImageWrapper image, String error) {
         Listener listener = mListener;
         if (listener == null) {
@@ -157,7 +161,7 @@ public abstract class GalleryProvider {
 
     private static class NotifyTask implements GLRoot.OnGLIdleListener {
 
-        @IntDef({TYPE_DATA_CHANGED, NotifyTask.TYPE_WAIT, TYPE_PERCENT, TYPE_SUCCEED, TYPE_FAILED})
+        @IntDef({TYPE_DATA_CHANGED, NotifyTask.TYPE_WAIT, TYPE_PERCENT, TYPE_SUCCEED, TYPE_FAILED, TYPE_START_PAGE})
         @Retention(RetentionPolicy.SOURCE)
         public @interface Type {
         }
@@ -167,6 +171,7 @@ public abstract class GalleryProvider {
         public static final int TYPE_PERCENT = 2;
         public static final int TYPE_SUCCEED = 3;
         public static final int TYPE_FAILED = 4;
+        public static final int TYPE_START_PAGE = 5;
 
         private final Listener mListener;
         private final ConcurrentPool<NotifyTask> mPool;
@@ -212,6 +217,9 @@ public abstract class GalleryProvider {
                     break;
                 case TYPE_FAILED:
                     mListener.onPageFailed(mIndex, mError);
+                    break;
+                case TYPE_START_PAGE:
+                    mListener.onStartPage(mIndex);
                     break;
             }
 
@@ -279,5 +287,7 @@ public abstract class GalleryProvider {
         void onPageFailed(int index, String error);
 
         void onDataChanged(int index);
+
+        default void onStartPage(int startPage) {}
     }
 }

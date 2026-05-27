@@ -48,6 +48,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -62,6 +63,9 @@ public final class SpiderDen {
 
     @Nullable
     private static SimpleDiskCache sCache;
+
+    // SMB 扩展名缓存：gid -> 已发现的文件扩展名（如 ".jpg"），避免重复探测
+    private static final ConcurrentHashMap<Long, String> sSmbExtCache = new ConcurrentHashMap<>();
 
     public static void initialize(Context context) {
         sCache = new SimpleDiskCache(new File(context.getCacheDir(), "image"),
@@ -383,7 +387,11 @@ public final class SpiderDen {
             if (containInCache(index) || containInDownloadDir(index)) {
                 return true;
             }
-            // SMB 上是否存在：探测可读性（打开即视为存在，立即关闭）
+            // 扩展名缓存命中意味着该gallery已在SMB上成功读取过，无需再次探测
+            if (sSmbExtCache.containsKey(mGid)) {
+                return true;
+            }
+            // 首次访问：SMB 探测可读性（打开即视为存在，立即关闭）
             InputStreamPipe smbProbe = openSmbInputStreamPipe(index);
             if (smbProbe != null) {
                 try {
@@ -750,12 +758,20 @@ public final class SpiderDen {
         }
 
         // Step 3: 尝试所有支持的扩展名（base 为目录场景）
-        for (String ext : exts) {
+        // 先查缓存，命中则只尝试该扩展名
+        String cachedExt2 = sSmbExtCache.get(mGid);
+        String[] extsToTry2 = cachedExt2 != null
+            ? new String[]{cachedExt2}
+            : exts;
+        for (String ext : extsToTry2) {
             String filename = generateImageFilename(index, ext);
             String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
             Client.Target target = new Client.Target(authority, share, rel);
             try {
                 java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+                if (cachedExt2 == null) {
+                    sSmbExtCache.put(mGid, ext);
+                }
                 return new InputStreamPipe() {
                     private java.io.InputStream mIs;
                     @Override public void obtain() { /* no-op */ }
@@ -827,52 +843,101 @@ public final class SpiderDen {
             String gidCbz = mGid + ".cbz";
             String relGidCbz = normBase.isEmpty() ? gidCbz : (normBase + "\\" + gidCbz);
             Client.Target gidCbzTarget = new Client.Target(resolved.getAuthority(), resolved.getShare(), relGidCbz);
+            final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+
+            // 先尝试本地 CBZ 缓存
+            try {
+                java.io.FileInputStream cachedStream = CbzCacheManager.INSTANCE.getCachedInputStream(
+                    resolved.getAuthority(), resolved.getShare(), relGidCbz);
+                if (cachedStream != null) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit: gid=" + mGid + ", path=" + relGidCbz);
+                    }
+                    final java.io.FileInputStream fis = cachedStream;
+                    return new InputStreamPipe() {
+                        private java.io.FileInputStream mFis;
+                        private ZipInputStream mZis;
+                        @Override public void obtain() { /* no-op */ }
+                        @Override public void release() { /* no-op */ }
+                        @Override public java.io.InputStream open() throws IOException {
+                            mFis = fis;
+                            mZis = new ZipInputStream(mFis);
+                            ZipEntry entry;
+                            while ((entry = mZis.getNextEntry()) != null) {
+                                if (entry.isDirectory()) continue;
+                                String en = entry.getName();
+                                if (en == null) continue;
+                                for (String ext : exts) {
+                                    String expect = generateImageFilename(index, ext);
+                                    if (expect.equalsIgnoreCase(en)) {
+                                        return mZis;
+                                    }
+                                }
+                            }
+                            close();
+                            throw new IOException("Entry not found in cached CBZ for index=" + index);
+                        }
+                        @Override public void close() {
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mFis);
+                            mZis = null; mFis = null;
+                        }
+                    };
+                }
+            } catch (Throwable e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Failed to get cached CBZ, falling back to SMB: " + e);
+                }
+            }
+
+            // 缓存未命中，从 SMB 同步下载 CBZ 到本地缓存
             try {
                 java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB pre-check gid.cbz success: gid=" + mGid + ", path=" + relGidCbz);
+                    android.util.Log.d("SpiderDen", "SMB gid.cbz found, downloading to cache: gid=" + mGid + ", path=" + relGidCbz);
                 }
-                // 包装为 Zip 流读取所需条目
                 final String relCbzFinal = relGidCbz;
-                final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
-                return new InputStreamPipe() {
-                    private java.io.InputStream mBase;
-                    private ZipInputStream mZis;
-                    @Override public void obtain() { /* no-op */ }
-                    @Override public void release() { /* no-op */ }
-                    @Override public java.io.InputStream open() throws IOException {
-                        mBase = Client.INSTANCE.openInputStream(new Client.Target(resolved.getAuthority(), resolved.getShare(), relCbzFinal));
-                        mZis = new ZipInputStream(mBase);
-                        ZipEntry entry;
-                        while ((entry = mZis.getNextEntry()) != null) {
-                            if (entry.isDirectory()) continue;
-                            String en = entry.getName();
-                            if (en == null) continue;
-                            for (String ext : exts) {
-                                String expect = generateImageFilename(index, ext);
-                                if (expect.equalsIgnoreCase(en)) {
-                                    if (BuildConfig.DEBUG) {
-                                        android.util.Log.d("SpiderDen", "SMB gid.cbz hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
+                java.io.File cached = CbzCacheManager.INSTANCE.cacheCbz(resolved.getAuthority(), resolved.getShare(), relCbzFinal, probe, -1L);
+                com.hippo.lib.yorozuya.IOUtils.closeQuietly(probe);
+
+                if (cached != null && cached.exists()) {
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB gid.cbz cached locally: gid=" + mGid + ", size=" + cached.length());
+                    }
+                    // 从本地缓存读取
+                    return new InputStreamPipe() {
+                        private java.io.FileInputStream mFis;
+                        private ZipInputStream mZis;
+                        @Override public void obtain() { /* no-op */ }
+                        @Override public void release() { /* no-op */ }
+                        @Override public java.io.InputStream open() throws IOException {
+                            mFis = new java.io.FileInputStream(cached);
+                            mZis = new ZipInputStream(mFis);
+                            ZipEntry entry;
+                            while ((entry = mZis.getNextEntry()) != null) {
+                                if (entry.isDirectory()) continue;
+                                String en = entry.getName();
+                                if (en == null) continue;
+                                for (String ext : exts) {
+                                    String expect = generateImageFilename(index, ext);
+                                    if (expect.equalsIgnoreCase(en)) {
+                                        return mZis;
                                     }
-                                    return mZis;
                                 }
                             }
+                            close();
+                            throw new IOException("Entry not found in cached gid.cbz for index=" + index);
                         }
-                        if (BuildConfig.DEBUG) {
-                            android.util.Log.d("SpiderDen", "SMB gid.cbz miss entry: gid=" + mGid + ", index=" + (index+1) + ", path=" + relCbzFinal);
+                        @Override public void close() {
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mFis);
+                            mZis = null; mFis = null;
                         }
-                        close();
-                        throw new IOException("Entry not found in remote gid.cbz for index=" + index);
-                    }
-                    @Override public void close() {
-                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
-                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
-                        mZis = null; mBase = null;
-                    }
-                };
+                    };
+                }
             } catch (Throwable ignore) {
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB pre-check gid.cbz not found: gid=" + mGid + ", path=" + relGidCbz + ", err=" + ignore);
+                    android.util.Log.d("SpiderDen", "SMB gid.cbz cache failed: gid=" + mGid + ", path=" + relGidCbz + ", err=" + ignore);
                 }
             }
         }
@@ -922,12 +987,21 @@ public final class SpiderDen {
         }
 
         // 尝试所有支持的扩展名（base 为目录场景）
-        for (String ext : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS) {
+        // 先查缓存，命中则只尝试该扩展名
+        String cachedExt = sSmbExtCache.get(mGid);
+        String[] extsToTry = cachedExt != null
+            ? new String[]{cachedExt}
+            : GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+        for (String ext : extsToTry) {
             String filename = generateImageFilename(index, ext);
             String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
             Client.Target target = new Client.Target(resolved.getAuthority(), resolved.getShare(), rel);
             try {
                 java.io.InputStream is = Client.INSTANCE.openInputStream(target);
+                // 首次成功时缓存扩展名
+                if (cachedExt == null) {
+                    sSmbExtCache.put(mGid, ext);
+                }
                 return new InputStreamPipe() {
                     private java.io.InputStream mIs;
                     @Override public void obtain() { /* no-op */ }

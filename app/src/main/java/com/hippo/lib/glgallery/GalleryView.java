@@ -679,6 +679,19 @@ public final class GalleryView extends GLView implements GestureRecognizer.Liste
         }
     }
 
+    @RenderThread
+    public void onStartPage(int startPage) {
+        try {
+            GalleryUtils.assertInRenderThread();
+            if (mLayoutManager != null && startPage > 0) {
+                mLayoutManager.setCurrentIndex(startPage);
+                mIndex = startPage;
+            }
+        } catch (AssertError e) {
+            Log.e(this.getClass().getName(), e.getMessage(), e);
+        }
+    }
+
     private void onSingleTapUpInternal(float x, float y) {
     }
 
