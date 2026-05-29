@@ -1552,7 +1552,8 @@ public final class SpiderQueen implements Runnable {
                         isPipe = mSpiderDen.openInputStreamPipe(index);
                         if (isPipe == null) {
                             // Can't get pipe
-                            error = GetText.getString(R.string.error_reading_failed);
+                            String smbErr = mSpiderDen.getLastSmbError();
+                            error = smbErr != null ? smbErr : GetText.getString(R.string.error_reading_failed);
                             break;
                         }
 
@@ -1603,7 +1604,8 @@ public final class SpiderQueen implements Runnable {
                     return true;
                 } catch (IOException e) {
                     e.printStackTrace();
-                    error = GetText.getString(R.string.error_socket);
+                    String smbErr = mSpiderDen.getLastSmbError();
+                    error = smbErr != null ? smbErr : GetText.getString(R.string.error_socket);
                     forceHtml = true;
                 } finally {
                     IOUtils.closeQuietly(is);

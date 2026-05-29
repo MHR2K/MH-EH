@@ -1132,7 +1132,10 @@ public final class GalleryView extends GLView implements GestureRecognizer.Liste
     void bindErrorView(GLTextureView errorView, String error) {
         unbindErrorView(errorView);
 
-        Texture texture = StringTexture.newInstance(error, mErrorTextSize, mErrorTextColor);
+        int maxWidth = getWidth();
+        if (maxWidth <= 0) maxWidth = 1080;
+        int padding = (int) (maxWidth * 0.1f);
+        Texture texture = StringTexture.newMultilineInstance(error, mErrorTextSize, mErrorTextColor, maxWidth - padding);
         errorView.setTexture(texture);
     }
 

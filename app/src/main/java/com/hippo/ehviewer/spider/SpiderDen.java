@@ -61,6 +61,10 @@ public final class SpiderDen {
 
     private long mGid;
 
+    // SMB 最近一次错误信息（含完整路径），供上层显示
+    @Nullable
+    private volatile String mLastSmbError;
+
     @Nullable
     private static SimpleDiskCache sCache;
 
@@ -564,7 +568,15 @@ public final class SpiderDen {
         return null;
     }
 
+    /**
+     * 获取最近一次 SMB 访问的错误信息（含完整路径），供上层显示。
+     * 调用 openInputStreamPipe 后若返回 null，可检查此值。
+     */
     @Nullable
+    public String getLastSmbError() {
+        return mLastSmbError;
+    }
+
     public InputStreamPipe openInputStreamPipe(int index) {
         if (mMode == SpiderQueen.MODE_READ) {
             // 1) 本地下载目录
@@ -831,11 +843,14 @@ public final class SpiderDen {
 
     @Nullable
     private InputStreamPipe openSmbInputStreamPipe(int index) {
+        mLastSmbError = null;
         // 通过 dirname 直接推导 SMB 路径
         Client.Target resolved = SmbPathResolver.resolve(mGid);
         if (resolved == null) {
             return null;
         }
+        String smbFullPath = "\\\\" + resolved.getAuthority().getHost() + "\\" + resolved.getShare()
+            + "\\" + resolved.getPathInShare();
         String normBase = resolved.getPathInShare().replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
 
         // Step 1: 直接尝试 <gid>.cbz （如果 base 是目录）
@@ -935,10 +950,11 @@ public final class SpiderDen {
                         }
                     };
                 }
-            } catch (Throwable ignore) {
+            } catch (Throwable e) {
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB gid.cbz cache failed: gid=" + mGid + ", path=" + relGidCbz + ", err=" + ignore);
+                    android.util.Log.d("SpiderDen", "SMB gid.cbz cache failed: gid=" + mGid + ", path=" + relGidCbz + ", err=" + e);
                 }
+                mLastSmbError = "SMB CBZ: " + smbFullPath + "\\" + mGid + ".cbz — " + getShortError(e);
             }
         }
 
@@ -1009,10 +1025,11 @@ public final class SpiderDen {
                     @Override public java.io.InputStream open() { mIs = is; return mIs; }
                     @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
                 };
-            } catch (Throwable ignore) {
+            } catch (Throwable e) {
                 if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB open failed: auth=" + resolved.getAuthority() + ", share=" + resolved.getShare() + ", rel=" + rel + ", err=" + ignore);
+                    android.util.Log.d("SpiderDen", "SMB open failed: auth=" + resolved.getAuthority() + ", share=" + resolved.getShare() + ", rel=" + rel + ", err=" + e);
                 }
+                mLastSmbError = "SMB: " + smbFullPath + "\\" + filename + " — " + getShortError(e);
                 // 尝试下一个扩展名
             }
         }
@@ -1129,7 +1146,26 @@ public final class SpiderDen {
             if (BuildConfig.DEBUG) {
                 android.util.Log.d("SpiderDen", "SMB directory scan failed for gid=" + mGid + ": " + e);
             }
+            mLastSmbError = "SMB: " + smbFullPath + " — " + getShortError(e);
+        }
+        if (mLastSmbError == null) {
+            mLastSmbError = "SMB: " + smbFullPath + " — 找不到第 " + (index + 1) + " 页";
         }
         return null;
+    }
+
+    private static String getShortError(Throwable e) {
+        if (e instanceof com.hierynomus.mssmb2.SMBApiException) {
+            com.hierynomus.mserref.NtStatus status = ((com.hierynomus.mssmb2.SMBApiException) e).getStatus();
+            if (status == com.hierynomus.mserref.NtStatus.STATUS_NO_SUCH_FILE) return "文件不存在";
+            if (status == com.hierynomus.mserref.NtStatus.STATUS_ACCESS_DENIED) return "访问被拒绝";
+            if (status == com.hierynomus.mserref.NtStatus.STATUS_LOGON_FAILURE) return "认证失败";
+            return "SMB错误: " + status;
+        }
+        if (e instanceof java.net.ConnectException) return "连接被拒绝";
+        if (e instanceof java.net.SocketTimeoutException) return "连接超时";
+        if (e instanceof java.net.UnknownHostException) return "无法解析主机名";
+        String msg = e.getMessage();
+        return msg != null ? msg : e.getClass().getSimpleName();
     }
 }

@@ -69,6 +69,30 @@ public class StringTexture extends CanvasTexture {
         return newInstance(text, paint);
     }
 
+    public static StringTexture newMultilineInstance(
+            String text, float textSize, int color, int maxWidth) {
+        TextPaint paint = getDefaultPaint(textSize, color);
+        android.text.Layout.Alignment align = android.text.Layout.Alignment.ALIGN_NORMAL;
+        android.text.StaticLayout layout = android.text.StaticLayout.Builder
+                .obtain(text, 0, text.length(), paint, maxWidth)
+                .setAlignment(align)
+                .setLineSpacing(0, 1.2f)
+                .setIncludePad(true)
+                .build();
+        int width = 0;
+        for (int i = 0; i < layout.getLineCount(); i++) {
+            width = Math.max(width, (int) Math.ceil(layout.getLineWidth(i)));
+        }
+        int height = layout.getHeight();
+        if (width <= 0) width = 1;
+        if (height <= 0) height = 1;
+        StringTexture tex = new StringTexture(text, paint, paint.getFontMetricsInt(), width, height);
+        tex.mStaticLayout = layout;
+        return tex;
+    }
+
+    private android.text.StaticLayout mStaticLayout;
+
     private static StringTexture newInstance(String text, TextPaint paint) {
         FontMetricsInt metrics = paint.getFontMetricsInt();
         int width = (int) Math.ceil(paint.measureText(text));
@@ -81,7 +105,11 @@ public class StringTexture extends CanvasTexture {
 
     @Override
     protected void onDraw(Canvas canvas, Bitmap backing) {
-        canvas.translate(0, -mMetrics.ascent);
-        canvas.drawText(mText, 0, 0, mPaint);
+        if (mStaticLayout != null) {
+            mStaticLayout.draw(canvas);
+        } else {
+            canvas.translate(0, -mMetrics.ascent);
+            canvas.drawText(mText, 0, 0, mPaint);
+        }
     }
 }
