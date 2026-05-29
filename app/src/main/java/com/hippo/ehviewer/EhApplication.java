@@ -282,6 +282,7 @@ public class EhApplication extends RecordingApplication {
 
                 // Initialize SMB server store
                 com.hippo.ehviewer.smb.SmbServerStore.INSTANCE.init(EhApplication.this);
+                com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.init(EhApplication.this);
                 com.hippo.ehviewer.smb.Client.INSTANCE.setAuthenticator(
                         com.hippo.ehviewer.smb.SmbServerAuthenticator.INSTANCE
                 );

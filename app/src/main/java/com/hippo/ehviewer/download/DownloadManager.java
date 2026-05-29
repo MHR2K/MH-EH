@@ -949,6 +949,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         if (info != null) {
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
+            com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
 
             // Remove all list and map
             mAllInfoList.remove(info);
@@ -985,6 +986,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
+            com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
 
             // Remove from all info map
             mAllInfoList.remove(info);

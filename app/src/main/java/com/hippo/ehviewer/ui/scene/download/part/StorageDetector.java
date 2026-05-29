@@ -5,7 +5,7 @@ import androidx.annotation.Nullable;
 
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
-import com.hippo.ehviewer.smb.SmbPathResolver;
+import com.hippo.ehviewer.smb.SmbStorageTracker;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.unifile.UniFile;
 
@@ -29,7 +29,7 @@ public final class StorageDetector {
      */
     @NonNull
     public static StorageLocation detect(@NonNull DownloadInfo info) {
-        boolean smbMapped = SmbPathResolver.resolve(info.gid) != null;
+        boolean smbMapped = SmbStorageTracker.INSTANCE.isOnSmb(info.gid);
 
         // 构造最小 GalleryInfo 以复用本地目录定位逻辑
         GalleryInfo gi = new GalleryInfo();

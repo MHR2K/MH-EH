@@ -1736,7 +1736,8 @@ public class DownloadsScene extends ToolbarScene
                                                             }
                                                         );
                                                         
-                                                        // option 0 或 option 1：已删除远端目录，无需额外操作
+                                                        // option 0 或 option 1：已删除远端目录
+                                                        com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
                                                         
                                                         count++;
                                                     } catch (Exception e) {
@@ -2030,6 +2031,7 @@ public class DownloadsScene extends ToolbarScene
                         if (success) {
                             // 删除本地目录以实现”移动”效果
                             dir.delete();
+                            com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markOnSmb(info.gid);
                             okCount++;
                         }
                     } catch (Throwable t) {
@@ -2153,6 +2155,7 @@ public class DownloadsScene extends ToolbarScene
                         if (success) {
                             // 更新下载路径
                             com.hippo.ehviewer.EhDB.putDownloadDirname(info.gid, dirname);
+                            com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
                             
                             // 可选：删除 SMB 上的文件（实现"移动"效果）
                             final String finalDirname = dirname;

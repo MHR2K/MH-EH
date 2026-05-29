@@ -65,11 +65,21 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     private final DbSyncHandle dbSyncHandle = new DbSyncHandle(Looper.getMainLooper());
 
     private Context context;
+    private androidx.activity.result.ActivityResultLauncher<String> smbImportLauncher;
     
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
         context = getContext();
         addPreferencesFromResource(R.xml.advanced_settings);
+
+        smbImportLauncher = registerForActivityResult(
+            new androidx.activity.result.contract.ActivityResultContracts.GetContent(),
+            uri -> {
+                if (uri != null) {
+                    processSmbImportFile(uri);
+                }
+            }
+        );
 
         Preference dumpLogcat = findPreference(KEY_DUMP_LOGCAT);
         Preference clearMemoryCache = findPreference(KEY_CLEAR_MEMORY_CACHE);
@@ -78,6 +88,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         Preference socketData = findPreference(KEY_WIFI_SERVER);
         Preference clientData = findPreference(KEY_WIFI_CLIENT);
         Preference smbAdd = findPreference(KEY_SMB_ADD_SERVER);
+        Preference smbScan = findPreference(KEY_SMB_SCAN_MAPPING);
 
         dumpLogcat.setOnPreferenceClickListener(this);
         clearMemoryCache.setOnPreferenceClickListener(this);
@@ -85,6 +96,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         socketData.setOnPreferenceClickListener(this);
         clientData.setOnPreferenceClickListener(this);
         if (smbAdd != null) smbAdd.setOnPreferenceClickListener(this);
+        if (smbScan != null) smbScan.setOnPreferenceClickListener(this);
 
         appLanguage.setOnPreferenceChangeListener(this);
     }
@@ -141,7 +153,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
             case KEY_SMB_ADD_SERVER:
                 return gotoSmbAddServerActivity();
             case KEY_SMB_SCAN_MAPPING:
-                Toast.makeText(getActivity(), "映射扫描已移除，SMB路径通过目录名自动推导", Toast.LENGTH_SHORT).show();
+                importSmbDirectoryList();
                 return true;
             default:
                 return false;
@@ -342,5 +354,76 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
             }
 
         }
+    }
+
+    private void importSmbDirectoryList() {
+        if (smbImportLauncher != null) {
+            smbImportLauncher.launch("text/plain");
+        }
+    }
+
+    private void processSmbImportFile(android.net.Uri uri) {
+        Activity activity = getActivity();
+        if (activity == null) return;
+        ProgressHelper.showDialog(activity, "导入 SMB 目录列表...");
+
+        new Thread(() -> {
+            int imported = 0;
+            int skipped = 0;
+            int total = 0;
+            try {
+                java.io.InputStream is = activity.getContentResolver().openInputStream(uri);
+                if (is == null) {
+                    activity.runOnUiThread(() -> {
+                        ProgressHelper.dismissDialog();
+                        Toast.makeText(activity, "无法打开文件", Toast.LENGTH_SHORT).show();
+                    });
+                    return;
+                }
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(is));
+                String line;
+                java.util.List<Long> gids = new java.util.ArrayList<>();
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+                    total++;
+                    // 提取行首数字作为 gid
+                    StringBuilder digits = new StringBuilder();
+                    for (int i = 0; i < line.length(); i++) {
+                        char c = line.charAt(i);
+                        if (c >= '0' && c <= '9') digits.append(c);
+                        else break;
+                    }
+                    if (digits.length() == 0) { skipped++; continue; }
+                    try {
+                        long gid = Long.parseLong(digits.toString());
+                        if (EhDB.getDownloadDirname(gid) != null) {
+                            gids.add(gid);
+                            imported++;
+                        } else {
+                            skipped++;
+                        }
+                    } catch (NumberFormatException e) {
+                        skipped++;
+                    }
+                }
+                reader.close();
+                com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markAllOnSmb(gids);
+            } catch (Exception e) {
+                android.util.Log.e("AdvancedFragment", "SMB import failed", e);
+            }
+            final int fImported = imported;
+            final int fSkipped = skipped;
+            final int fTotal = total;
+            activity.runOnUiThread(() -> {
+                ProgressHelper.dismissDialog();
+                String msg = String.format("导入完成\n匹配: %d / 跳过: %d / 总行数: %d", fImported, fSkipped, fTotal);
+                new AlertDialog.Builder(activity)
+                    .setTitle("SMB 目录导入")
+                    .setMessage(msg)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            });
+        }).start();
     }
 }
