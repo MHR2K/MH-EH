@@ -22,6 +22,7 @@ import com.hippo.conaco.ProgressNotifier
 import com.hippo.ehviewer.EhApplication
 import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.smb.SmbFileHelper
+import com.hippo.ehviewer.smb.SmbStorageTracker
 import com.hippo.ehviewer.spider.SpiderDen
 import com.hippo.ehviewer.spider.SpiderInfo
 import com.hippo.io.UniFileInputStreamPipe
@@ -96,6 +97,12 @@ class ThumbDataContainer(
         // 注意：ensureFile() 成功时会设置 mFile，所以只需检查 ensureFile() 返回值
         if (ensureFile()) {
             return true
+        }
+
+        // Step 1.5: 非 SMB 项跳过 SMB 回退，避免无意义的连接尝试
+        if (!SmbStorageTracker.isOnSmb(mInfo.gid)) {
+            Log.d(TAG, "gid ${mInfo.gid} not on SMB, skipping SMB fallback")
+            return false
         }
 
         // Step 2: 异步启动 SMB 检查（如果尚未启动且未失败）

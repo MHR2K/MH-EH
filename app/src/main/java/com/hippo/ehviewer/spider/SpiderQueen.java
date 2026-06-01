@@ -42,6 +42,7 @@ import com.hippo.ehviewer.client.EhRequestBuilder;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.smb.Client;
 import com.hippo.ehviewer.smb.SmbPathResolver;
+import com.hippo.ehviewer.smb.SmbStorageTracker;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.Image509Exception;
@@ -809,7 +810,13 @@ public final class SpiderQueen implements Runnable {
         }
 
         // Read from SMB (.ehviewer file in the SMB-mapped directory)
-        spiderInfo = readSpiderInfoFromSmb();
+        if (!SmbStorageTracker.INSTANCE.isOnSmb(mGalleryInfo.gid)) {
+            if (DEBUG_LOG) {
+                Log.d(TAG, "gid " + mGalleryInfo.gid + " not on SMB, skipping SMB SpiderInfo read");
+            }
+        } else {
+            spiderInfo = readSpiderInfoFromSmb();
+        }
         if (spiderInfo != null) {
             return spiderInfo;
         }
