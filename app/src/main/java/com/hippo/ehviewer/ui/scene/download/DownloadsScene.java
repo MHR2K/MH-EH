@@ -853,15 +853,48 @@ public class DownloadsScene extends ToolbarScene
         int id = item.getItemId();
         switch (id) {
             case R.id.action_start_all: {
-                Intent intent = new Intent(activity, DownloadService.class);
-                intent.setAction(DownloadService.ACTION_START_ALL);
-                activity.startService(intent);
+                Context context = getEHContext();
+                if (context == null) {
+                    return false;
+                }
+                new AlertDialog.Builder(context)
+                        .setMessage(R.string.download_start_all_message)
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                            Intent intent = new Intent(activity, DownloadService.class);
+                            intent.setAction(DownloadService.ACTION_START_ALL);
+                            activity.startService(intent);
+                        }).show();
                 return true;
             }
             case R.id.action_stop_all: {
-                if (null != mDownloadManager) {
-                    mDownloadManager.stopAllDownload();
+                Context context = getEHContext();
+                if (context == null) {
+                    return false;
                 }
+                new AlertDialog.Builder(context)
+                        .setMessage(R.string.download_stop_all_message)
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                            if (null != mDownloadManager) {
+                                mDownloadManager.stopAllDownload();
+                            }
+                        }).show();
+                return true;
+            }
+            case R.id.action_fail_all: {
+                Context context = getEHContext();
+                if (context == null) {
+                    return false;
+                }
+                new AlertDialog.Builder(context)
+                        .setMessage(R.string.download_fail_all_message)
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                            if (null != mDownloadManager) {
+                                mDownloadManager.failAllDownload();
+                            }
+                        }).show();
                 return true;
             }
             case R.id.action_reset_reading_progress: {

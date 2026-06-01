@@ -426,7 +426,11 @@
     <string name="sort_by_file_size_asc">按文件大小升序</string>
     <string name="sort_by_file_size_desc">按文件大小降序</string>
     <string name="download_start_all">全部开始</string>
+    <string name="download_start_all_message">确定要开始所有下载吗？</string>
     <string name="download_stop_all">全部停止</string>
+    <string name="download_stop_all_message">确定要停止所有下载吗？</string>
+    <string name="download_fail_all">全部失败</string>
+    <string name="download_fail_all_message">确定要将所有下载标记为失败吗？</string>
     <string name="download_reset_reading_progress">重置阅读进度</string>
     <string name="download_search_gallery">搜索画廊</string>
     <string name="download_search_hint">输入关键字</string>

@@ -152,6 +152,10 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
                 mDownloadManager!!.stopAllDownload()
             }
 
+            ACTION_FAIL_ALL -> if (mDownloadManager != null) {
+                mDownloadManager!!.failAllDownload()
+            }
+
             ACTION_STOP_RANGE -> {
                 intent?.let { i ->
                     val gidListS = if (BuildCompat.isAtLeastT()) {
@@ -622,6 +626,7 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
         const val ACTION_STOP_RANGE: String = "stop_range"
         const val ACTION_STOP_CURRENT: String = "stop_current"
         const val ACTION_STOP_ALL: String = "stop_all"
+        const val ACTION_FAIL_ALL: String = "fail_all"
         const val ACTION_DELETE: String = "delete"
         const val ACTION_DELETE_RANGE: String = "delete_range"
         const val ACTION_CLEAR: String = "clear"

@@ -943,6 +943,30 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         }
     }
 
+    public void failAllDownload() {
+        // Mark all in wait list as failed
+        for (DownloadInfo info : mWaitList) {
+            info.state = DownloadInfo.STATE_FAILED;
+            EhDB.putDownloadInfo(info);
+        }
+        mWaitList.clear();
+
+        // Stop current and mark as failed
+        if (mCurrentTask != null) {
+            DownloadInfo currentTask = mCurrentTask;
+            stopCurrentDownloadInternal();
+            // stopCurrentDownloadInternal resets state to STATE_NONE,
+            // so we need to set it to STATE_FAILED after stopping
+            currentTask.state = DownloadInfo.STATE_FAILED;
+            EhDB.putDownloadInfo(currentTask);
+        }
+
+        // Notify mDownloadInfoListener
+        for (DownloadInfoListener l : mDownloadInfoListeners) {
+            l.onUpdateAll();
+        }
+    }
+
     public void deleteDownload(long gid) {
         stopDownloadInternal(gid);
         DownloadInfo info = mAllInfoMap.get(gid);
