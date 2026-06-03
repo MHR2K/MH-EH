@@ -858,4 +858,7 @@
     <string name="imported_archive_info_message">This is an item imported from local storage</string>
     <string name="imported_archive_category">Local Import</string>
 
+    <string name="vpn_connected_refreshed">VPN connected, network refreshed</string>
+    <string name="vpn_disconnected_refreshed">VPN disconnected, network refreshed</string>
+
 </resources>

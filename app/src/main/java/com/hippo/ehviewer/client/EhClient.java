@@ -71,13 +71,24 @@ public class EhClient {
     public static final int METHOD_RESET_LIMIT = 26;
 
     private final ThreadPoolExecutor mRequestThreadPool;
-    private final OkHttpClient mOkHttpClient;
-    private final OkHttpClient mImageOkHttpClient;
+    private OkHttpClient mOkHttpClient;
+    private OkHttpClient mImageOkHttpClient;
 
     public EhClient(Context context) {
         mRequestThreadPool = IoThreadPoolExecutor.Companion.getInstance();
         mOkHttpClient = EhApplication.getOkHttpClient(context);
         mImageOkHttpClient = EhApplication.getImageOkHttpClient(context);
+    }
+
+    /**
+     * VPN 切换后刷新缓存的 OkHttpClient 引用，使其指向新创建的 client。
+     */
+    public void refreshClients() {
+        Context context = EhApplication.getInstance();
+        if (context != null) {
+            mOkHttpClient = EhApplication.getOkHttpClient(context);
+            mImageOkHttpClient = EhApplication.getImageOkHttpClient(context);
+        }
     }
 
     public void execute(EhRequest request) {
@@ -99,6 +110,7 @@ public class EhClient {
 
         private final AtomicReference<Call> mCall = new AtomicReference<>();
         private final AtomicBoolean mStop = new AtomicBoolean();
+        private boolean mRetried = false;
 
         public Task(int method, Callback callback, EhConfig ehConfig) {
             mMethod = method;
@@ -151,67 +163,83 @@ public class EhClient {
         @Override
         protected Object doInBackground(Object... params) {
             try {
-                Log.i(TAG, "doInBackground: "+mMethod);
-                switch (mMethod) {
-                    case METHOD_SIGN_IN:
-                        return EhEngine.signIn(this, mOkHttpClient, (String) params[0], (String) params[1]);
-                    case METHOD_GET_GALLERY_LIST:
-                        return EhEngine.getGalleryList(this, mOkHttpClient, (String) params[0], (int) params[1]);
-                    case METHOD_GET_GALLERY_DETAIL:
-                        return EhEngine.getGalleryDetail(this, mOkHttpClient, (String) params[0]);
-                    case METHOD_GET_PREVIEW_SET:
-                        return EhEngine.getPreviewSet(this, mOkHttpClient, (String) params[0]);
-                    case METHOD_GET_RATE_GALLERY:
-                        return EhEngine.rateGallery(this, mOkHttpClient, (Long) params[0], (String) params[1], (Long) params[2], (String) params[3], (Float) params[4]);
-                    case METHOD_GET_COMMENT_GALLERY:
-                        return EhEngine.commentGallery(this, mOkHttpClient, (String) params[0], (String) params[1], (String) params[2]);
-                    case METHOD_GET_GALLERY_TOKEN:
-                        return EhEngine.getGalleryToken(this, mOkHttpClient, (Long) params[0], (String) params[1], (Integer) params[2]);
-                    case METHOD_GET_FAVORITES:
-                        return EhEngine.getFavorites(this, mOkHttpClient, (String) params[0], (Boolean) params[1]);
-                    case METHOD_ADD_FAVORITES:
-                        return EhEngine.addFavorites(this, mOkHttpClient, (Long) params[0], (String) params[1], (Integer) params[2], (String) params[3]);
-                    case METHOD_ADD_FAVORITES_RANGE:
-                        return EhEngine.addFavoritesRange(this, mOkHttpClient, (long[]) params[0], (String[]) params[1], (Integer) params[2]);
-                    case METHOD_MODIFY_FAVORITES:
-                        return EhEngine.modifyFavorites(this, mOkHttpClient, (String) params[0], (long[]) params[1], (Integer) params[2], (Boolean) params[3]);
-                    case METHOD_GET_TORRENT_LIST:
-                        return EhEngine.getTorrentList(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
-                    case METHOD_GET_TOP_LIST:
-                        return EhEngine.getTopList(this, mOkHttpClient, (String) params[0]);
-                    case METHOD_GET_PROFILE:
-                        return EhEngine.getProfile(this, mOkHttpClient);
-                    case METHOD_VOTE_COMMENT:
-                        return EhEngine.voteComment(this, mOkHttpClient, (Long) params[0], (String) params[1], (Long) params[2], (String) params[3], (Long) params[4], (Integer) params[5]);
-                    case METHOD_IMAGE_SEARCH:
-                        return EhEngine.imageSearch(this, mImageOkHttpClient, (File) params[0], (Boolean) params[1], (Boolean) params[2], (Boolean) params[3]);
-                    case METHOD_ARCHIVE_LIST:
-                        return EhEngine.getArchiveList(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
-                    case METHOD_ARCHIVER:
-                        return EhEngine.getArchiver(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
-                    case METHOD_DOWNLOAD_ARCHIVE:
-                        return EhEngine.downloadArchive(this, mOkHttpClient, (Long) params[0], (String) params[1], (String) params[2], (String) params[3]);
-                    case METHOD_DOWNLOAD_ARCHIVER:
-                        return EhEngine.downloadArchiver(this, mOkHttpClient, (String) params[0], (String) params[1], (String) params[2], (String) params[3]);
-                    case METHOD_ADD_TAG:
-                        return EhEngine.addTag(this, mOkHttpClient, (String) params[0], (TagPushParam) params[1]);
-                    case METHOD_EDIT_WATCHED:
-                    case METHOD_DELETE_WATCHED:
-                        return EhEngine.deleteWatchedTag(this, mOkHttpClient, (String) params[0], (UserTag) params[1]);
-                    case METHOD_GET_WATCHED:
-                        return EhEngine.getWatchedList(this, mOkHttpClient, (String) params[0]);
-                    case METHOD_GET_NEWS:
-                        return EhEngine.getEhNews(this, mOkHttpClient);
-                    case METHOD_GET_HOME:
-                        return EhEngine.getHomeDetail(this, mOkHttpClient);
-                    case METHOD_RESET_LIMIT:
-                        return EhEngine.resetLimit(this, mOkHttpClient);
-                    default:
-                        return new IllegalStateException("Can't detect method " + mMethod);
-                }
+                return executeRequest(params);
             } catch (Throwable e) {
                 ExceptionUtils.throwIfFatal(e);
+                // 首次失败：清除可能过期的连接（如 VPN/Clash 节点切换），
+                // 更新 client 引用，重试一次
+                if (!mRetried) {
+                    mRetried = true;
+                    EhApplication.resetOkHttpClients();
+                    try {
+                        return executeRequest(params);
+                    } catch (Throwable retryException) {
+                        ExceptionUtils.throwIfFatal(retryException);
+                        return retryException;
+                    }
+                }
                 return e;
+            }
+        }
+
+        private Object executeRequest(Object... params) throws Throwable {
+            Log.i(TAG, "doInBackground: "+mMethod);
+            switch (mMethod) {
+                case METHOD_SIGN_IN:
+                    return EhEngine.signIn(this, mOkHttpClient, (String) params[0], (String) params[1]);
+                case METHOD_GET_GALLERY_LIST:
+                    return EhEngine.getGalleryList(this, mOkHttpClient, (String) params[0], (int) params[1]);
+                case METHOD_GET_GALLERY_DETAIL:
+                    return EhEngine.getGalleryDetail(this, mOkHttpClient, (String) params[0]);
+                case METHOD_GET_PREVIEW_SET:
+                    return EhEngine.getPreviewSet(this, mOkHttpClient, (String) params[0]);
+                case METHOD_GET_RATE_GALLERY:
+                    return EhEngine.rateGallery(this, mOkHttpClient, (Long) params[0], (String) params[1], (Long) params[2], (String) params[3], (Float) params[4]);
+                case METHOD_GET_COMMENT_GALLERY:
+                    return EhEngine.commentGallery(this, mOkHttpClient, (String) params[0], (String) params[1], (String) params[2]);
+                case METHOD_GET_GALLERY_TOKEN:
+                    return EhEngine.getGalleryToken(this, mOkHttpClient, (Long) params[0], (String) params[1], (Integer) params[2]);
+                case METHOD_GET_FAVORITES:
+                    return EhEngine.getFavorites(this, mOkHttpClient, (String) params[0], (Boolean) params[1]);
+                case METHOD_ADD_FAVORITES:
+                    return EhEngine.addFavorites(this, mOkHttpClient, (Long) params[0], (String) params[1], (Integer) params[2], (String) params[3]);
+                case METHOD_ADD_FAVORITES_RANGE:
+                    return EhEngine.addFavoritesRange(this, mOkHttpClient, (long[]) params[0], (String[]) params[1], (Integer) params[2]);
+                case METHOD_MODIFY_FAVORITES:
+                    return EhEngine.modifyFavorites(this, mOkHttpClient, (String) params[0], (long[]) params[1], (Integer) params[2], (Boolean) params[3]);
+                case METHOD_GET_TORRENT_LIST:
+                    return EhEngine.getTorrentList(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
+                case METHOD_GET_TOP_LIST:
+                    return EhEngine.getTopList(this, mOkHttpClient, (String) params[0]);
+                case METHOD_GET_PROFILE:
+                    return EhEngine.getProfile(this, mOkHttpClient);
+                case METHOD_VOTE_COMMENT:
+                    return EhEngine.voteComment(this, mOkHttpClient, (Long) params[0], (String) params[1], (Long) params[2], (String) params[3], (Long) params[4], (Integer) params[5]);
+                case METHOD_IMAGE_SEARCH:
+                    return EhEngine.imageSearch(this, mImageOkHttpClient, (File) params[0], (Boolean) params[1], (Boolean) params[2], (Boolean) params[3]);
+                case METHOD_ARCHIVE_LIST:
+                    return EhEngine.getArchiveList(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
+                case METHOD_ARCHIVER:
+                    return EhEngine.getArchiver(this, mOkHttpClient, (String) params[0], (Long) params[1], (String) params[2]);
+                case METHOD_DOWNLOAD_ARCHIVE:
+                    return EhEngine.downloadArchive(this, mOkHttpClient, (Long) params[0], (String) params[1], (String) params[2], (String) params[3]);
+                case METHOD_DOWNLOAD_ARCHIVER:
+                    return EhEngine.downloadArchiver(this, mOkHttpClient, (String) params[0], (String) params[1], (String) params[2], (String) params[3]);
+                case METHOD_ADD_TAG:
+                    return EhEngine.addTag(this, mOkHttpClient, (String) params[0], (TagPushParam) params[1]);
+                case METHOD_EDIT_WATCHED:
+                case METHOD_DELETE_WATCHED:
+                    return EhEngine.deleteWatchedTag(this, mOkHttpClient, (String) params[0], (UserTag) params[1]);
+                case METHOD_GET_WATCHED:
+                    return EhEngine.getWatchedList(this, mOkHttpClient, (String) params[0]);
+                case METHOD_GET_NEWS:
+                    return EhEngine.getEhNews(this, mOkHttpClient);
+                case METHOD_GET_HOME:
+                    return EhEngine.getHomeDetail(this, mOkHttpClient);
+                case METHOD_RESET_LIMIT:
+                    return EhEngine.resetLimit(this, mOkHttpClient);
+                default:
+                    return new IllegalStateException("Can't detect method " + mMethod);
             }
         }
 

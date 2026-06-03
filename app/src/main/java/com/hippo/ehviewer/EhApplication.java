@@ -152,9 +152,34 @@ public class EhApplication extends RecordingApplication {
     private boolean deferredInitialized = false;
 
     private final ExecutorService executorService = Executors.newCachedThreadPool();
+    private com.hippo.ehviewer.network.NetworkStateMonitor networkStateMonitor;
 
     public static EhApplication getInstance() {
         return instance;
+    }
+
+    /**
+     * VPN 切换后调用：清空连接池并置空 client，下次请求时自动重建。
+     * 同时刷新 EhProxySelector 的系统代理引用。
+     */
+    public static void resetOkHttpClients() {
+        EhApplication app = instance;
+        if (app == null) return;
+        if (app.mOkHttpClient != null) {
+            app.mOkHttpClient.connectionPool().evictAll();
+            app.mOkHttpClient = null;
+        }
+        if (app.mImageOkHttpClient != null) {
+            app.mImageOkHttpClient.connectionPool().evictAll();
+            app.mImageOkHttpClient = null;
+        }
+        if (app.mEhProxySelector != null) {
+            app.mEhProxySelector.refreshAlternative();
+        }
+        // 更新 EhClient 缓存的 OkHttpClient 引用
+        if (app.mEhClient != null) {
+            app.mEhClient.refreshClients();
+        }
     }
 
     @SuppressLint("StaticFieldLeak")
@@ -249,6 +274,10 @@ public class EhApplication extends RecordingApplication {
         if (DEBUG_PRINT_NATIVE_MEMORY || DEBUG_PRINT_IMAGE_COUNT) {
             debugPrint();
         }
+
+        // 监听 VPN/网络变化，切换 VPN 时自动重建 OkHttp client
+        networkStateMonitor = new com.hippo.ehviewer.network.NetworkStateMonitor(this);
+        networkStateMonitor.start();
 
         initialized = true;
     }

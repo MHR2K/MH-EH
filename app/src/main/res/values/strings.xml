@@ -40,6 +40,8 @@
     <string name="settings_advanced_built_ex_hosts_summary">应用提供的主机到IP的映射\n可被自定义 hosts.txt 覆盖</string>
     <string name="network_remind">检测到开启了vpn，请注意您的网络安全</string>
     <!--    <string name="network_remind">It has been detected that the vpn is enabled, please pay attention to network security</string>-->
+    <string name="vpn_connected_refreshed">VPN 已连接，网络连接已刷新</string>
+    <string name="vpn_disconnected_refreshed">VPN 已断开，网络连接已刷新</string>
 
     <string name="no_blicklist">这里是黑名单</string>
 

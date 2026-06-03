@@ -848,6 +848,8 @@
     <string name="settings_advanced_built_ex_hosts_title">內建exhentai hosts.txt</string>
     <string name="settings_advanced_built_ex_hosts_summary">應用提供的主機到IP的映射\n可被自訂 hosts.txt 覆蓋</string>
     <string name="network_remind">檢測到開啟了vpn，請注意您的網路安全</string>
+    <string name="vpn_connected_refreshed">VPN 已連線，網路連線已重新整理</string>
+    <string name="vpn_disconnected_refreshed">VPN 已斷線，網路連線已重新整理</string>
 
     <!-- 下载通知   -->
     <string name="download_torrent_name">種子: %s</string>

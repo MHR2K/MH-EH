@@ -48,6 +48,20 @@ public class EhProxySelector extends ProxySelector {
     updateProxy();
   }
 
+  /**
+   * VPN 切换后刷新系统代理引用，避免沿用旧 VPN 的 ProxySelector。
+   */
+  public void refreshAlternative() {
+    ProxySelector current = ProxySelector.getDefault();
+    if (current != null) {
+      alternative = current;
+    }
+    // 如果当前是 System 模式，重新委托
+    if (Settings.getProxyType() == TYPE_SYSTEM) {
+      delegation = alternative;
+    }
+  }
+
   public void updateProxy() {
     switch (Settings.getProxyType()) {
       case TYPE_DIRECT:
