@@ -74,7 +74,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class EhDB {
@@ -576,6 +578,24 @@ public class EhDB {
     public static synchronized void clearDownloadDirname() {
         DownloadDirnameDao dao = sDaoSession.getDownloadDirnameDao();
         dao.deleteAll();
+    }
+
+    /**
+     * 批量获取所有 DownloadDirname 映射，用于预计算存储位置
+     * @return gid -> dirname 的映射
+     */
+    @NonNull
+    public static synchronized Map<Long, String> getAllDownloadDirnameMap() {
+        DownloadDirnameDao dao = sDaoSession.getDownloadDirnameDao();
+        List<DownloadDirname> all = dao.loadAll();
+        Map<Long, String> map = new HashMap<>(all.size());
+        for (DownloadDirname d : all) {
+            String dirname = d.getDirname();
+            if (dirname != null) {
+                map.put(d.getGid(), dirname);
+            }
+        }
+        return map;
     }
 
     @NonNull

@@ -313,7 +313,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         // 存储位置指示仅在状态可见时显示
         Resources res0 = mScene.getResources2();
         if (res0 != null) {
-            StorageLocation loc = StorageDetector.detect(info);
+            StorageLocation loc = StorageDetector.detectCached(info);
             String label = "";
             switch (loc) {
                 case SMB:

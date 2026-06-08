@@ -49,6 +49,7 @@ import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
 import com.hippo.lib.yorozuya.collect.SparseJLArray;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
 import android.util.SparseArray;
 
 import java.io.ByteArrayOutputStream;
@@ -489,6 +490,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             mCurrentSpider = spider;
             spider.addOnSpiderListener(this);
             info.state = DownloadInfo.STATE_DOWNLOAD;
+            // 更新存储位置缓存：下载开始，本地目录已创建
+            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.LOCAL);
             info.speed = -1;
             info.remaining = -1;
             info.total = -1;
@@ -974,6 +977,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
+            // 更新存储位置缓存：删除后状态未知
+            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.UNKNOWN);
 
             // Remove all list and map
             mAllInfoList.remove(info);
@@ -1011,6 +1016,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
+            // 更新存储位置缓存：删除后状态未知
+            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.UNKNOWN);
 
             // Remove from all info map
             mAllInfoList.remove(info);

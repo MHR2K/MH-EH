@@ -707,6 +707,9 @@ public class DownloadsScene extends ToolbarScene
         }
         addAboveSnackView(mFabLayout);
 
+        // 异步预计算存储位置，优化后续筛选和列表滚动性能
+        StorageDetector.preloadAsync(context);
+
         updateView();
 
         guide();
@@ -1021,7 +1024,7 @@ public class DownloadsScene extends ToolbarScene
                 if (mBackList == null) return false;
                 List<DownloadInfo> result = new ArrayList<>();
                 for (DownloadInfo di : mBackList) {
-                    StorageLocation loc = StorageDetector.detect(di);
+                    StorageLocation loc = StorageDetector.detectCached(di);
                     if (loc == StorageLocation.SMB || loc == StorageLocation.BOTH) {
                         result.add(di);
                     }
@@ -1037,7 +1040,7 @@ public class DownloadsScene extends ToolbarScene
                 if (mBackList == null) return false;
                 List<DownloadInfo> result = new ArrayList<>();
                 for (DownloadInfo di : mBackList) {
-                    StorageLocation loc = StorageDetector.detect(di);
+                    StorageLocation loc = StorageDetector.detectCached(di);
                     if (loc == StorageLocation.LOCAL) {
                         result.add(di);
                     }
@@ -1746,6 +1749,8 @@ public class DownloadsScene extends ToolbarScene
                                             info.remaining = 0;
                                             if (info.total < 0) info.total = 0;
                                             EhDB.putDownloadInfo(info);
+                                            // 更新存储位置缓存：文件夹已删除
+                                            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.UNKNOWN);
                                         }
                                     }
                                     
@@ -2081,6 +2086,8 @@ public class DownloadsScene extends ToolbarScene
                             // 删除本地目录以实现”移动”效果
                             dir.delete();
                             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markOnSmb(info.gid);
+                            // 更新存储位置缓存：从本地迁移到 SMB
+                            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.SMB);
                             okCount++;
                         }
                     } catch (Throwable t) {
@@ -2205,6 +2212,8 @@ public class DownloadsScene extends ToolbarScene
                             // 更新下载路径
                             com.hippo.ehviewer.EhDB.putDownloadDirname(info.gid, dirname);
                             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
+                            // 更新存储位置缓存：从 SMB 迁移到本地
+                            StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.LOCAL);
                             
                             // 可选：删除 SMB 上的文件（实现"移动"效果）
                             final String finalDirname = dirname;
