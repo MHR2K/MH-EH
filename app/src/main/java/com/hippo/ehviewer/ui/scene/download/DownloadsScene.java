@@ -1485,6 +1485,22 @@ public class DownloadsScene extends ToolbarScene
                 // 显示输入对话框获取目标 gid
                 showMoveToPositionDialog(context, info, posInList);
                 return true;
+            } else if (itemId == R.id.menu_reset_reading_progress) {
+                new AlertDialog.Builder(context)
+                        .setMessage(R.string.reset_reading_progress_message_single)
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(android.R.string.ok, (d, w) -> {
+                            EhApplication.getSpiderInfoRepository(context).delete(info.gid, context);
+                            mSpiderInfoMap.remove(info.gid);
+                            // 同时停止下载，避免漫画仍在下载队列中被自动下载
+                            if (mDownloadManager != null) {
+                                mDownloadManager.stopDownload(info.gid);
+                            }
+                            if (mAdapter != null) {
+                                mAdapter.notifyDataSetChanged();
+                            }
+                        }).show();
+                return true;
             }
             return false;
         });

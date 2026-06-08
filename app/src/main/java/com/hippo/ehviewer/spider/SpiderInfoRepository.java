@@ -129,6 +129,37 @@ public class SpiderInfoRepository {
     }
 
     /**
+     * Delete spider info from all layers: memory cache, DB, SimpleDiskCache, and local .ehviewer file.
+     */
+    public void delete(long gid, @NonNull Context context) {
+        memoryCache.remove(gid);
+        database.delete(gid);
+        com.hippo.ehviewer.EhApplication.getSpiderInfoCache(context).remove(Long.toString(gid));
+        // Also reset local .ehviewer file so progress doesn't come back on reload
+        resetLocalFile(gid);
+    }
+
+    private void resetLocalFile(long gid) {
+        try {
+            GalleryInfo info = new GalleryInfo();
+            info.gid = gid;
+            UniFile dir = SpiderDen.getGalleryDownloadDir(info);
+            if (dir != null && dir.isDirectory()) {
+                UniFile file = dir.findFile(com.hippo.ehviewer.spider.SpiderQueen.SPIDER_INFO_FILENAME);
+                if (file != null) {
+                    SpiderInfo spiderInfo = SpiderInfo.read(file);
+                    if (spiderInfo != null) {
+                        spiderInfo.startPage = 0;
+                        spiderInfo.write(file.openOutputStream());
+                    }
+                }
+            }
+        } catch (Throwable e) {
+            ExceptionUtils.throwIfFatal(e);
+        }
+    }
+
+    /**
      * Force refresh from database, bypassing memory cache.
      * Used after external updates (e.g., user finished reading).
      */

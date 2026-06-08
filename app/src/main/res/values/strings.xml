@@ -543,6 +543,7 @@
     <string name="convert_failed_for">Failed: %s</string>
     <string name="add_download_entry_only">Add download entry only</string>
     <string name="reset_reading_progress_message">Reset the reading progress of all downloaded galleries?</string>
+    <string name="reset_reading_progress_message_single">Reset reading progress</string>
     <string name="download_service_label">EhViewer Download Service</string>
     <string name="download_speed_text">%s</string>
     <string name="download_speed_text_2">%1$s, %2$s left</string>

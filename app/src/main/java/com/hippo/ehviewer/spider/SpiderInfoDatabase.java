@@ -89,6 +89,10 @@ class SpiderInfoDatabase {
 		db.insertWithOnConflict(TABLE_NAME, null, values, SQLiteDatabase.CONFLICT_REPLACE);
 	}
 
+	synchronized void delete(long gid) {
+		db.delete(TABLE_NAME, COLUMN_GID + "=?", new String[]{Long.toString(gid)});
+	}
+
 	private static String toJson(@Nullable SparseArray<String> map) {
 		if (map == null || map.size() == 0) {
 			return "{}";

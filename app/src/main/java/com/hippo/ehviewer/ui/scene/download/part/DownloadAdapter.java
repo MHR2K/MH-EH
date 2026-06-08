@@ -221,6 +221,8 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                 int startPage = spiderInfo.startPage + 1;
                 String readText = startPage + "/" + spiderInfo.pages;
                 holder.readProgress.setText(readText);
+            } else {
+                holder.readProgress.setText("");
             }
 
             TextView category = holder.category;
