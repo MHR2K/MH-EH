@@ -166,7 +166,8 @@ public final class SpiderDen {
             return null;
         }
         mDownloadDir = getGalleryDownloadDir(mGalleryInfo);
-        if (mDownloadDir!=null){
+        // 阅读模式下只检查目录是否存在，不创建目录
+        if (mDownloadDir != null && mMode == SpiderQueen.MODE_DOWNLOAD) {
             mDownloadDir.ensureDir();
         }
         return mDownloadDir;
