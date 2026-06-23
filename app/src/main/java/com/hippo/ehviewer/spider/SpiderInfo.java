@@ -81,6 +81,8 @@ public class SpiderInfo {
     public int previewPages = -1;
     public int previewPerPage = -1;
     public SparseArray<String> pTokenMap = null;
+    // Runtime only: for partial downloads (download pages 0 to endPage-1). -1 = full download.
+    public int endPage = -1;
 
     public static SpiderInfo read(@Nullable UniFile file) {
         if (file == null) {

@@ -99,6 +99,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     private DownloadInfo mCurrentTask;
     @Nullable
     private SpiderQueen mCurrentSpider;
+    private int mCurrentEndPage = -1;
+    // Pending endPage for partial downloads, keyed by gid
+    private final HashMap<Long, Integer> mPendingEndPages = new HashMap<>();
 
     private final ConcurrentPool<NotifyTask> mNotifyTaskPool = new ConcurrentPool<>(5);
 
@@ -484,8 +487,10 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         // Get download from wait list
         if (!mWaitList.isEmpty()) {
             DownloadInfo info = mWaitList.removeFirst();
-            ensureLocalScaffold(info);
-            SpiderQueen spider = SpiderQueen.obtainSpiderQueen(mContext, info, SpiderQueen.MODE_DOWNLOAD);
+            int endPage = mPendingEndPages.containsKey(info.gid) ? mPendingEndPages.remove(info.gid) : -1;
+            mCurrentEndPage = endPage;
+            ensureLocalScaffold(info, endPage);
+            SpiderQueen spider = SpiderQueen.obtainSpiderQueen(mContext, info, SpiderQueen.MODE_DOWNLOAD, endPage);
             mCurrentTask = info;
             mCurrentSpider = spider;
             spider.addOnSpiderListener(this);
@@ -520,7 +525,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
      * Ensure download directory and a minimal .ehviewer file exist even if the remote gallery is gone.
      * This only relies on stored metadata in DownloadInfo and does not touch the network.
      */
-    private void ensureLocalScaffold(@NonNull DownloadInfo info) {
+    private void ensureLocalScaffold(@NonNull DownloadInfo info, int endPage) {
         // Without gid/token/pages we can't build a valid spider info file.
         if (info.gid <= 0 || info.token == null || info.pages <= 0) {
             return;
@@ -543,7 +548,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             SpiderInfo spiderInfo = new SpiderInfo();
             spiderInfo.gid = info.gid;
             spiderInfo.token = info.token;
-            spiderInfo.pages = info.pages;
+            spiderInfo.pages = (endPage > 0) ? endPage : info.pages;
             spiderInfo.previewPages = 0;
             spiderInfo.previewPerPage = 0;
             spiderInfo.pTokenMap = new SparseArray<>(0);
@@ -625,6 +630,13 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             // Add it to history
             EhDB.putHistoryInfo(info);
         }
+    }
+
+    void startDownload(GalleryInfo galleryInfo, @Nullable String label, int endPage) {
+        if (endPage > 0) {
+            mPendingEndPages.put(galleryInfo.gid, endPage);
+        }
+        startDownload(galleryInfo, label);
     }
 
     void startRangeDownload(LongList gidList) {
@@ -1457,7 +1469,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     if (info == null) {
                         Log.e(TAG, "Current task is null, but it should not be");
                     } else {
-                        info.total = mPages;
+                        info.total = (mCurrentEndPage > 0) ? Math.min(mPages, mCurrentEndPage) : mPages;
                         List<DownloadInfo> list = getInfoListForLabel(info.label);
                         if (list != null) {
                             for (DownloadInfoListener l : mDownloadInfoListeners) {
@@ -1518,6 +1530,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 }
                 case TYPE_ON_FINISH: {
                     mSpeedReminder.onFinish();
+                    // Save endPage before clearing
+                    int endPage = mCurrentEndPage;
+                    mCurrentEndPage = -1;
                     // Download done
                     DownloadInfo info = mCurrentTask;
                     mCurrentTask = null;
@@ -1540,6 +1555,12 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     info.downloaded = mDownloaded;
                     info.total = mTotal;
                     info.legacy = mTotal - mFinished;
+                    // For partial downloads, treat as complete if all requested pages downloaded
+                    if (info.legacy > 0 && endPage > 0 && mFinished >= endPage) {
+                        info.legacy = 0;
+                        info.pages = endPage;
+                        info.total = endPage;
+                    }
                     if (info.legacy == 0) {
                         info.state = DownloadInfo.STATE_FINISH;
                     } else {

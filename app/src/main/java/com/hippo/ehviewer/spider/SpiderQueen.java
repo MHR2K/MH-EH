@@ -167,6 +167,8 @@ public final class SpiderQueen implements Runnable {
     private volatile int[] mPageStateArray;
     // For download, when it go to mPageStateArray.size(), done
     private volatile int mDownloadPage = -1;
+    // For partial downloads: stop downloading at this page index. -1 = download all.
+    private int mEndPage = -1;
     private final AtomicReference<String> showKey = new AtomicReference<>();
 
     private final int downloadTimeout;
@@ -197,17 +199,27 @@ public final class SpiderQueen implements Runnable {
     @UiThread
     public static SpiderQueen obtainSpiderQueen(@NonNull Context context,
                                                 @NonNull GalleryInfo galleryInfo, @Mode int mode) {
+        return obtainSpiderQueen(context, galleryInfo, mode, -1);
+    }
+
+    @UiThread
+    public static SpiderQueen obtainSpiderQueen(@NonNull Context context,
+                                                @NonNull GalleryInfo galleryInfo, @Mode int mode, int endPage) {
         OSUtils.checkMainLoop();
 
         SpiderQueen queen = sQueenMap.get(galleryInfo.gid);
         if (queen == null) {
             EhApplication application = (EhApplication) context.getApplicationContext();
             queen = new SpiderQueen(application, galleryInfo);
+            queen.mEndPage = endPage;
             sQueenMap.put(galleryInfo.gid, queen);
             // Set mode
             queen.setMode(mode);
             queen.start();
         } else {
+            if (endPage > 0) {
+                queen.mEndPage = endPage;
+            }
             // Set mode
             queen.setMode(mode);
         }
@@ -221,6 +233,10 @@ public final class SpiderQueen implements Runnable {
     @Nullable
     public static SpiderQueen obtainSpiderQueenIfExists(long gid) {
         return sQueenMap.get(gid);
+    }
+
+    public int getEndPage() {
+        return mEndPage;
     }
 
     /**
@@ -526,7 +542,8 @@ public final class SpiderQueen implements Runnable {
                     (!mForceRequestPageQueue.isEmpty() ||
                             !mRequestPageQueue.isEmpty() ||
                             !mRequestPageQueue2.isEmpty() ||
-                            mDownloadPage >= 0 && mDownloadPage < mPageStateArray.length)) {
+                            mDownloadPage >= 0 && mDownloadPage < mPageStateArray.length
+                            && (mEndPage < 0 || mDownloadPage < mEndPage))) {
                 startWorkers = true;
             }
         }
@@ -934,6 +951,10 @@ public final class SpiderQueen implements Runnable {
             Response response = mHttpClient.newCall(request).execute();
             String body = response.body().string();
             readPreviews(body, previewIndex, spiderInfo);
+            // Re-cap pages after readPreviews overwrites it (partial download fix)
+            if (mEndPage > 0 && spiderInfo.pages > mEndPage) {
+                spiderInfo.pages = mEndPage;
+            }
 
             // Save to local
             writeSpiderInfoToLocal(spiderInfo);
@@ -1002,6 +1023,10 @@ public final class SpiderQueen implements Runnable {
             Log.e(TAG, "Failed to obtain SpiderInfo for gid=" + mGalleryInfo.gid
                     + ", token=" + mGalleryInfo.token + ". Thread will exit.");
             return;
+        }
+        // For partial downloads, cap pages to endPage before writing and initializing
+        if (mEndPage > 0 && spiderInfo.pages > mEndPage) {
+            spiderInfo.pages = mEndPage;
         }
         mSpiderInfo.lazySet(spiderInfo);
 
@@ -1654,7 +1679,8 @@ public final class SpiderQueen implements Runnable {
                     index = mRequestPageQueue.remove();
                 } else if (!mRequestPageQueue2.isEmpty()) {
                     index = mRequestPageQueue2.remove();
-                } else if (mDownloadPage >= 0 && mDownloadPage < size) {
+                } else if (mDownloadPage >= 0 && mDownloadPage < size
+                        && (mEndPage < 0 || mDownloadPage < mEndPage)) {
                     index = mDownloadPage;
                     mDownloadPage++;
                 } else {

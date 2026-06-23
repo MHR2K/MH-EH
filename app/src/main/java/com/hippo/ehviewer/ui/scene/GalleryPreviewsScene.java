@@ -29,6 +29,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -48,6 +49,7 @@ import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.GalleryPreview;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.exception.EhException;
+import com.hippo.ehviewer.download.DownloadService;
 import com.hippo.ehviewer.event.GalleryActivityEvent;
 import com.hippo.ehviewer.ui.GalleryActivity;
 import com.hippo.ehviewer.ui.MainActivity;
@@ -65,9 +67,10 @@ import org.greenrobot.eventbus.EventBus;
 import java.util.ArrayList;
 import java.util.Locale;
 
-public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerView.OnItemClickListener {
+public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerView.OnItemClickListener, EasyRecyclerView.OnItemLongClickListener {
 
     public static final String KEY_GALLERY_INFO = "gallery_info";
+    public static final String KEY_JUMP_TO_LAST_PAGE = "jump_to_last_page";
     private final static String KEY_HAS_FIRST_REFRESH = "has_first_refresh";
 
     /*---------------
@@ -77,6 +80,7 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
     private EhClient mClient;
     @Nullable
     private GalleryInfo mGalleryInfo;
+    private boolean mJumpToLastPage = false;
 
     /*---------------
      View life cycle
@@ -112,6 +116,7 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
         }
 
         mGalleryInfo = args.getParcelable(KEY_GALLERY_INFO);
+        mJumpToLastPage = args.getBoolean(KEY_JUMP_TO_LAST_PAGE, false);
     }
 
     private void onRestore(@NonNull Bundle savedInstanceState) {
@@ -154,6 +159,7 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
         mRecyclerView.setLayoutManager(layoutManager);
         mRecyclerView.setClipToPadding(false);
         mRecyclerView.setOnItemClickListener(this);
+        mRecyclerView.setOnItemLongClickListener(this);
         int padding = LayoutUtils.dp2pix(context, 4);
         MarginItemDecoration decoration = new MarginItemDecoration(padding, padding, padding, padding, padding);
         mRecyclerView.addItemDecoration(decoration);
@@ -254,6 +260,39 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
         return true;
     }
 
+    @Override
+    public boolean onItemLongClick(EasyRecyclerView parent, View view, int position, long id) {
+        Context context = getEHContext();
+        if (null == context || null == mHelper || null == mGalleryInfo) {
+            return false;
+        }
+
+        GalleryPreview p = mHelper.getDataAtEx(position);
+        if (p == null) {
+            return false;
+        }
+
+        int page = p.getPosition() + 1; // 1-indexed for display
+        String title = mGalleryInfo.title != null ? mGalleryInfo.title : "";
+
+        new AlertDialog.Builder(context)
+                .setTitle("范围下载")
+                .setMessage("下载「" + title + "」的第1-" + page + "页？")
+                .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    Intent intent = new Intent(context, DownloadService.class);
+                    intent.setAction(DownloadService.ACTION_START_PARTIAL);
+                    intent.putExtra(DownloadService.KEY_GALLERY_INFO, mGalleryInfo);
+                    intent.putExtra(DownloadService.KEY_END_PAGE, page);
+                    context.startService(intent);
+                    Toast.makeText(context, "已开始下载（第1-" + page + "页）", Toast.LENGTH_SHORT).show();
+                    finish();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+
+        return true;
+    }
+
     private class GalleryPreviewHolder extends RecyclerView.ViewHolder {
 
         public LoadImageView image;
@@ -300,6 +339,15 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
     }
 
     private class GalleryPreviewHelper extends ContentLayout.ContentHelper<GalleryPreview> {
+
+        @Override
+        protected void onScrollToPosition(int position) {
+            super.onScrollToPosition(position);
+            if (mJumpToLastPage && mPages > 0) {
+                mJumpToLastPage = false;
+                goTo(mPages - 1);
+            }
+        }
 
         @Override
         protected void getPageData(final int taskId, int type, int page) {

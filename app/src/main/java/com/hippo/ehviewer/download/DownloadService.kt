@@ -257,6 +257,29 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
                     }
                 }
             }
+
+            ACTION_START_PARTIAL -> {
+                intent?.let { i ->
+                    val gi = if (BuildCompat.isAtLeastT()) {
+                        i.getParcelableExtra(KEY_GALLERY_INFO, GalleryInfo::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        i.getParcelableExtra<GalleryInfo>(KEY_GALLERY_INFO)
+                    }
+                    val endPage = i.getIntExtra(KEY_END_PAGE, -1)
+                    if (gi != null && mDownloadManager != null) {
+                        // Resolve label using the same logic as CommonOperations.startDownload()
+                        var label: String? = null
+                        if (com.hippo.ehviewer.Settings.getHasDefaultDownloadLabel()) {
+                            val defaultLabel = com.hippo.ehviewer.Settings.getDefaultDownloadLabel()
+                            if (defaultLabel == null || mDownloadManager!!.containLabel(defaultLabel)) {
+                                label = defaultLabel
+                            }
+                        }
+                        mDownloadManager!!.startDownload(gi, label, endPage)
+                    }
+                }
+            }
         }
         checkStopSelf()
     }
@@ -797,6 +820,7 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
         const val ACTION_START: String = "start"
         const val ACTION_START_RANGE: String = "start_range"
         const val ACTION_START_ALL: String = "start_all"
+        const val ACTION_START_PARTIAL: String = "start_partial"
         const val ACTION_STOP: String = "stop"
         const val ACTION_STOP_RANGE: String = "stop_range"
         const val ACTION_STOP_CURRENT: String = "stop_current"
@@ -810,6 +834,7 @@ class DownloadService : Service(), DownloadManager.DownloadListener {
         const val KEY_LABEL: String = "label"
         const val KEY_GID: String = "gid"
         const val KEY_GID_LIST: String = "gid_list"
+        const val KEY_END_PAGE: String = "end_page"
 
         private const val TAG = "DownloadService"
         private const val ID_DOWNLOADING = 1

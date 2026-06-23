@@ -112,6 +112,7 @@ import com.hippo.ehviewer.ui.scene.BaseScene;
 import com.hippo.ehviewer.ui.scene.EhCallback;
 import com.hippo.ehviewer.ui.scene.ProgressScene;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
+import com.hippo.ehviewer.ui.scene.GalleryPreviewsScene;
 import com.hippo.ehviewer.util.TagTranslationUtil;
 import com.hippo.ehviewer.widget.GalleryInfoContentHelper;
 import com.hippo.ehviewer.widget.JumpDateSelector;
@@ -1330,6 +1331,15 @@ public final class GalleryListScene extends BaseScene
         }
 
         if (gi == null) {
+            return true;
+        }
+
+        // In swipe download mode, long press → navigate to preview scene
+        if (mSwipeDownloadEnabled) {
+            Bundle args = new Bundle();
+            args.putParcelable(GalleryPreviewsScene.KEY_GALLERY_INFO, gi);
+            args.putBoolean(GalleryPreviewsScene.KEY_JUMP_TO_LAST_PAGE, true);
+            startScene(new Announcer(GalleryPreviewsScene.class).setArgs(args));
             return true;
         }
 
