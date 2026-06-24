@@ -77,6 +77,7 @@ public class GalleryListParser {
         public String lastHref;
         public String customErrorString;
         public boolean noWatchedTags;
+        public String emptyReason;
         public List<GalleryInfo> galleryInfoList = new ArrayList<>();
     }
 
@@ -95,8 +96,10 @@ public class GalleryListParser {
         try {
             d = Jsoup.parse(body);
             return parse(d, body, mode);
-        } catch (Throwable ignored) {
-            return new Result();
+        } catch (Throwable e) {
+            Result result = new Result();
+            result.emptyReason = e.getMessage();
+            return result;
         }
     }
 
@@ -191,6 +194,7 @@ public class GalleryListParser {
                 result.pages = 0;
                 //noinspection unchecked
                 result.galleryInfoList = Collections.EMPTY_LIST;
+                result.emptyReason = "No hits found";
                 return result;
             } else if (d.getElementsByClass("ptt").isEmpty()) {
                 result.pages = 1;

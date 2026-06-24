@@ -2091,9 +2091,13 @@ public final class GalleryListScene extends BaseScene
                 mHelper.isCurrentTask(taskId)) {
             String emptyString;
             if (result.customErrorString == null) {
-                emptyString = getResources2().getString(mUrlBuilder.getMode() == ListUrlBuilder.MODE_SUBSCRIPTION && result.noWatchedTags
-                        ? R.string.gallery_list_empty_hit_subscription
-                        : R.string.gallery_list_empty_hit);
+                if (mUrlBuilder.getMode() == ListUrlBuilder.MODE_SUBSCRIPTION && result.noWatchedTags) {
+                    emptyString = getResources2().getString(R.string.gallery_list_empty_hit_subscription);
+                } else if (result.emptyReason != null) {
+                    emptyString = getResources2().getString(R.string.gallery_list_empty_hit) + "\n" + result.emptyReason;
+                } else {
+                    emptyString = getResources2().getString(R.string.gallery_list_empty_hit);
+                }
             } else {
                 emptyString = result.customErrorString;
             }
