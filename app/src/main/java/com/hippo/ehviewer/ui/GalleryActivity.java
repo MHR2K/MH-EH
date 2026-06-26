@@ -1241,13 +1241,8 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
             newInfo.category = oldInfo.category;
             newInfo.posted = oldInfo.posted;
             
-            // Preserve original uploader name and append " - No Ads"
-            String originalUploader = oldInfo.uploader;
-            if (originalUploader == null || originalUploader.isEmpty()) {
-                originalUploader = (mGalleryInfo != null && mGalleryInfo.uploader != null)
-                    ? mGalleryInfo.uploader : "";
-            }
-            newInfo.uploader = originalUploader + " - No Ads";
+            // Preserve original uploader name unchanged
+            newInfo.uploader = oldInfo.uploader;
             
             newInfo.rating = oldInfo.rating;
             newInfo.simpleLanguage = oldInfo.simpleLanguage;
