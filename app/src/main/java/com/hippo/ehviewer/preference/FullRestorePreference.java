@@ -157,15 +157,15 @@ public class FullRestorePreference extends Preference {
                 progressDialog.dismiss();
                 boolean success = Boolean.TRUE.equals(result);
                 if (success) {
-                    Toast.makeText(context,
-                        R.string.settings_advanced_full_backup_restore_success_message,
-                        Toast.LENGTH_LONG).show();
                     // 提示用户重启应用以应用所有设置
                     showRestartDialog(context);
                 } else {
-                    Toast.makeText(context,
-                        R.string.settings_advanced_full_backup_restore_failed_message,
-                        Toast.LENGTH_SHORT).show();
+                    // 使用 Dialog 显示失败消息（居中显示，更明显）
+                    new AlertDialog.Builder(context)
+                        .setTitle(R.string.settings_advanced_full_backup_restore_failed_title)
+                        .setMessage(R.string.settings_advanced_full_backup_restore_failed_message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
                 }
             }
 

@@ -20,6 +20,7 @@ import android.content.Context;
 import android.util.AttributeSet;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import com.hippo.ehviewer.AppConfig;
 import com.hippo.ehviewer.GetText;
 import com.hippo.ehviewer.R;
@@ -67,6 +68,33 @@ public class FullBackupPreference extends TaskPreference {
 
         @Override
         protected void onPostExecute(Object o) {
+            TaskPreference preference = getPreference();
+            if (preference != null && preference.getContext() instanceof android.app.Activity) {
+                android.app.Activity activity = (android.app.Activity) preference.getContext();
+                android.view.View rootView = activity.findViewById(android.R.id.content);
+                if (rootView != null) {
+                    if (o instanceof File) {
+                        File file = (File) o;
+                        // Toast 简短提示备份成功（不带路径）
+                        Toast.makeText(activity, R.string.settings_advanced_full_backup_success_title, Toast.LENGTH_SHORT).show();
+                        // Dialog 显示完整路径
+                        new AlertDialog.Builder(activity)
+                            .setTitle(R.string.settings_advanced_full_backup_success_title)
+                            .setMessage(GetText.getString(R.string.settings_advanced_full_backup_success_message, file.getPath()))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                    } else {
+                        new AlertDialog.Builder(activity)
+                            .setTitle(R.string.settings_advanced_full_backup_failed_title)
+                            .setMessage(R.string.settings_advanced_full_backup_failed_message)
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                    }
+                    super.onPostExecute(o);
+                    return;
+                }
+            }
+            // Fallback: 如果无法获取 Activity，使用 Toast
             Toast.makeText(getApplication(),
                 (o instanceof File)
                     ? GetText.getString(R.string.settings_advanced_full_backup_success_message, ((File) o).getPath())

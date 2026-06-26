@@ -44,6 +44,8 @@ public class BackupManager {
     // - smb_secure_prefs.xml (SmbServerStore 加密数据)
     private static final String ENTRY_COOKIES = "cookies.db";
     private static final String ENTRY_SPIDER_INFO = "spider_info.db";
+    private static final String ENTRY_SEARCH_DATABASE = "search_database.db";
+    private static final String ENTRY_HOSTS = "hosts.db";
 
     /**
      * 创建完整备份 zip 文件
@@ -84,6 +86,20 @@ public class BackupManager {
                 copyFile(spiderDbFile, spiderDbDest);
             }
 
+            // 复制搜索历史数据库
+            File searchDbFile = context.getDatabasePath("search_database.db");
+            if (searchDbFile.exists()) {
+                File searchDbDest = new File(tempDir, ENTRY_SEARCH_DATABASE);
+                copyFile(searchDbFile, searchDbDest);
+            }
+
+            // 复制 Hosts 数据库
+            File hostsDbFile = context.getDatabasePath("hosts.db");
+            if (hostsDbFile.exists()) {
+                File hostsDbDest = new File(tempDir, ENTRY_HOSTS);
+                copyFile(hostsDbFile, hostsDbDest);
+            }
+
             // 创建 zip 文件
             zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)));
 
@@ -95,6 +111,16 @@ public class BackupManager {
             File spiderDest = new File(tempDir, ENTRY_SPIDER_INFO);
             if (spiderDest.exists()) {
                 addFileToZip(zos, spiderDest, ENTRY_SPIDER_INFO);
+            }
+
+            File searchDbDest = new File(tempDir, ENTRY_SEARCH_DATABASE);
+            if (searchDbDest.exists()) {
+                addFileToZip(zos, searchDbDest, ENTRY_SEARCH_DATABASE);
+            }
+
+            File hostsDbDest = new File(tempDir, ENTRY_HOSTS);
+            if (hostsDbDest.exists()) {
+                addFileToZip(zos, hostsDbDest, ENTRY_HOSTS);
             }
 
             Log.i(TAG, "Full backup created successfully: " + outputFile.getAbsolutePath());
@@ -156,6 +182,20 @@ public class BackupManager {
             if (spiderDbSource.exists()) {
                 File spiderDbDest = context.getDatabasePath("spider_info.db");
                 copyFile(spiderDbSource, spiderDbDest);
+            }
+
+            // 恢复搜索历史数据库
+            File searchDbSource = new File(tempDir, ENTRY_SEARCH_DATABASE);
+            if (searchDbSource.exists()) {
+                File searchDbDest = context.getDatabasePath("search_database.db");
+                copyFile(searchDbSource, searchDbDest);
+            }
+
+            // 恢复 Hosts 数据库
+            File hostsDbSource = new File(tempDir, ENTRY_HOSTS);
+            if (hostsDbSource.exists()) {
+                File hostsDbDest = context.getDatabasePath("hosts.db");
+                copyFile(hostsDbSource, hostsDbDest);
             }
 
             Log.i(TAG, "Full backup restored successfully");

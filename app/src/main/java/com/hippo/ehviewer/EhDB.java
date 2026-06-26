@@ -1041,6 +1041,10 @@ public class EhDB {
                     return false;
                 if (!copyDao(sDaoSession.getFilterDao(), exportSession.getFilterDao()))
                     return false;
+                if (!copyDao(sDaoSession.getBlackListDao(), exportSession.getBlackListDao()))
+                    return false;
+                if (!copyDao(sDaoSession.getGalleryTagsDao(), exportSession.getGalleryTagsDao()))
+                    return false;
             }
 
             // Copy export db to data dir
