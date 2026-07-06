@@ -50,6 +50,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.PopupMenu;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.core.view.ViewCompat;
 import androidx.fragment.app.Fragment;
@@ -143,6 +145,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
 import okhttp3.OkHttpClient;
@@ -1894,12 +1897,30 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     protected void onGetGalleryDetailSuccess(GalleryDetail result) {
         mGalleryDetail = result;
         updateDownloadState();
-        if (mDownloadState != DownloadInfo.STATE_INVALID) {
-            if (mDownloadInfo != null && !mDownloadInfo.thumb.equals(result.thumb) && mDownloadInfo.gid == result.gid) {
-                useNetWorkLoadThumb = true;
-                mDownloadInfo.updateInfo(result);
-                mDownloadInfo.state = mDownloadState;
+        if (mContext == null) mContext = getEHContext();
+        if (mDownloadState != DownloadInfo.STATE_INVALID && mDownloadInfo != null && mDownloadInfo.gid == result.gid && mContext != null) {
+            // Auto-sync pages, rating, and empty titleJpn silently
+            boolean dirty = false;
+            if (mDownloadInfo.pages != result.pages) {
+                mDownloadInfo.pages = result.pages;
+                dirty = true;
+            }
+            if (Float.compare(mDownloadInfo.rating, result.rating) != 0) {
+                mDownloadInfo.rating = result.rating;
+                dirty = true;
+            }
+            if (isEmpty(mDownloadInfo.titleJpn) && !isEmpty(result.titleJpn)) {
+                mDownloadInfo.titleJpn = result.titleJpn;
+                dirty = true;
+            }
+            if (dirty) {
                 EhDB.putDownloadInfo(mDownloadInfo);
+            }
+
+            // Show dialog for remaining differences
+            List<FieldDifference> diffs = FieldDifference.detect(mDownloadInfo, result, mContext);
+            if (!diffs.isEmpty()) {
+                showFieldUpdateDialog(diffs, result);
             }
         }
         adjustViewVisibility(STATE_NORMAL, true);
@@ -1909,6 +1930,45 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             mDownloadState = DownloadInfo.STATE_INVALID;
             onDownload();
         }
+    }
+
+    private static boolean isEmpty(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    private void showFieldUpdateDialog(List<FieldDifference> diffs, GalleryDetail result) {
+        Context context = mContext;
+        if (context == null) return;
+
+        View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_field_update, null);
+        RecyclerView recyclerView = dialogView.findViewById(R.id.list);
+        FieldDifferenceAdapter adapter = new FieldDifferenceAdapter(diffs);
+        recyclerView.setLayoutManager(new LinearLayoutManager(context));
+        recyclerView.setAdapter(adapter);
+
+        new AlertDialog.Builder(context)
+                .setTitle(R.string.field_update_dialog_title)
+                .setView(dialogView)
+                .setPositiveButton(R.string.field_update_selected, (dialog, which) -> {
+                    Set<String> selectedFields = adapter.getSelectedFields();
+                    if (!selectedFields.isEmpty()) {
+                        applyFieldUpdates(selectedFields, result);
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void applyFieldUpdates(Set<String> fields, GalleryDetail result) {
+        if (mDownloadInfo == null) return;
+
+        if (fields.contains("thumb")) {
+            useNetWorkLoadThumb = true;
+        }
+
+        mDownloadInfo.updateInfoSelective(result, fields);
+        mDownloadInfo.state = mDownloadState;
+        EhDB.putDownloadInfo(mDownloadInfo);
     }
 
     protected void onGetGalleryDetailFailure(Exception e) {

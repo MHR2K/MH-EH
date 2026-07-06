@@ -102,6 +102,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     private int mCurrentEndPage = -1;
     // Pending endPage for partial downloads, keyed by gid
     private final HashMap<Long, Integer> mPendingEndPages = new HashMap<>();
+    // Cache of recently deleted DownloadInfo, so user edits (title, titleJpn, etc.) survive remove+re-add
+    private final HashMap<Long, DownloadInfo> mDeletedInfoCache = new HashMap<>();
 
     private final ConcurrentPool<NotifyTask> mNotifyTaskPool = new ConcurrentPool<>(5);
 
@@ -489,7 +491,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             DownloadInfo info = mWaitList.removeFirst();
             int endPage = mPendingEndPages.containsKey(info.gid) ? mPendingEndPages.remove(info.gid) : -1;
             mCurrentEndPage = endPage;
-            ensureLocalScaffold(info, endPage);
+            final int ep = endPage;
+            new Thread(() -> ensureLocalScaffold(info, ep), "Scaffold-" + info.gid).start();
             SpiderQueen spider = SpiderQueen.obtainSpiderQueen(mContext, info, SpiderQueen.MODE_DOWNLOAD, endPage);
             mCurrentTask = info;
             mCurrentSpider = spider;
@@ -550,7 +553,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             spiderInfo.token = info.token;
             spiderInfo.pages = (endPage > 0) ? endPage : info.pages;
             spiderInfo.previewPages = 0;
-            spiderInfo.previewPerPage = 0;
+            spiderInfo.previewPerPage = 1;
             spiderInfo.pTokenMap = new SparseArray<>(0);
             spiderInfo.startPage = 0;
 
@@ -598,6 +601,16 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         } else {
             // It is new download info
             info = new DownloadInfo(galleryInfo);
+            // Restore user edits from cache if available (survives remove+re-add)
+            DownloadInfo cached = mDeletedInfoCache.remove(galleryInfo.gid);
+            if (cached != null) {
+                info.title = cached.title;
+                info.titleJpn = cached.titleJpn;
+                info.uploader = cached.uploader;
+                info.rating = cached.rating;
+                info.posted = cached.posted;
+                info.pages = cached.pages;
+            }
             info.label = label;
             info.state = DownloadInfo.STATE_WAIT;
             info.time = System.currentTimeMillis();
@@ -835,6 +848,16 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // It is new download info
         DownloadInfo info = new DownloadInfo(galleryInfo);
+        // Restore user edits from cache if available (survives remove+re-add)
+        DownloadInfo cached = mDeletedInfoCache.remove(galleryInfo.gid);
+        if (cached != null) {
+            info.title = cached.title;
+            info.titleJpn = cached.titleJpn;
+            info.uploader = cached.uploader;
+            info.rating = cached.rating;
+            info.posted = cached.posted;
+            info.pages = cached.pages;
+        }
         info.label = label;
         info.state = state;
         info.time = System.currentTimeMillis();
@@ -986,6 +1009,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         stopDownloadInternal(gid);
         DownloadInfo info = mAllInfoMap.get(gid);
         if (info != null) {
+            // Cache info before deletion so user edits survive remove+re-add
+            mDeletedInfoCache.put(info.gid, info);
+
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
@@ -1024,6 +1050,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 Log.d(TAG, "Can't get download info with gid: " + gid);
                 continue;
             }
+
+            // Cache info before deletion so user edits survive remove+re-add
+            mDeletedInfoCache.put(info.gid, info);
 
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);

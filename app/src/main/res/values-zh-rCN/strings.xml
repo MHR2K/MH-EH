@@ -466,6 +466,19 @@
     <string name="edit_download_save_changes">保存更改</string>
     <string name="edit_download_info_updated">成功更新下载信息</string>
 
+    <!-- Field update dialog -->
+    <string name="field_update_dialog_title">更新下载信息</string>
+    <string name="field_update_dialog_message">以下字段在下载记录和网络数据之间存在差异，请选择要更新的字段：</string>
+    <string name="field_update_selected">更新所选</string>
+    <string name="field_update_label_title">标题</string>
+    <string name="field_update_label_title_jpn">日文标题</string>
+    <string name="field_update_label_uploader">上传者</string>
+    <string name="field_update_label_rating">评分</string>
+    <string name="field_update_label_category">分类</string>
+    <string name="field_update_label_posted">发布日期</string>
+    <string name="field_update_label_pages">页数</string>
+    <string name="field_update_label_thumb">缩略图</string>
+
     <!-- Download label -->
     <string name="no_download_label">这里是下载标签</string>
     <string name="add">添加</string>
