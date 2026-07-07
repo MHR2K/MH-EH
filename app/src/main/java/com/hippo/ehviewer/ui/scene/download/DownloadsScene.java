@@ -192,6 +192,8 @@ public class DownloadsScene extends ToolbarScene
     // 组合筛选的选中过滤器状态
     private Set<Integer> mSelectedStatusFilters = new HashSet<>();
     private Set<Integer> mSelectedProgressFilters = new HashSet<>();
+    // 标记组合筛选是否被用户主动应用（区分从Settings加载 vs 用户手动启用）
+    private boolean mCombinedFilterActive = false;
 
     /*---------------
      List pagination
@@ -460,6 +462,7 @@ public class DownloadsScene extends ToolbarScene
         
         // 不再自动应用筛选条件，每次打开页面时显示所有项目
         // 用户可以通过菜单手动选择筛选条件
+        mCombinedFilterActive = false;
     }
 
     /**
@@ -2402,7 +2405,7 @@ public class DownloadsScene extends ToolbarScene
         }
 
         // 如果之前处于组合筛选状态，也需要恢复
-        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+        if (mCombinedFilterActive && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
             // 恢复组合筛选状态
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
@@ -2470,7 +2473,7 @@ public class DownloadsScene extends ToolbarScene
         updateForLabel();
 
         // 恢复组合筛选状态
-        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+        if (mCombinedFilterActive && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
             // 设置标志避免滚动到顶部，保持当前位置
@@ -2500,7 +2503,7 @@ public class DownloadsScene extends ToolbarScene
         updateForLabel();
 
         // 恢复组合筛选状态
-        if (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty()) {
+        if (mCombinedFilterActive && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
             // 设置标志避免滚动到顶部，保持当前位置
@@ -2707,6 +2710,7 @@ public class DownloadsScene extends ToolbarScene
     private void gotoFilterAndSort(int id) {
         // 记录当前过滤ID，便于后续（如编辑信息）重新应用
         mCurrentFilterId = id;
+        mCombinedFilterActive = false; // 分类筛选与组合筛选互斥
         gotoFilterAndSortWithScroll(id, true);
     }
 
@@ -3417,6 +3421,10 @@ public class DownloadsScene extends ToolbarScene
                 (statusFilters, progressFilters) -> {
                     mSelectedStatusFilters = statusFilters;
                     mSelectedProgressFilters = progressFilters;
+                    mCombinedFilterActive = !statusFilters.isEmpty() || !progressFilters.isEmpty();
+                    if (mCombinedFilterActive) {
+                        mCurrentFilterId = -1; // 组合筛选与分类筛选互斥
+                    }
                     applyCombinedFilter();
                     // 保存筛选状态
                     saveFilterState();
