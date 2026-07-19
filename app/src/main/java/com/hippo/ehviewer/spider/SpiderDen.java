@@ -669,7 +669,45 @@ public final class SpiderDen {
             return null;
         }
         UniFile file = findImageFile(dir, index);
-        return file != null ? new UniFileInputStreamPipe(file) : null;
+        if (file != null) {
+            return new UniFileInputStreamPipe(file);
+        }
+        // 尝试从 CBZ 中读取
+        UniFile cbz = com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir);
+        if (cbz == null) {
+            return null;
+        }
+        final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+        final UniFile cbzFinal = cbz;
+        return new InputStreamPipe() {
+            private ZipInputStream mZis;
+            private java.io.InputStream mBase;
+            @Override public void obtain() { }
+            @Override public void release() { }
+            @Override public java.io.InputStream open() throws IOException {
+                mBase = cbzFinal.openInputStream();
+                mZis = new ZipInputStream(mBase);
+                ZipEntry entry;
+                while ((entry = mZis.getNextEntry()) != null) {
+                    if (entry.isDirectory()) continue;
+                    String en = entry.getName();
+                    if (en == null) continue;
+                    for (String ext : exts) {
+                        String expect = generateImageFilename(index, ext);
+                        if (expect.equalsIgnoreCase(en)) {
+                            return mZis;
+                        }
+                    }
+                }
+                close();
+                throw new IOException("Entry not found in CBZ for index=" + index);
+            }
+            @Override public void close() {
+                com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
+                mZis = null; mBase = null;
+            }
+        };
     }
 
     @Nullable
