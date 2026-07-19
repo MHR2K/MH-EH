@@ -249,7 +249,7 @@ public final class SpiderQueen implements Runnable {
             spiderInfo.pages = newPages;
             spiderInfo.startPage = newStartPage;
             Log.d(TAG, "Updated SpiderInfo in memory: pages=" + newPages + ", startPage=" + newStartPage + " for gid=" + mGalleryInfo.gid);
-            
+
             // 异步写入到本地文件，确保持久化
             new AsyncTask<Void, Void, Void>() {
                 @Override
@@ -261,18 +261,49 @@ public final class SpiderQueen implements Runnable {
         }
     }
 
+//    @UiThread
+//    public static int findStartPage(@NonNull Context context, @NonNull GalleryInfo galleryInfo) {
+//        Log.e("StartTime",System.currentTimeMillis()+"");
+//        SpiderInfo fromDownload = SpiderInfo.getSpiderInfo(galleryInfo);
+//        SpiderInfo fromCache = readSpiderInfoFromCache(context, galleryInfo.gid);
+//
+//        int startPage = 0;
+//        if (isValidSpiderInfo(fromDownload, galleryInfo)) {
+//            startPage = fromDownload.startPage;
+//        }
+//        if (isValidSpiderInfo(fromCache, galleryInfo)) {
+//            startPage = Math.max(startPage, fromCache.startPage);
+//        }
+//        Log.e("EndTime",System.currentTimeMillis()+"");
+//        return startPage;
+//    }
+
     @UiThread
     public static int findStartPage(@NonNull Context context, @NonNull GalleryInfo galleryInfo) {
-        SpiderInfo fromDownload = SpiderInfo.getSpiderInfo(galleryInfo);
-        SpiderInfo fromCache = readSpiderInfoFromCache(context, galleryInfo.gid);
+        Log.e("StartTime",System.currentTimeMillis()+"");
+        SpiderInfo spiderInfo = null;
+        SimpleDiskCache msic;
+        EhApplication application = (EhApplication) context.getApplicationContext();
+        msic = EhApplication.getSpiderInfoCache(application);
+        InputStreamPipe pipe = msic.getInputStreamPipe(Long.toString(galleryInfo.gid));
+        if (null != pipe) {
+            try {
+                pipe.obtain();
+                spiderInfo = SpiderInfo.read(pipe.open());
+            } catch (IOException ignore) {
+                // Ignore
+//                Crashes.trackError(ignore);
+            } finally {
+                pipe.close();
+                pipe.release();
+            }
+        }
 
         int startPage = 0;
-        if (isValidSpiderInfo(fromDownload, galleryInfo)) {
-            startPage = fromDownload.startPage;
+        if (spiderInfo != null) {
+            startPage = spiderInfo.startPage;
         }
-        if (isValidSpiderInfo(fromCache, galleryInfo)) {
-            startPage = Math.max(startPage, fromCache.startPage);
-        }
+        Log.e("EndTime",System.currentTimeMillis()+"");
         return startPage;
     }
 
