@@ -73,7 +73,6 @@ import com.hippo.lib.yorozuya.thread.PriorityThreadFactory;
 import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -2002,27 +2001,13 @@ public final class SpiderQueen implements Runnable {
 
                 if (is != null) {
                     try {
-                        // 优先使用 FileInputStream；若是 SMB / 其他流，先落盘再解码，避免 ClassCastException
                         if (is instanceof FileInputStream) {
                             image = Image.decode((FileInputStream) is, false);
                         } else {
-                            Log.d(TAG, "Non-FileInputStream detected for index=" + index + ", streaming to temp file");
-                            File temp = File.createTempFile("smb_img", null, EhApplication.getInstance().getCacheDir());
-                            try (FileOutputStream os = new FileOutputStream(temp)) {
-                                IOUtils.copy(is, os);
-                            }
-                            try (FileInputStream fis = new FileInputStream(temp)) {
-                                image = Image.decode(fis, false);
-                            } finally {
-                                if (!temp.delete()) {
-                                    temp.deleteOnExit();
-                                }
-                            }
+                            // SMB 等非文件流，直接用 InputStream 解码，无需磁盘临时文件
+                            image = Image.decode(is, false);
                         }
-                    } catch (OutOfMemoryError e){
-                        Analytics.recordException(e);
-                    } catch (IOException e) {
-                        Log.e(TAG, "解码失败", e);
+                    } catch (OutOfMemoryError e) {
                         Analytics.recordException(e);
                     } finally {
                         try {
