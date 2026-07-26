@@ -70,7 +70,7 @@ object CbzCacheManager {
 
         // 检查缓存版本，不一致则清除
         val versionFile = File(cacheDir, ".version")
-        val currentVersion = versionFile.readText().toIntOrNull() ?: 0
+        val currentVersion = if (versionFile.exists()) versionFile.readText().toIntOrNull() ?: 0 else 0
         if (currentVersion != CACHE_VERSION) {
             clearAllCache()
             versionFile.writeText(CACHE_VERSION.toString())
@@ -136,6 +136,43 @@ object CbzCacheManager {
     }
 
     /**
+     * 获取缓存的 CBZ 文件（如存在）
+     */
+    fun getCachedFile(authority: Authority, share: String, pathInShare: String): File? {
+        val cacheKey = generateCacheKey(authority, share, pathInShare)
+        val file = File(cacheDir, cacheKey)
+        return if (file.exists()) file else null
+    }
+
+    /**
+     * 打开缓存的 CBZ 文件为 ZipFile，支持 O(1) 随机访问
+     *
+     * @return ZipFile 实例，未缓存或打开失败返回 null
+     */
+    fun openCachedZipFile(authority: Authority, share: String, pathInShare: String): java.util.zip.ZipFile? {
+        val cacheKey = generateCacheKey(authority, share, pathInShare)
+        val cachedFile = File(cacheDir, cacheKey)
+
+        if (!cachedFile.exists() || cachedFile.length() == 0L) {
+            // 文件不存在或为空（损坏的残留），清理并返回 null
+            if (cachedFile.exists()) cachedFile.delete()
+            return null
+        }
+
+        // 更新访问时间
+        accessTimes[cacheKey] = System.currentTimeMillis()
+
+        return try {
+            java.util.zip.ZipFile(cachedFile)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open cached CBZ as ZipFile", e)
+            // 缓存文件损坏，删除它
+            cachedFile.delete()
+            null
+        }
+    }
+
+    /**
      * 缓存CBZ文件到本地
      *
      * @param authority SMB服务器标识
@@ -183,6 +220,121 @@ object CbzCacheManager {
             Log.e(TAG, "Failed to cache CBZ: $pathInShare", e)
             cachedFile.delete()
             null
+        }
+    }
+
+    /**
+     * CBZ 下载进度监听器
+     */
+    interface ProgressListener {
+        /**
+         * @param bytesRead 已下载字节数
+         * @param totalBytes 文件总字节数（-1 表示未知）
+         * @param speedBps 当前速度（字节/秒）
+         */
+        fun onProgress(bytesRead: Long, totalBytes: Long, speedBps: Long)
+        fun onComplete(file: File)
+        fun onError(e: Exception)
+    }
+
+    // 防止同一线程重复下载的锁
+    private val downloadLocks = ConcurrentHashMap<String, Any>()
+
+    /**
+     * 带进度回调的 CBZ 下载
+     * 替代 cacheCbz() 用于需要显示进度的场景
+     * 线程安全：多个线程同时请求同一文件时，只有一个执行下载，其他等待
+     */
+    fun downloadWithProgress(
+        authority: Authority,
+        share: String,
+        pathInShare: String,
+        inputStream: java.io.InputStream,
+        totalBytes: Long = -1,
+        listener: ProgressListener
+    ) {
+        val cacheKey = generateCacheKey(authority, share, pathInShare)
+        val cachedFile = File(cacheDir, cacheKey)
+
+        // 获取 per-file 锁，防止多线程同时下载同一文件
+        val lock = downloadLocks.computeIfAbsent(cacheKey) { Any() }
+        synchronized(lock) {
+            try {
+                // 已存在且有效则直接返回（检查文件大小 > 0）
+                if (cachedFile.exists() && cachedFile.length() > 0) {
+                    accessTimes[cacheKey] = System.currentTimeMillis()
+                    listener.onComplete(cachedFile)
+                    return
+                }
+
+                // 文件存在但无效（0字节或损坏），删除后重新下载
+                if (cachedFile.exists()) {
+                    cachedFile.delete()
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "Deleted invalid cached CBZ: $pathInShare (size=${cachedFile.length()})")
+                    }
+                }
+
+                // 确保有足够空间
+                val actualSize = if (totalBytes > 0) totalBytes else inputStream.available().toLong().coerceAtLeast(1024 * 1024)
+                ensureCacheSpace(actualSize)
+
+                // 手动读取循环，报告进度
+                try {
+                    FileOutputStream(cachedFile).use { fos ->
+                        val buf = ByteArray(64 * 1024)
+                        var bytesRead = 0L
+                        var lastReportTime = System.currentTimeMillis()
+                        var lastReportBytes = 0L
+
+                        while (true) {
+                            val read = inputStream.read(buf)
+                            if (read == -1) break
+                            fos.write(buf, 0, read)
+                            bytesRead += read
+
+                            // 每 200ms 报告一次进度
+                            val now = System.currentTimeMillis()
+                            val elapsed = now - lastReportTime
+                            if (elapsed >= 200) {
+                                val speedBps = if (elapsed > 0) (bytesRead - lastReportBytes) * 1000 / elapsed else 0
+                                listener.onProgress(bytesRead, totalBytes, speedBps)
+                                lastReportTime = now
+                                lastReportBytes = bytesRead
+                            }
+                        }
+                        fos.flush()
+
+                        // 最终进度报告
+                        val totalElapsed = System.currentTimeMillis() - lastReportTime + 1
+                        val finalSpeed = if (totalElapsed > 0) (bytesRead - lastReportBytes) * 1000 / totalElapsed else 0
+                        listener.onProgress(bytesRead, totalBytes, finalSpeed)
+                    }
+
+                    // 验证下载结果：文件必须存在且大小 > 0
+                    if (!cachedFile.exists() || cachedFile.length() == 0L) {
+                        cachedFile.delete()
+                        listener.onError(java.io.IOException("Downloaded CBZ file is empty or missing"))
+                        return
+                    }
+
+                    // 更新元数据
+                    accessTimes[cacheKey] = System.currentTimeMillis()
+                    currentCacheSize.addAndGet(cachedFile.length())
+
+                    if (BuildConfig.DEBUG) {
+                        Log.d(TAG, "CBZ downloaded with progress: $pathInShare (${cachedFile.length()} bytes)")
+                    }
+
+                    listener.onComplete(cachedFile)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to download CBZ: $pathInShare", e)
+                    cachedFile.delete()
+                    listener.onError(e)
+                }
+            } finally {
+                downloadLocks.remove(cacheKey)
+            }
         }
     }
 

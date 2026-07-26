@@ -215,6 +215,8 @@ public class EhApplication extends RecordingApplication {
         ReadableTime.initialize(this);
         Html.initialize(this);
         AppConfig.initialize(this);
+        // SMB CBZ 本地缓存初始化
+        com.hippo.ehviewer.smb.CbzCacheManager.INSTANCE.init(this);
         // Best-effort Firebase init (will no-op if config is absent)
         try {
             com.hippo.ehviewer.util.CrashlyticsUtils.initIfPossible(this);

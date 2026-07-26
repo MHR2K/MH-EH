@@ -742,246 +742,6 @@ public final class SpiderDen {
     }
 
 
-    /**
-     * 从 SMB 路径打开图片文件
-     * （内部方法，与显式映射的逻辑一致，支持直接文件和CBZ档案）
-     */
-    @Nullable
-    private InputStreamPipe openSmbFileFromPath(
-            com.hippo.ehviewer.smb.Authority authority,
-            String share,
-            String basePath,
-            int index) {
-        // 规范化 base，统一使用 '\\' 分隔，并移除首尾分隔符
-        String normBase = basePath.replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
-        final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
-
-        // Step 1: 尝试 <gid>.cbz （若 base 是目录）
-        if (!normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
-            String gidCbz = mGid + ".cbz";
-            String relGidCbz = normBase.isEmpty() ? gidCbz : (normBase + "\\" + gidCbz);
-            Client.Target gidCbzTarget = new Client.Target(authority, share, relGidCbz);
-            
-            // 尝试从本地缓存获取 CBZ
-            try {
-                java.io.FileInputStream cachedStream = CbzCacheManager.INSTANCE.getCachedInputStream(authority, share, relGidCbz);
-                if (cachedStream != null) {
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit: gid=" + mGid + ", path=" + relGidCbz);
-                    }
-                    // 从缓存的 CBZ 解压
-                    final java.io.FileInputStream fis = cachedStream;
-                    return new InputStreamPipe() {
-                        private java.io.FileInputStream mFis;
-                        private ZipInputStream mZis;
-                        @Override public void obtain() { /* no-op */ }
-                        @Override public void release() { /* no-op */ }
-                        @Override public java.io.InputStream open() throws IOException {
-                            mFis = fis;
-                            mZis = new ZipInputStream(mFis);
-                            ZipEntry entry;
-                            while ((entry = mZis.getNextEntry()) != null) {
-                                if (entry.isDirectory()) continue;
-                                String en = entry.getName();
-                                if (en == null) continue;
-                                for (String ext : exts) {
-                                    String expect = generateImageFilename(index, ext);
-                                    if (expect.equalsIgnoreCase(en)) {
-                                        if (BuildConfig.DEBUG) {
-                                            android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
-                                        }
-                                        return mZis;
-                                    }
-                                }
-                            }
-                            if (BuildConfig.DEBUG) {
-                                android.util.Log.d("SpiderDen", "SMB gid.cbz cache miss entry: gid=" + mGid + ", index=" + (index+1));
-                            }
-                            close();
-                            throw new IOException("Entry not found in cached CBZ for index=" + index);
-                        }
-                        @Override public void close() {
-                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
-                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mFis);
-                            mZis = null; mFis = null;
-                        }
-                    };
-                }
-            } catch (Throwable e) {
-                if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "Failed to get cached CBZ, falling back to SMB: " + e);
-                }
-            }
-            
-            // 缓存未命中，从 SMB 读取并异步缓存
-            try {
-                java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
-                if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz success: gid=" + mGid + ", path=" + relGidCbz);
-                }
-                // 异步缓存 CBZ
-                final String relCbzFinal = relGidCbz;
-                final java.io.InputStream probeFinal = probe;
-                CbzCacheManager.INSTANCE.cacheCbzAsync(authority, share, relCbzFinal, probeFinal, -1L, null);
-                
-                // 同步从 SMB 读取并返回
-                return new InputStreamPipe() {
-                    private java.io.InputStream mBase;
-                    private ZipInputStream mZis;
-                    @Override public void obtain() { /* no-op */ }
-                    @Override public void release() { /* no-op */ }
-                    @Override public java.io.InputStream open() throws IOException {
-                        mBase = Client.INSTANCE.openInputStream(new Client.Target(authority, share, relCbzFinal));
-                        mZis = new ZipInputStream(mBase);
-                        ZipEntry entry;
-                        while ((entry = mZis.getNextEntry()) != null) {
-                            if (entry.isDirectory()) continue;
-                            String en = entry.getName();
-                            if (en == null) continue;
-                            for (String ext : exts) {
-                                String expect = generateImageFilename(index, ext);
-                                if (expect.equalsIgnoreCase(en)) {
-                                    if (BuildConfig.DEBUG) {
-                                        android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
-                                    }
-                                    return mZis;
-                                }
-                            }
-                        }
-                        if (BuildConfig.DEBUG) {
-                            android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz miss entry: gid=" + mGid + ", index=" + (index+1) + ", path=" + relCbzFinal);
-                        }
-                        close();
-                        throw new IOException("Entry not found in remote gid.cbz for index=" + index);
-                    }
-                    @Override public void close() {
-                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
-                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
-                        mZis = null; mBase = null;
-                    }
-                };
-            } catch (Throwable ignore) {
-                if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB auto-detect gid.cbz not found: gid=" + mGid + ", path=" + relGidCbz);
-                }
-            }
-        }
-
-        // Step 2: 若 base 直接指向 .cbz 文件
-        if (!normBase.isEmpty() && normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
-            final Client.Target cbzTarget = new Client.Target(authority, share, normBase);
-            if (BuildConfig.DEBUG) {
-                android.util.Log.d("SpiderDen", "SMB auto-detect: direct CBZ mapping detected: gid=" + mGid + ", cbzPath=" + normBase);
-            }
-            return new InputStreamPipe() {
-                private java.io.InputStream mBase;
-                private ZipInputStream mZis;
-                @Override public void obtain() { /* no-op */ }
-                @Override public void release() { /* no-op */ }
-                @Override public java.io.InputStream open() throws IOException {
-                    mBase = Client.INSTANCE.openInputStream(cbzTarget);
-                    mZis = new ZipInputStream(mBase);
-                    ZipEntry entry;
-                    while ((entry = mZis.getNextEntry()) != null) {
-                        if (entry.isDirectory()) continue;
-                        String en = entry.getName();
-                        if (en == null) continue;
-                        for (String ext : exts) {
-                            String expect = generateImageFilename(index, ext);
-                            if (expect.equalsIgnoreCase(en)) {
-                                if (BuildConfig.DEBUG) {
-                                    android.util.Log.d("SpiderDen", "SMB auto-detect direct CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
-                                }
-                                return mZis;
-                            }
-                        }
-                    }
-                    if (BuildConfig.DEBUG) {
-                        android.util.Log.d("SpiderDen", "SMB auto-detect direct CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbzPath=" + normBase);
-                    }
-                    close();
-                    throw new IOException("Entry not found in remote CBZ (direct) for index=" + index);
-                }
-                @Override public void close() {
-                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
-                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
-                    mZis = null; mBase = null;
-                }
-            };
-        }
-
-        // Step 3: 尝试所有支持的扩展名（base 为目录场景）
-        // 先查缓存，命中则只尝试该扩展名
-        String cachedExt2 = sSmbExtCache.get(mGid);
-        String[] extsToTry2 = cachedExt2 != null
-            ? new String[]{cachedExt2}
-            : exts;
-        for (String ext : extsToTry2) {
-            String filename = generateImageFilename(index, ext);
-            String rel = normBase.isEmpty() ? filename : (normBase + "\\" + filename);
-            Client.Target target = new Client.Target(authority, share, rel);
-            try {
-                java.io.InputStream is = Client.INSTANCE.openInputStream(target);
-                if (cachedExt2 == null) {
-                    sSmbExtCache.put(mGid, ext);
-                }
-                return new InputStreamPipe() {
-                    private java.io.InputStream mIs;
-                    @Override public void obtain() { /* no-op */ }
-                    @Override public void release() { /* no-op */ }
-                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
-                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
-                };
-            } catch (Throwable ignore) {
-                if (BuildConfig.DEBUG) {
-                    android.util.Log.d("SpiderDen", "SMB auto-detect open failed: share=" + share + ", rel=" + rel + ", err=" + ignore);
-                }
-            }
-        }
-
-        // Step 4: 兜底：列目录查找（处理远端大小写差异或不一致扩展名）
-        try {
-            Client.Target dirTarget = new Client.Target(authority, share, normBase);
-            java.util.List<Client.RemoteDirEntry> entries = Client.INSTANCE.listDirectory(dirTarget);
-            String indexPrefix = String.format(java.util.Locale.US, "%08d", index + 1);
-            Client.RemoteDirEntry match = null;
-            outer: for (Client.RemoteDirEntry e : entries) {
-                if (e.isDirectory()) continue;
-                String name = e.getName();
-                if (name == null) continue;
-                if (!name.toLowerCase(java.util.Locale.US).startsWith(indexPrefix)) continue;
-                for (String ext : exts) {
-                    String expect = (indexPrefix + ext).toLowerCase(java.util.Locale.US);
-                    if (name.toLowerCase(java.util.Locale.US).equals(expect)) {
-                        match = e;
-                        break outer;
-                    }
-                }
-            }
-            if (match != null) {
-                String matchRel = normBase.isEmpty() ? match.getName() : (normBase + "\\" + match.getName());
-                Client.Target matchTarget = new Client.Target(authority, share, matchRel);
-                java.io.InputStream is = Client.INSTANCE.openInputStream(matchTarget);
-                return new InputStreamPipe() {
-                    private java.io.InputStream mIs;
-                    @Override public void obtain() { /* no-op */ }
-                    @Override public void release() { /* no-op */ }
-                    @Override public java.io.InputStream open() { mIs = is; return mIs; }
-                    @Override public void close() { com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs); mIs = null; }
-                };
-            }
-            if (BuildConfig.DEBUG) {
-                android.util.Log.d("SpiderDen", "SMB auto-detect directory scan: no match for index=" + (index+1) + ", base=" + normBase);
-            }
-        } catch (Throwable e) {
-            if (BuildConfig.DEBUG) {
-                android.util.Log.d("SpiderDen", "SMB auto-detect directory scan failed: " + e);
-            }
-        }
-        return null;
-    }
-
-
     @Nullable
     private InputStreamPipe openSmbInputStreamPipe(int index) {
         mLastSmbError = null;
@@ -993,6 +753,9 @@ public final class SpiderDen {
         String smbFullPath = "\\\\" + resolved.getAuthority().getHost() + "\\" + resolved.getShare()
             + "\\" + resolved.getPathInShare();
         String normBase = resolved.getPathInShare().replace('/', '\\').replaceAll("^\\\\+|\\\\+$", "");
+        boolean isDirectCbz = !normBase.isEmpty() && normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz");
+        android.util.Log.i("SpiderDen", "openSmbInputStreamPipe: gid=" + mGid + ", index=" + index
+            + ", normBase=" + normBase + ", isDirectCbz=" + isDirectCbz);
 
         // Step 1: 直接尝试 <gid>.cbz （如果 base 是目录）
         if (!normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
@@ -1001,13 +764,49 @@ public final class SpiderDen {
             Client.Target gidCbzTarget = new Client.Target(resolved.getAuthority(), resolved.getShare(), relGidCbz);
             final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
 
-            // 先尝试本地 CBZ 缓存
+            // 优先使用 ZipFile 随机访问缓存的 CBZ (O(1) 替代 O(N) 顺序扫描)
+            try {
+                java.util.zip.ZipFile cachedZip = CbzCacheManager.INSTANCE.openCachedZipFile(
+                    resolved.getAuthority(), resolved.getShare(), relGidCbz);
+                if (cachedZip != null) {
+                    android.util.Log.i("SpiderDen", "gid.cbz cache HIT (ZipFile): gid=" + mGid + ", path=" + relGidCbz);
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit (ZipFile): gid=" + mGid + ", path=" + relGidCbz);
+                    }
+                    final java.util.zip.ZipFile zipRef = cachedZip;
+                    java.io.InputStream entryStream = findEntryInZipFile(zipRef, index, exts);
+                    if (entryStream != null) {
+                        return new InputStreamPipe() {
+                            private java.io.InputStream mIs;
+                            @Override public void obtain() { /* no-op */ }
+                            @Override public void release() { /* no-op */ }
+                            @Override public java.io.InputStream open() throws IOException {
+                                if (mIs != null) return mIs;
+                                mIs = findEntryInZipFile(zipRef, index, exts);
+                                if (mIs == null) throw new IOException("Entry not found in cached CBZ for index=" + index);
+                                return mIs;
+                            }
+                            @Override public void close() {
+                                com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs);
+                                mIs = null;
+                                // Don't close zipRef here — it's shared across pages and managed by CbzCacheManager LRU
+                            }
+                        };
+                    }
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(zipRef);
+                }
+            } catch (Throwable e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Failed to get cached CBZ ZipFile, trying legacy: " + e);
+                }
+            }
+            // Fallback: 旧的 ZipInputStream 顺序扫描
             try {
                 java.io.FileInputStream cachedStream = CbzCacheManager.INSTANCE.getCachedInputStream(
                     resolved.getAuthority(), resolved.getShare(), relGidCbz);
                 if (cachedStream != null) {
                     if (BuildConfig.DEBUG) {
-                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit: gid=" + mGid + ", path=" + relGidCbz);
+                        android.util.Log.d("SpiderDen", "SMB gid.cbz cache hit (legacy): gid=" + mGid + ", path=" + relGidCbz);
                     }
                     final java.io.FileInputStream fis = cachedStream;
                     return new InputStreamPipe() {
@@ -1046,28 +845,90 @@ public final class SpiderDen {
                 }
             }
 
-            // 缓存未命中，从 SMB 同步下载 CBZ 到本地缓存
+            // 缓存未命中，从 SMB 同步下载 CBZ 到本地缓存，然后用 ZipFile 随机访问
+            android.util.Log.i("SpiderDen", "gid.cbz cache MISS, downloading from SMB: gid=" + mGid + ", path=" + relGidCbz);
             try {
+                // 查询文件大小用于进度显示
+                long fileSize = -1;
+                try {
+                    fileSize = Client.INSTANCE.getFileSize(gidCbzTarget);
+                } catch (Throwable ignore) {}
+                final long totalBytes = fileSize;
+
                 java.io.InputStream probe = Client.INSTANCE.openInputStream(gidCbzTarget);
+                com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.startDownload(totalBytes);
+                android.util.Log.i("SpiderDen", "gid.cbz SMB stream opened, starting download: gid=" + mGid + ", size=" + totalBytes);
                 if (BuildConfig.DEBUG) {
                     android.util.Log.d("SpiderDen", "SMB gid.cbz found, downloading to cache: gid=" + mGid + ", path=" + relGidCbz);
                 }
                 final String relCbzFinal = relGidCbz;
-                java.io.File cached = CbzCacheManager.INSTANCE.cacheCbz(resolved.getAuthority(), resolved.getShare(), relCbzFinal, probe, -1L);
+
+                // 带进度的下载
+                CbzCacheManager.INSTANCE.downloadWithProgress(
+                    resolved.getAuthority(), resolved.getShare(), relCbzFinal, probe, totalBytes,
+                    new CbzCacheManager.ProgressListener() {
+                        @Override public void onProgress(long bytesRead, long total, long speedBps) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.updateProgress(bytesRead, total, speedBps);
+                        }
+                        @Override public void onComplete(java.io.File file) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.finishDownload();
+                        }
+                        @Override public void onError(Exception e) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.finishDownload();
+                        }
+                    }
+                );
                 com.hippo.lib.yorozuya.IOUtils.closeQuietly(probe);
+
+                java.io.File cached = CbzCacheManager.INSTANCE.getCachedFile(resolved.getAuthority(), resolved.getShare(), relCbzFinal);
+                android.util.Log.i("SpiderDen", "gid.cbz download result: gid=" + mGid
+                    + ", cached=" + (cached != null ? cached.exists() : false)
+                    + (cached != null ? ", size=" + cached.length() : ""));
 
                 if (cached != null && cached.exists()) {
                     if (BuildConfig.DEBUG) {
                         android.util.Log.d("SpiderDen", "SMB gid.cbz cached locally: gid=" + mGid + ", size=" + cached.length());
                     }
-                    // 从本地缓存读取
+                    // 用 ZipFile 随机访问 (O(1))
+                    try {
+                        java.util.zip.ZipFile zipFile = CbzCacheManager.INSTANCE.openCachedZipFile(
+                            resolved.getAuthority(), resolved.getShare(), relCbzFinal);
+                        if (zipFile != null) {
+                            final java.util.zip.ZipFile zipRef = zipFile;
+                            java.io.InputStream entryStream = findEntryInZipFile(zipRef, index, exts);
+                            if (entryStream != null) {
+                                return new InputStreamPipe() {
+                                    private java.io.InputStream mIs;
+                                    @Override public void obtain() { /* no-op */ }
+                                    @Override public void release() { /* no-op */ }
+                                    @Override public java.io.InputStream open() throws IOException {
+                                        if (mIs != null) return mIs;
+                                        mIs = findEntryInZipFile(zipRef, index, exts);
+                                        if (mIs == null) throw new IOException("Entry not found in cached gid.cbz for index=" + index);
+                                        return mIs;
+                                    }
+                                    @Override public void close() {
+                                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs);
+                                        mIs = null;
+                                    }
+                                };
+                            }
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(zipRef);
+                        }
+                    } catch (Throwable zipErr) {
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", "ZipFile open failed for downloaded CBZ, fallback: " + zipErr);
+                        }
+                    }
+                    // Fallback: 旧的 ZipInputStream 顺序扫描
+                    final java.io.File cachedRef = cached;
                     return new InputStreamPipe() {
                         private java.io.FileInputStream mFis;
                         private ZipInputStream mZis;
                         @Override public void obtain() { /* no-op */ }
                         @Override public void release() { /* no-op */ }
                         @Override public java.io.InputStream open() throws IOException {
-                            mFis = new java.io.FileInputStream(cached);
+                            mFis = new java.io.FileInputStream(cachedRef);
                             mZis = new ZipInputStream(mFis);
                             ZipEntry entry;
                             while ((entry = mZis.getNextEntry()) != null) {
@@ -1092,6 +953,7 @@ public final class SpiderDen {
                     };
                 }
             } catch (Throwable e) {
+                android.util.Log.e("SpiderDen", "gid.cbz cache FAILED: gid=" + mGid + ", path=" + relGidCbz + ", err=" + e);
                 if (BuildConfig.DEBUG) {
                     android.util.Log.d("SpiderDen", "SMB gid.cbz cache failed: gid=" + mGid + ", path=" + relGidCbz + ", err=" + e);
                 }
@@ -1099,51 +961,167 @@ public final class SpiderDen {
             }
         }
 
-        // 若 base 直接指向 .cbz 文件，则直接从该 CBZ 读取
-        if (!normBase.isEmpty() && normBase.toLowerCase(java.util.Locale.US).endsWith(".cbz")) {
+        // 若 base 直接指向 .cbz 文件，先下载到本地缓存再用 ZipFile 随机访问
+        if (isDirectCbz) {
             final Client.Target cbzTarget = new Client.Target(resolved.getAuthority(), resolved.getShare(), normBase);
             final String[] extsDirect = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+            android.util.Log.i("SpiderDen", "direct CBZ path: gid=" + mGid + ", cbzPath=" + normBase);
             if (BuildConfig.DEBUG) {
                 android.util.Log.d("SpiderDen", "SMB direct CBZ mapping detected: gid=" + mGid + ", cbzPath=" + normBase);
             }
-            return new InputStreamPipe() {
-                private java.io.InputStream mBase;
-                private ZipInputStream mZis;
-                @Override public void obtain() { /* no-op */ }
-                @Override public void release() { /* no-op */ }
-                @Override public java.io.InputStream open() throws IOException {
-                    mBase = Client.INSTANCE.openInputStream(cbzTarget);
-                    mZis = new ZipInputStream(mBase);
-                    ZipEntry entry;
-                    while ((entry = mZis.getNextEntry()) != null) {
-                        if (entry.isDirectory()) continue;
-                        String en = entry.getName();
-                        if (en == null) continue;
-                        for (String ext : extsDirect) {
-                            String expect = generateImageFilename(index, ext);
-                            if (expect.equalsIgnoreCase(en)) {
-                                if (BuildConfig.DEBUG) {
-                                    android.util.Log.d("SpiderDen", "SMB direct CBZ hit entry: gid=" + mGid + ", index=" + (index+1) + ", name=" + en);
-                                }
-                                return mZis;
+
+            // 优先使用 ZipFile 随机访问缓存的 CBZ (O(1))
+            try {
+                java.util.zip.ZipFile cachedZip = CbzCacheManager.INSTANCE.openCachedZipFile(
+                    resolved.getAuthority(), resolved.getShare(), normBase);
+                if (cachedZip != null) {
+                    android.util.Log.i("SpiderDen", "direct CBZ cache HIT (ZipFile): gid=" + mGid);
+                    if (BuildConfig.DEBUG) {
+                        android.util.Log.d("SpiderDen", "SMB direct CBZ cache hit (ZipFile): gid=" + mGid + ", path=" + normBase);
+                    }
+                    final java.util.zip.ZipFile zipRef = cachedZip;
+                    java.io.InputStream entryStream = findEntryInZipFile(zipRef, index, extsDirect);
+                    if (entryStream != null) {
+                        return new InputStreamPipe() {
+                            private java.io.InputStream mIs;
+                            @Override public void obtain() { /* no-op */ }
+                            @Override public void release() { /* no-op */ }
+                            @Override public java.io.InputStream open() throws IOException {
+                                if (mIs != null) return mIs;
+                                mIs = findEntryInZipFile(zipRef, index, extsDirect);
+                                if (mIs == null) throw new IOException("Entry not found in cached CBZ for index=" + index);
+                                return mIs;
                             }
+                            @Override public void close() {
+                                com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs);
+                                mIs = null;
+                            }
+                        };
+                    }
+                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(zipRef);
+                }
+            } catch (Throwable e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "Failed to get cached direct CBZ ZipFile: " + e);
+                }
+            }
+
+            // 缓存未命中，从 SMB 同步下载 CBZ 到本地缓存，然后用 ZipFile 随机访问
+            android.util.Log.i("SpiderDen", "direct CBZ cache MISS, downloading: gid=" + mGid + ", path=" + normBase);
+            try {
+                // 查询文件大小用于进度显示
+                long fileSize = -1;
+                try {
+                    fileSize = Client.INSTANCE.getFileSize(cbzTarget);
+                } catch (Throwable ignore) {}
+                final long totalBytes = fileSize;
+
+                java.io.InputStream probe = Client.INSTANCE.openInputStream(cbzTarget);
+                com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.startDownload(totalBytes);
+                android.util.Log.i("SpiderDen", "direct CBZ SMB stream opened, starting download: gid=" + mGid + ", size=" + totalBytes);
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB direct CBZ found, downloading to cache: gid=" + mGid + ", path=" + normBase);
+                }
+
+                // 带进度的下载
+                CbzCacheManager.INSTANCE.downloadWithProgress(
+                    resolved.getAuthority(), resolved.getShare(), normBase, probe, totalBytes,
+                    new CbzCacheManager.ProgressListener() {
+                        @Override public void onProgress(long bytesRead, long total, long speedBps) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.updateProgress(bytesRead, total, speedBps);
+                        }
+                        @Override public void onComplete(java.io.File file) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.finishDownload();
+                        }
+                        @Override public void onError(Exception e) {
+                            com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.finishDownload();
                         }
                     }
+                );
+                com.hippo.lib.yorozuya.IOUtils.closeQuietly(probe);
+
+                java.io.File cached = CbzCacheManager.INSTANCE.getCachedFile(resolved.getAuthority(), resolved.getShare(), normBase);
+                android.util.Log.i("SpiderDen", "direct CBZ download result: gid=" + mGid
+                    + ", cached=" + (cached != null ? cached.exists() : false)
+                    + (cached != null ? ", size=" + cached.length() : ""));
+
+                if (cached != null && cached.exists()) {
                     if (BuildConfig.DEBUG) {
-                        android.util.Log.d("SpiderDen", "SMB direct CBZ miss entry: gid=" + mGid + ", index=" + (index+1) + ", cbzPath=" + normBase);
+                        android.util.Log.d("SpiderDen", "SMB direct CBZ cached locally: gid=" + mGid + ", size=" + cached.length());
                     }
-                    close();
-                    throw new IOException("Entry not found in remote CBZ (direct) for index=" + index);
+                    // 用 ZipFile 随机访问 (O(1))
+                    try {
+                        java.util.zip.ZipFile zipFile = CbzCacheManager.INSTANCE.openCachedZipFile(
+                            resolved.getAuthority(), resolved.getShare(), normBase);
+                        if (zipFile != null) {
+                            final java.util.zip.ZipFile zipRef = zipFile;
+                            java.io.InputStream entryStream = findEntryInZipFile(zipRef, index, extsDirect);
+                            if (entryStream != null) {
+                                return new InputStreamPipe() {
+                                    private java.io.InputStream mIs;
+                                    @Override public void obtain() { /* no-op */ }
+                                    @Override public void release() { /* no-op */ }
+                                    @Override public java.io.InputStream open() throws IOException {
+                                        if (mIs != null) return mIs;
+                                        mIs = findEntryInZipFile(zipRef, index, extsDirect);
+                                        if (mIs == null) throw new IOException("Entry not found in cached direct CBZ for index=" + index);
+                                        return mIs;
+                                    }
+                                    @Override public void close() {
+                                        com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs);
+                                        mIs = null;
+                                    }
+                                };
+                            }
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(zipFile);
+                        }
+                    } catch (Throwable zipErr) {
+                        if (BuildConfig.DEBUG) {
+                            android.util.Log.d("SpiderDen", "ZipFile open failed for downloaded direct CBZ: " + zipErr);
+                        }
+                    }
+                    // Fallback: 旧的 ZipInputStream 顺序扫描
+                    final java.io.File cachedRef = cached;
+                    return new InputStreamPipe() {
+                        private java.io.FileInputStream mFis;
+                        private ZipInputStream mZis;
+                        @Override public void obtain() { /* no-op */ }
+                        @Override public void release() { /* no-op */ }
+                        @Override public java.io.InputStream open() throws IOException {
+                            mFis = new java.io.FileInputStream(cachedRef);
+                            mZis = new ZipInputStream(mFis);
+                            ZipEntry entry;
+                            while ((entry = mZis.getNextEntry()) != null) {
+                                if (entry.isDirectory()) continue;
+                                String en = entry.getName();
+                                if (en == null) continue;
+                                for (String ext : extsDirect) {
+                                    String expect = generateImageFilename(index, ext);
+                                    if (expect.equalsIgnoreCase(en)) {
+                                        return mZis;
+                                    }
+                                }
+                            }
+                            close();
+                            throw new IOException("Entry not found in cached direct CBZ for index=" + index);
+                        }
+                        @Override public void close() {
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
+                            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mFis);
+                            mZis = null; mFis = null;
+                        }
+                    };
                 }
-                @Override public void close() {
-                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mZis);
-                    com.hippo.lib.yorozuya.IOUtils.closeQuietly(mBase);
-                    mZis = null; mBase = null;
+            } catch (Throwable e) {
+                if (BuildConfig.DEBUG) {
+                    android.util.Log.d("SpiderDen", "SMB direct CBZ cache failed: gid=" + mGid + ", path=" + normBase + ", err=" + e);
                 }
-            };
+                mLastSmbError = "SMB CBZ: " + smbFullPath + " — " + getShortError(e);
+            }
         }
 
         // 尝试所有支持的扩展名（base 为目录场景）
+        android.util.Log.i("SpiderDen", "falling back to individual SMB files: gid=" + mGid + ", normBase=" + normBase);
         // 先查缓存，命中则只尝试该扩展名
         String cachedExt = sSmbExtCache.get(mGid);
         String[] extsToTry = cachedExt != null
@@ -1291,6 +1269,50 @@ public final class SpiderDen {
         }
         if (mLastSmbError == null) {
             mLastSmbError = "SMB: " + smbFullPath + " — 找不到第 " + (index + 1) + " 页";
+        }
+        return null;
+    }
+
+    /**
+     * 使用 ZipFile 随机访问从 CBZ 中读取指定图片条目 (O(1) 复杂度)
+     *
+     * @param zipFile 已打开的 ZipFile
+     * @param index 图片索引 (0-based)
+     * @param exts 支持的图片扩展名数组
+     * @return 包含图片数据的 InputStream，未找到返回 null
+     */
+    private static java.io.InputStream findEntryInZipFile(java.util.zip.ZipFile zipFile, int index, String[] exts) {
+        // 策略1: 精确文件名匹配 (O(1))
+        for (String ext : exts) {
+            String expect = generateImageFilename(index, ext);
+            java.util.zip.ZipEntry entry = zipFile.getEntry(expect);
+            if (entry != null && !entry.isDirectory()) {
+                try {
+                    return zipFile.getInputStream(entry);
+                } catch (IOException ignored) {
+                }
+            }
+        }
+
+        // 策略2: 模糊匹配（遍历所有条目）
+        String indexPrefix = String.format(java.util.Locale.US, "%08d", index + 1);
+        java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            java.util.zip.ZipEntry entry = entries.nextElement();
+            if (entry.isDirectory()) continue;
+            String en = entry.getName();
+            if (en == null) continue;
+            // 检查是否匹配目标索引
+            String nameLower = en.toLowerCase(java.util.Locale.US);
+            for (String ext : exts) {
+                String expectLower = (indexPrefix + ext).toLowerCase(java.util.Locale.US);
+                if (nameLower.equals(expectLower)) {
+                    try {
+                        return zipFile.getInputStream(entry);
+                    } catch (IOException ignored) {
+                    }
+                }
+            }
         }
         return null;
     }

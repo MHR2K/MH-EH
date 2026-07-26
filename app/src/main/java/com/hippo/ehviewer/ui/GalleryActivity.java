@@ -50,6 +50,7 @@ import android.webkit.MimeTypeMap;
 import android.widget.CompoundButton;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -471,6 +472,24 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         mSeekBar = (ReversibleSeekBar) ViewUtils.$$(mSeekBarPanel, R.id.seek_bar);
         mSeekBar.setOnSeekBarChangeListener(this);
         mAutoTransferPanel.setOnClickListener(this::autoRead);
+
+        // CBZ 下载进度面板
+        View cbzProgressPanel = ViewUtils.$$(this, R.id.cbz_download_progress_panel);
+        ProgressBar cbzProgressBar = (ProgressBar) ViewUtils.$$(this, R.id.cbz_download_progress_bar);
+        TextView cbzStatusText = (TextView) ViewUtils.$$(this, R.id.cbz_download_status);
+        com.hippo.ehviewer.smb.CbzDownloadTracker.INSTANCE.getState().observe(this, state -> {
+            if (state.isActive()) {
+                cbzProgressPanel.setVisibility(View.VISIBLE);
+                cbzProgressBar.setProgress(state.getPercent());
+                String status = state.getPercent() + "%";
+                if (state.getSpeedBps() > 0) {
+                    status += " · " + state.getSpeedText();
+                }
+                cbzStatusText.setText(status);
+            } else {
+                cbzProgressPanel.setVisibility(View.GONE);
+            }
+        });
 
         mSize = mGalleryProvider.size();
         mCurrentIndex = startPage;

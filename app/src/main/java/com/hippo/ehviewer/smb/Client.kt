@@ -317,6 +317,39 @@ object Client {
     }
 
     /**
+     * 查询 SMB 文件大小（字节）
+     * 用于下载进度计算
+     */
+    @Throws(IOException::class)
+    fun getFileSize(target: Target): Long {
+        val share = getDiskShare(getSession(target.authority), target.share)
+        val file: File = try {
+            share.openFile(
+                target.pathInShare,
+                setOf(AccessMask.FILE_READ_ATTRIBUTES),
+                null,
+                SMB2ShareAccess.ALL,
+                SMB2CreateDisposition.FILE_OPEN,
+                null
+            )
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        }
+        return try {
+            val info = file.getFileInformation()
+            val size = info.standardInformation.endOfFile
+            if (BuildConfig.DEBUG) {
+                android.util.Log.d("Client", "SMB getFileSize: path=${target.pathInShare}, size=$size")
+            }
+            size
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        } finally {
+            try { file.close() } catch (_: Throwable) {}
+        }
+    }
+
+    /**
      * 递归创建目录 target.pathInShare
      */
     @Throws(IOException::class)
