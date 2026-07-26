@@ -102,8 +102,8 @@ object SmbFileHelper {
     private fun openSmbInputStreamPipe(target: Client.Target): InputStreamPipe? {
         return try {
             object : InputStreamPipe {
-                // 保存 target 以便每次打开时重新创建输入流
                 private val targetRef = target
+                private var currentStream: InputStream? = null
 
                 override fun obtain() {
                     // no-op
@@ -114,12 +114,16 @@ object SmbFileHelper {
                 }
 
                 override fun open(): InputStream {
-                    // 每次打开时重新创建输入流，支持多次读取
-                    return Client.openInputStream(targetRef)
+                    // 关闭上一次的流，防止泄漏
+                    currentStream?.let { IOUtils.closeQuietly(it) }
+                    val stream = Client.openInputStream(targetRef)
+                    currentStream = stream
+                    return stream
                 }
 
                 override fun close() {
-                    // 不在这里关闭流，由调用者管理
+                    currentStream?.let { IOUtils.closeQuietly(it) }
+                    currentStream = null
                 }
             }
         } catch (e: Exception) {

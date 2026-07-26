@@ -119,25 +119,32 @@ class ThumbDataContainer(
                     }
 
                     // 顺便加载 .ehviewer (SpiderInfo) 获取页数
+                    // 先查 SpiderInfoRepository 缓存（内存→DB），命中则跳过 SMB
                     if (onSpiderInfoLoaded != null) {
-                        try {
-                            val ehviewerPipe = SmbFileHelper.getSmbFileInputStream(mInfo.gid, ".ehviewer")
-                            if (ehviewerPipe != null) {
-                                ehviewerPipe.obtain()
-                                try {
-                                    val inputStream = ehviewerPipe.open()
-                                    val spiderInfo = SpiderInfo.read(inputStream)
-                                    if (spiderInfo != null && spiderInfo.gid == mInfo.gid) {
-                                        onSpiderInfoLoaded?.onSpiderInfoLoaded(spiderInfo)
-                                        Log.d(TAG, "Successfully loaded SpiderInfo from SMB for gid: ${mInfo.gid}")
+                        val cached = com.hippo.ehviewer.EhApplication.getSpiderInfoRepository(mContext).getFromDbOnly(mInfo.gid)
+                        if (cached != null) {
+                            onSpiderInfoLoaded?.onSpiderInfoLoaded(cached)
+                            Log.d(TAG, "SpiderInfo cache hit for gid: ${mInfo.gid}, skip SMB")
+                        } else {
+                            try {
+                                val ehviewerPipe = SmbFileHelper.getSmbFileInputStream(mInfo.gid, ".ehviewer")
+                                if (ehviewerPipe != null) {
+                                    ehviewerPipe.obtain()
+                                    try {
+                                        val inputStream = ehviewerPipe.open()
+                                        val spiderInfo = SpiderInfo.read(inputStream)
+                                        if (spiderInfo != null && spiderInfo.gid == mInfo.gid) {
+                                            onSpiderInfoLoaded?.onSpiderInfoLoaded(spiderInfo)
+                                            Log.d(TAG, "Successfully loaded SpiderInfo from SMB for gid: ${mInfo.gid}")
+                                        }
+                                    } finally {
+                                        ehviewerPipe.close()
+                                        ehviewerPipe.release()
                                     }
-                                } finally {
-                                    ehviewerPipe.close()
-                                    ehviewerPipe.release()
                                 }
+                            } catch (e2: Exception) {
+                                Log.w(TAG, "Failed to load .ehviewer from SMB for gid: ${mInfo.gid}", e2)
                             }
-                        } catch (e2: Exception) {
-                            Log.w(TAG, "Failed to load .ehviewer from SMB for gid: ${mInfo.gid}", e2)
                         }
                     }
                 } catch (e: Exception) {
