@@ -239,7 +239,7 @@ public class ContentLayout extends FrameLayout {
         /**
          * The first page in <code>mData</code>
          */
-        private int mStartPage;
+        protected int mStartPage;
 
         /**
          * The last page + 1 in <code>mData</code>

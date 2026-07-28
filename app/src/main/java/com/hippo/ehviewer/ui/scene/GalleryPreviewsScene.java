@@ -81,6 +81,8 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
     @Nullable
     private GalleryInfo mGalleryInfo;
     private boolean mJumpToLastPage = false;
+    private boolean mScrollToLastPageBottom = false;
+    private boolean mLoadingPrevPage = false;
 
     /*---------------
      View life cycle
@@ -344,8 +346,40 @@ public class GalleryPreviewsScene extends ToolbarScene implements EasyRecyclerVi
         protected void onScrollToPosition(int position) {
             super.onScrollToPosition(position);
             if (mJumpToLastPage && mPages > 0) {
+                // Step 1: Load last page (may be async or sync if already in range)
+                // Set next-state BEFORE goTo to handle re-entrant call
                 mJumpToLastPage = false;
+                if (mPages > 1) {
+                    mScrollToLastPageBottom = true;
+                }
                 goTo(mPages - 1);
+            } else if (mScrollToLastPageBottom) {
+                // Step 2: Last page loaded, load previous page via TYPE_PRE_PAGE
+                // Set next-state BEFORE goTo to handle re-entrant call
+                mScrollToLastPageBottom = false;
+                if (mStartPage > 0) {
+                    mLoadingPrevPage = true;
+                    goTo(mStartPage - 1);
+                } else {
+                    // Already on first page, just scroll to bottom
+                    scrollToLastItem();
+                }
+            } else if (mLoadingPrevPage) {
+                // Step 3: Previous page loaded, scroll to last item (bottom)
+                mLoadingPrevPage = false;
+                scrollToLastItem();
+            }
+        }
+
+        private void scrollToLastItem() {
+            int lastPos = size() - 1;
+            if (lastPos >= 0 && mRecyclerView != null) {
+                mRecyclerView.post(() -> {
+                    RecyclerView.LayoutManager lm = mRecyclerView.getLayoutManager();
+                    if (lm != null) {
+                        lm.scrollToPosition(lastPos);
+                    }
+                });
             }
         }
 
