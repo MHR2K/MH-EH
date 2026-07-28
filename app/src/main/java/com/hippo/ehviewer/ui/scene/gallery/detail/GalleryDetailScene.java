@@ -88,6 +88,7 @@ import com.hippo.ehviewer.client.exception.NoHAtHClientException;
 import com.hippo.ehviewer.client.parser.RateGalleryParser;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.dao.Filter;
+import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderQueen;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.GalleryActivity;
@@ -680,6 +681,10 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         EhApplication.getDownloadManager(context).addDownloadInfoListener(this);
         if (myUpdateDialog == null) {
             myUpdateDialog = new GalleryUpdateDialog(this, context);
+            myUpdateDialog.setOnUpdateConfirmListener(request -> {
+                // 用户确认更新，执行更新流程
+                executeGalleryUpdate(request);
+            });
         }
         return view;
     }
@@ -1477,7 +1482,8 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             if (mGalleryDetail == null) {
                 return;
             }
-            myUpdateDialog.showSelectDialog(mGalleryDetail);
+            boolean isDownloaded = mDownloadState != DownloadInfo.STATE_INVALID;
+            myUpdateDialog.showEntryDialog(mGalleryDetail, isDownloaded);
         } else if (mRead == v) {
             GalleryInfo galleryInfo = null;
             if (mGalleryInfo != null) {
@@ -1762,6 +1768,47 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         request(updateUrl, GetGalleryDetailListener.RESULT_UPDATE);
     }
 
+    /**
+     * 执行漫画更新
+     */
+    private void executeGalleryUpdate(GalleryUpdateDialog.UpdateRequest request) {
+        Context context = getEHContext();
+        if (context == null || mGalleryDetail == null) {
+            return;
+        }
+        DownloadInfo oldInfo = mDownloadInfo;
+        if (oldInfo == null) {
+            showTip(R.string.gallery_update_not_downloaded, LENGTH_SHORT);
+            return;
+        }
+
+        DownloadManager dm = EhApplication.getDownloadManager(context);
+        com.hippo.ehviewer.download.GalleryUpdater updater = new com.hippo.ehviewer.download.GalleryUpdater(context, dm);
+        updater.executeUpdate(oldInfo, request, new com.hippo.ehviewer.download.GalleryUpdater.UpdateCallback() {
+            @Override
+            public void onUpdateStart() {
+                showTip(R.string.gallery_update_in_progress, LENGTH_SHORT);
+            }
+
+            @Override
+            public void onUpdateProgress(String message) {
+                // 可选：显示进度
+            }
+
+            @Override
+            public void onUpdateQueued() {
+                showTip(R.string.gallery_update_queued, LENGTH_SHORT);
+                // 刷新 UI
+                updateDownloadState();
+            }
+
+            @Override
+            public void onUpdateFailed(String error) {
+                showTip(R.string.gallery_update_failed, LENGTH_LONG);
+            }
+        });
+    }
+
     public void startDownloadAsNew(String updateUrl) {
         if (mGalleryDetail == null || mGalleryDetail.newVersions == null) {
             return;
@@ -1925,11 +1972,6 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         }
         adjustViewVisibility(STATE_NORMAL, true);
         bindViewSecond();
-        if (myUpdateDialog != null && myUpdateDialog.autoDownload) {
-            myUpdateDialog.autoDownload = false;
-            mDownloadState = DownloadInfo.STATE_INVALID;
-            onDownload();
-        }
     }
 
     private static boolean isEmpty(String s) {

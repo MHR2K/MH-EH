@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <RadioGroup
+        android:id="@+id/update_mode_group"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <RadioButton
+            android:id="@+id/mode_update_back"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="@string/gallery_update_mode_back"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <RadioButton
+            android:id="@+id/mode_update_front"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/gallery_update_mode_front"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <RadioButton
+            android:id="@+id/mode_full_replace"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/gallery_update_mode_full"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+        <RadioButton
+            android:id="@+id/mode_custom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/gallery_update_mode_custom"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp" />
+
+    </RadioGroup>
+
+    <!-- 自定义模式的页数输入区域 -->
+    <LinearLayout
+        android:id="@+id/custom_mode_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:paddingTop="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/gallery_update_custom_hint"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <!-- 旧版页数范围 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/gallery_update_old_pages"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/et_old_start"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:inputType="number"
+                android:text="1"
+                android:gravity="center"
+                android:maxLines="1" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" ~ "
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/et_old_end"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:gravity="center"
+                android:maxLines="1" />
+
+        </LinearLayout>
+
+        <!-- 新版页数范围 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/gallery_update_new_pages"
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/et_new_start"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:inputType="number"
+                android:text="1"
+                android:gravity="center"
+                android:maxLines="1" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" ~ "
+                android:textSize="14sp" />
+
+            <EditText
+                android:id="@+id/et_new_end"
+                android:layout_width="60dp"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:gravity="center"
+                android:maxLines="1" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

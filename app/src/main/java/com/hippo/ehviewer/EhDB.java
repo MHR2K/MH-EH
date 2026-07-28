@@ -970,6 +970,11 @@ public class EhDB {
         dao.delete(info);
     }
 
+    public static synchronized void removeHistoryInfo(long gid) {
+        HistoryDao dao = sDaoSession.getHistoryDao();
+        dao.deleteByKey(gid);
+    }
+
     public static synchronized void clearHistoryInfo() {
         HistoryDao dao = sDaoSession.getHistoryDao();
         dao.deleteAll();

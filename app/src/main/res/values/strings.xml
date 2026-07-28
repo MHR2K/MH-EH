@@ -1129,6 +1129,35 @@
     <string name="gallery_update_dialog_message">Overwrite old gallery: Only the downloaded version will be kept, the old version will be deleted.\nDownload as new gallery: The downloaded gallery will exist as a new gallery, and both the new gallery and the old gallery will be saved.</string>
     <string name="gallery_update_download_as_new">Download as new</string>
     <string name="gallery_update_override_old">Overwrite old</string>
+    <!-- Gallery Update (new flow) -->
+    <string name="gallery_update_select_version">Select version</string>
+    <string name="gallery_update_view_detail">View new version details</string>
+    <string name="gallery_update_download">Update download</string>
+    <string name="gallery_update_mode_title">Select update mode</string>
+    <string name="gallery_update_mode_back">Update back (download new pages at the end)</string>
+    <string name="gallery_update_mode_front">Update front (new pages added at the beginning)</string>
+    <string name="gallery_update_mode_full">Full replace (re-download everything)</string>
+    <string name="gallery_update_mode_custom">Custom (specify page mapping)</string>
+    <string name="gallery_update_custom_hint">Specify the page range mapping between old and new versions</string>
+    <string name="gallery_update_old_pages">Old version pages:</string>
+    <string name="gallery_update_new_pages">New version pages:</string>
+    <string name="gallery_update_next">Next</string>
+    <string name="gallery_update_confirm_title">Confirm update</string>
+    <string name="gallery_update_confirm_message">Old version: gid=%1$d - %2$s [%3$d pages]\nNew version: %4$s\nMode: %5$s\n%6$s</string>
+    <string name="gallery_update_desc_back">Keep the first %1$d pages, download new pages at the end.</string>
+    <string name="gallery_update_desc_front">New pages added at the beginning, renumber existing %1$d pages.</string>
+    <string name="gallery_update_desc_full">Delete old files and re-download everything.</string>
+    <string name="gallery_update_desc_custom">Old version pages %1$d-%2$d correspond to new version pages %3$d-%4$d.</string>
+    <string name="gallery_update_start">Start update</string>
+    <string name="gallery_update_not_downloaded">This gallery is not downloaded yet</string>
+    <string name="gallery_update_in_progress">Updating…</string>
+    <string name="gallery_update_success">Update completed</string>
+    <string name="gallery_update_queued">Files processed, new version added to download</string>
+    <string name="gallery_update_failed">Update failed</string>
+    <string name="gallery_update_error_invalid_old_range">Invalid old version page range</string>
+    <string name="gallery_update_error_invalid_new_range">Invalid new version page range</string>
+    <string name="gallery_update_error_page_mismatch">Page count mismatch: old version has %1$d pages, new version has %2$d pages. They must be equal.</string>
+    <string name="gallery_update_error_old_exceeds">Old version page range end (%1$d) exceeds actual page count (%2$d)</string>
     <string name="loading_db_file">Data Loading …</string>
     <string name="settings_eh_history_size">Number of historical records</string>
     <string name="history_info_unlimited">Unlimited</string>

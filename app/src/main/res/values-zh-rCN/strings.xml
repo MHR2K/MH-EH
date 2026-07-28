@@ -1017,6 +1017,35 @@
     <string name="gallery_update_dialog_message">覆盖旧画廊：只保留下载版本，旧版本将被删除。\n下载为新画廊：下载画廊将以新画廊形式存在，新画廊与旧画廊均会被保存。</string>
     <string name="gallery_update_download_as_new">下载为新</string>
     <string name="gallery_update_override_old">覆盖下载</string>
+    <!-- Gallery Update (new flow) -->
+    <string name="gallery_update_select_version">选择版本</string>
+    <string name="gallery_update_view_detail">查看新版本详情</string>
+    <string name="gallery_update_download">更新下载</string>
+    <string name="gallery_update_mode_title">选择更新模式</string>
+    <string name="gallery_update_mode_back">更新后方（下载末尾新增页）</string>
+    <string name="gallery_update_mode_front">更新前方（新页添加到开头）</string>
+    <string name="gallery_update_mode_full">全部替换（重新下载）</string>
+    <string name="gallery_update_mode_custom">自定义（指定页数映射）</string>
+    <string name="gallery_update_custom_hint">指定新旧版本的页数范围映射</string>
+    <string name="gallery_update_old_pages">旧版页数:</string>
+    <string name="gallery_update_new_pages">新版页数:</string>
+    <string name="gallery_update_next">下一步</string>
+    <string name="gallery_update_confirm_title">确认更新</string>
+    <string name="gallery_update_confirm_message">旧版: gid=%1$d - %2$s [%3$d页]\n\n新版: %4$s\n\n模式: %5$s\n\n%6$s</string>
+    <string name="gallery_update_desc_back">保留前 %1$d 页，下载末尾新增页。</string>
+    <string name="gallery_update_desc_front">新页添加到开头，重编号已有的 %1$d 页。</string>
+    <string name="gallery_update_desc_full">删除旧文件，全部重新下载。</string>
+    <string name="gallery_update_desc_custom">旧版页 %1$d-%2$d 对应新版页 %3$d-%4$d。</string>
+    <string name="gallery_update_start">开始更新</string>
+    <string name="gallery_update_not_downloaded">此画廊尚未下载</string>
+    <string name="gallery_update_in_progress">正在更新…</string>
+    <string name="gallery_update_success">更新完成</string>
+    <string name="gallery_update_queued">文件处理完成，新版本已加入下载</string>
+    <string name="gallery_update_failed">更新失败</string>
+    <string name="gallery_update_error_invalid_old_range">旧版页数范围无效</string>
+    <string name="gallery_update_error_invalid_new_range">新版页数范围无效</string>
+    <string name="gallery_update_error_page_mismatch">页数不匹配：旧版 %1$d 页，新版 %2$d 页，两边页数必须相等</string>
+    <string name="gallery_update_error_old_exceeds">旧版页数范围结束值 (%1$d) 超出实际页数 (%2$d)</string>
     <string name="loading_db_file">数据加载中 …</string>
     <string name="settings_eh_history_size">历史记录数量</string>
     <string name="history_info_unlimited">无限制</string>
