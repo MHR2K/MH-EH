@@ -3531,11 +3531,22 @@ public class DownloadsScene extends ToolbarScene
             return;
         }
 
-        int targetPosition;
-        
         if (targetGidInput.isEmpty()) {
             // 没有输入，移到列表的最前面（该标签最新的位置）
-            targetPosition = 0;
+            sourceInfo.time = System.currentTimeMillis() + 1;
+            EhDB.putDownloadInfo(sourceInfo);
+            mBackList.sort((a, b) -> Long.compare(b.time, a.time));
+            if (mList != mBackList) {
+                int srcIdx = -1;
+                for (int i = 0; i < mList.size(); i++) {
+                    if (mList.get(i).gid == sourceInfo.gid) { srcIdx = i; break; }
+                }
+                if (srcIdx != -1) mList.remove(srcIdx);
+                mList.add(0, sourceInfo);
+            }
+            if (mOriginalAdapter != null) mOriginalAdapter.notifyDataSetChanged();
+            Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
+            return;
         } else if (targetGidInput.equals("0")) {
             // 输入0，移动到默认下载标签的最前端（最新位置）
             // 需要先更新时间为当前时间（确保排序在最前），然后更改标签
@@ -3568,73 +3579,79 @@ public class DownloadsScene extends ToolbarScene
             }
             return;
         } else {
-            // 查找目标gid在列表中的位置
+            // 输入GID，移到该项后面
             try {
                 long targetGid = Long.parseLong(targetGidInput);
-                targetPosition = -1;
-                for (int i = 0; i < mList.size(); i++) {
-                    if (mList.get(i).gid == targetGid) {
-                        targetPosition = i;
-                        break;
+
+                // 在 mBackList 中找到目标项和源项
+                int targetIdx = -1;
+                int sourceIdx = -1;
+                for (int i = 0; i < mBackList.size(); i++) {
+                    if (mBackList.get(i).gid == targetGid) {
+                        targetIdx = i;
+                    }
+                    if (mBackList.get(i).gid == sourceInfo.gid) {
+                        sourceIdx = i;
                     }
                 }
-                
-                if (targetPosition == -1) {
+
+                if (targetIdx == -1) {
                     Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
                     return;
                 }
-                
-                // 目标位置移动到该项的后面（下一个位置）
-                targetPosition = targetPosition + 1;
-                if (targetPosition >= mList.size()) {
-                    targetPosition = mList.size() - 1;
+
+                // 避免移到相邻位置（已在目标后面）
+                if (sourceIdx == targetIdx + 1) {
+                    return;
+                }
+
+                // 计算源项的新 time：使其排在目标项之后
+                // 列表按 time 降序排列，源的 time 需要小于目标的 time
+                long targetTime = mBackList.get(targetIdx).time;
+                long newTime;
+                if (targetIdx + 1 < mBackList.size()) {
+                    // 目标有后继项：取目标和后继的 time 中间值
+                    newTime = (targetTime + mBackList.get(targetIdx + 1).time) / 2;
+                } else {
+                    // 目标是最后一项：取目标 time - 1
+                    newTime = targetTime - 1;
+                }
+
+                // 更新源项的 time 并写入数据库
+                sourceInfo.time = newTime;
+                EhDB.putDownloadInfo(sourceInfo);
+
+                // mBackList 按 time 降序重排
+                mBackList.sort((a, b) -> Long.compare(b.time, a.time));
+
+                // 同步更新 mList（筛选列表）
+                if (mList != mBackList) {
+                    // 通过 GID 找到源项在 mList 中的位置
+                    int sourceIndexInList = -1;
+                    for (int i = 0; i < mList.size(); i++) {
+                        if (mList.get(i).gid == sourceInfo.gid) {
+                            sourceIndexInList = i;
+                            break;
+                        }
+                    }
+                    if (sourceIndexInList != -1) {
+                        mList.remove(sourceIndexInList);
+                        // 用目标 GID 在 mList 中定位插入点（插入到目标之后）
+                        int insertIndex = mList.size();
+                        for (int i = 0; i < mList.size(); i++) {
+                            if (mList.get(i).gid == targetGid) {
+                                insertIndex = i + 1;
+                                break;
+                            }
+                        }
+                        mList.add(insertIndex, sourceInfo);
+                    }
                 }
             } catch (NumberFormatException e) {
                 Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
                 return;
             }
         }
-
-        // 避免移到同一位置
-        if (sourcePosition == targetPosition || sourcePosition + 1 == targetPosition) {
-            return;
-        }
-
-        // 计算在 mBackList 中的位置
-        int sourcePositionInBackList = -1;
-        for (int i = 0; i < mBackList.size(); i++) {
-            if (mBackList.get(i).gid == sourceInfo.gid) {
-                sourcePositionInBackList = i;
-                break;
-            }
-        }
-
-        if (sourcePositionInBackList == -1) {
-            Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // 计算目标在 mBackList 中的位置
-        int targetPositionInBackList = -1;
-        DownloadInfo targetInfo = mList.get(targetPosition);
-        for (int i = 0; i < mBackList.size(); i++) {
-            if (mBackList.get(i).gid == targetInfo.gid) {
-                targetPositionInBackList = i;
-                break;
-            }
-        }
-
-        if (targetPositionInBackList == -1) {
-            Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // 执行移动操作（在mBackList中）
-        EhDB.moveDownloadInfo(mBackList, sourcePositionInBackList, targetPositionInBackList);
-        
-        // 同步更新当前显示的列表（mList）
-        mList.remove(sourcePosition);
-        mList.add(targetPosition < sourcePosition ? targetPosition : targetPosition - 1, sourceInfo);
 
         // 更新适配器
         if (mOriginalAdapter != null) {
