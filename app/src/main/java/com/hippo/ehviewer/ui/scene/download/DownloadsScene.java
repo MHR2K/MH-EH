@@ -1283,9 +1283,69 @@ public class DownloadsScene extends ToolbarScene
 
         if (mRecyclerView != null && mRecyclerView.isInCustomChoice()) {
             mRecyclerView.outOfCustomChoiceMode();
-        } else {
-            super.onBackPressed();
+            return;
         }
+
+        // 如果当前处于筛选/搜索状态，先清除筛选，返回到筛选前的完整列表
+        if (isFilterActive()) {
+            clearAllFilters();
+            return;
+        }
+
+        super.onBackPressed();
+    }
+
+    /**
+     * 判断当前是否有任何筛选条件处于激活状态
+     */
+    private boolean isFilterActive() {
+        // 菜单筛选（状态/排序/分类/存储/阅读进度等，任何修改了 mList 的筛选）
+        if (mList != mBackList) {
+            return true;
+        }
+        // 组合筛选
+        if (mCombinedFilterActive) {
+            return true;
+        }
+        // 搜索状态
+        if (searching || (searchKey != null && !searchKey.isEmpty())) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 清除所有筛选条件，恢复到筛选前的完整列表
+     */
+    private void clearAllFilters() {
+        // 清除分类筛选 ID
+        mCurrentFilterId = -1;
+        // 清除组合筛选
+        mCombinedFilterActive = false;
+        mSelectedStatusFilters.clear();
+        mSelectedProgressFilters.clear();
+        saveFilterState();
+        // 清除搜索状态
+        searching = false;
+        searchKey = null;
+        // 重置 Spinner 为"全部"
+        if (mCategorySpinner != null) {
+            mCategorySpinner.setSelection(0);
+        }
+        mSelectedCategory = EhUtils.ALL_CATEGORY;
+        // 恢复完整列表
+        mList = mBackList;
+        if (mAdapter != null) {
+            mAdapter.notifyDataSetChanged();
+        }
+        mProgressView.setVisibility(View.GONE);
+        if (mRecyclerView != null) {
+            mRecyclerView.setVisibility(View.VISIBLE);
+        }
+        updateTitle();
+        updatePaginationIndicator();
+        updateView();
+        queryUnreadSpiderInfo();
     }
 
     @Override
