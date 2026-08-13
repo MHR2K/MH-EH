@@ -3592,7 +3592,37 @@ public class DownloadsScene extends ToolbarScene
         }
 
         if (targetGidInput.isEmpty()) {
-            // 没有输入，移到列表的最前面（该标签最新的位置）
+            // 留空，移动到默认下载标签的最前端（最新位置）
+            if (mDownloadManager != null) {
+                // 使用用户设置的默认下载标签
+                String defaultLabel = Settings.getDefaultDownloadLabel();
+
+                // 先更新源项目的时间为当前时间，这样 changeLabel 排序后会在最前面
+                sourceInfo.time = System.currentTimeMillis();
+                EhDB.putDownloadInfo(sourceInfo);
+
+                List<DownloadInfo> singleInfoList = new ArrayList<>();
+                singleInfoList.add(sourceInfo);
+                mDownloadManager.changeLabel(singleInfoList, defaultLabel);
+
+                // 如果当前不在默认下载标签视图，切换到默认下载标签
+                if (!ObjectUtils.equal(mLabel, defaultLabel)) {
+                    mLabel = defaultLabel;
+                    updateForLabel();
+                } else {
+                    // 刷新当前视图
+                    if (mOriginalAdapter != null) {
+                        mOriginalAdapter.notifyDataSetChanged();
+                    }
+                }
+
+                Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
+            }
+            return;
+        } else if (targetGidInput.equals("0")) {
+            // 输入0，移到当前标签列表的最前面（该标签最新的位置）
             sourceInfo.time = System.currentTimeMillis() + 1;
             EhDB.putDownloadInfo(sourceInfo);
             mBackList.sort((a, b) -> Long.compare(b.time, a.time));
@@ -3606,37 +3636,6 @@ public class DownloadsScene extends ToolbarScene
             }
             if (mOriginalAdapter != null) mOriginalAdapter.notifyDataSetChanged();
             Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
-            return;
-        } else if (targetGidInput.equals("0")) {
-            // 输入0，移动到默认下载标签的最前端（最新位置）
-            // 需要先更新时间为当前时间（确保排序在最前），然后更改标签
-            if (mDownloadManager != null) {
-                // 使用用户设置的默认下载标签
-                String defaultLabel = Settings.getDefaultDownloadLabel();
-                
-                // 先更新源项目的时间为当前时间，这样 changeLabel 排序后会在最前面
-                sourceInfo.time = System.currentTimeMillis();
-                EhDB.putDownloadInfo(sourceInfo);
-                
-                List<DownloadInfo> singleInfoList = new ArrayList<>();
-                singleInfoList.add(sourceInfo);
-                mDownloadManager.changeLabel(singleInfoList, defaultLabel);
-                
-                // 如果当前不在默认下载标签视图，切换到默认下载标签
-                if (!ObjectUtils.equal(mLabel, defaultLabel)) {
-                    mLabel = defaultLabel;
-                    updateForLabel();
-                } else {
-                    // 刷新当前视图
-                    if (mOriginalAdapter != null) {
-                        mOriginalAdapter.notifyDataSetChanged();
-                    }
-                }
-                
-                Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
-            }
             return;
         } else {
             // 输入GID，移到该项后面
