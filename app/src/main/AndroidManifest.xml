@@ -229,6 +229,11 @@
             android:label="@string/hosts"
             android:theme="@style/AppTheme.Toolbar" />
         <activity
+            android:name=".ui.StatisticsActivity"
+            android:configChanges="screenSize|uiMode"
+            android:label="@string/statistics_title"
+            android:theme="@style/AppTheme.Toolbar" />
+        <activity
             android:name=".shortcuts.ShortcutsActivity"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"

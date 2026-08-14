@@ -170,4 +170,11 @@
         android:summary="@string/settings_advanced_full_backup_restore_summary"
         app:allowDividerAbove="true" />
 
+    <com.hippo.preference.ActivityPreference
+        android:key="statistics"
+        android:title="@string/settings_advanced_statistics"
+        android:summary="@string/settings_advanced_statistics_summary"
+        app:activity="com.hippo.ehviewer.ui.StatisticsActivity"
+        app:allowDividerAbove="true" />
+
 </PreferenceScreen>

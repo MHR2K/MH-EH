@@ -642,6 +642,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // Add it to history
             EhDB.putHistoryInfo(info);
+
+            // 统计：添加下载
+            com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
         }
     }
 
@@ -887,6 +890,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         for (DownloadInfoListener l : mDownloadInfoListeners) {
             l.onAdd(info, list, list.size() - 1);
         }
+
+        // 统计：添加下载
+        com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
     }
 
     public void addDownload(GalleryInfo galleryInfo, @Nullable String label) {
@@ -918,6 +924,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         // Save to
         EhDB.putDownloadInfo(info);
         mAllInfoMap.put(galleryInfo.gid, info);
+
+        // 统计：添加下载
+        com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
     }
 
 
@@ -1592,6 +1601,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     }
                     if (info.legacy == 0) {
                         info.state = DownloadInfo.STATE_FINISH;
+                        // 统计：下载完成
+                        com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadCompleted();
                     } else {
                         info.state = DownloadInfo.STATE_FAILED;
                     }

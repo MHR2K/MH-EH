@@ -1236,4 +1236,17 @@
 
     <!-- TagSelectActivity -->
     <string name="tag_search_entrance">Tag Selector</string>
+
+    <!-- Statistics -->
+    <string name="settings_advanced_statistics">阅读统计</string>
+    <string name="settings_advanced_statistics_summary">查看每日阅读和下载统计</string>
+    <string name="statistics_title">阅读统计</string>
+    <string name="statistics_today">今日统计</string>
+    <string name="statistics_read_count">阅读完成</string>
+    <string name="statistics_download_added">添加下载</string>
+    <string name="statistics_download_completed">下载完成</string>
+    <string name="statistics_all_metrics">三项全部</string>
+    <string name="statistics_chart_title">最近7天</string>
+    <string name="statistics_history">历史记录</string>
+    <string name="statistics_no_data">暂无统计数据</string>
 </resources>

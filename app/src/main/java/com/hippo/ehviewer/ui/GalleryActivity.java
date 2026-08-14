@@ -181,6 +181,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     private int mLayoutMode;
     private int mSize;
     private int mCurrentIndex;
+    private boolean mReadCompleted = false;
 
     private boolean canFinish = false;
     private boolean autoTransferring = false;
@@ -868,6 +869,12 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     public void onUpdateCurrentIndex(int index) {
         if (null != mGalleryProvider) {
             mGalleryProvider.putStartPage(index);
+        }
+
+        // 检测是否到达最后一页（阅读完成）
+        if (mSize > 0 && index == mSize - 1 && !mReadCompleted) {
+            mReadCompleted = true;
+            com.hippo.ehviewer.stats.StatsManager.getInstance(this).incrementReadCount();
         }
 
         NotifyTask task = mNotifyTaskPool.pop();
