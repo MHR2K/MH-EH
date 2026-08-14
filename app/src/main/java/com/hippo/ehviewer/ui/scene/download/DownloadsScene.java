@@ -3569,13 +3569,27 @@ public class DownloadsScene extends ToolbarScene
                 .setMessage(getString(R.string.move_to_position_hint))
                 .setView(editText)
                 .setPositiveButton(android.R.string.ok, (dialog, which) -> {
+                    // 先收起键盘，避免窗口重建导致布局异常
+                    android.view.inputmethod.InputMethodManager imm =
+                            (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(editText.getWindowToken(), 0);
+                    }
                     String gidInput = editText.getText().toString().trim();
                     moveToPosition(context, sourceInfo, sourcePosition, gidInput);
                 })
                 .setNegativeButton(android.R.string.cancel, null);
 
         // 显示对话框
-        builder.show();
+        AlertDialog dialog = builder.show();
+        // 对话框关闭时确保键盘收起
+        dialog.setOnDismissListener(d -> {
+            android.view.inputmethod.InputMethodManager imm =
+                    (android.view.inputmethod.InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(editText.getWindowToken(), 0);
+            }
+        });
     }
 
     /**
@@ -3608,13 +3622,8 @@ public class DownloadsScene extends ToolbarScene
                 // 如果当前不在默认下载标签视图，切换到默认下载标签
                 if (!ObjectUtils.equal(mLabel, defaultLabel)) {
                     mLabel = defaultLabel;
-                    updateForLabel();
-                } else {
-                    // 刷新当前视图
-                    if (mOriginalAdapter != null) {
-                        mOriginalAdapter.notifyDataSetChanged();
-                    }
                 }
+                updateForLabel();
 
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
             } else {
@@ -3634,7 +3643,7 @@ public class DownloadsScene extends ToolbarScene
                 if (srcIdx != -1) mList.remove(srcIdx);
                 mList.add(0, sourceInfo);
             }
-            if (mOriginalAdapter != null) mOriginalAdapter.notifyDataSetChanged();
+            updateForLabel();
             Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
             return;
         } else {
@@ -3706,17 +3715,11 @@ public class DownloadsScene extends ToolbarScene
                         mList.add(insertIndex, sourceInfo);
                     }
                 }
+                updateForLabel();
+                Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
             } catch (NumberFormatException e) {
                 Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show();
-                return;
             }
         }
-
-        // 更新适配器
-        if (mOriginalAdapter != null) {
-            mOriginalAdapter.notifyDataSetChanged();
-        }
-
-        Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show();
     }
 }
