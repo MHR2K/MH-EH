@@ -133,6 +133,10 @@ import com.hippo.widget.ObservedTextView;
 import com.hippo.widget.ProgressView;
 import com.hippo.widget.SimpleGridAutoSpanLayout;
 
+import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.util.CbzUtils;
+import com.hippo.unifile.UniFile;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -1869,17 +1873,45 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                 mDownload.setText(R.string.download_state_downloading);
                 break;
             case DownloadInfo.STATE_FINISH:
-                mDownload.setText(R.string.download_state_downloaded);
+                updateDownloadFinishText();
                 break;
             case DownloadInfo.STATE_FAILED:
                 mDownload.setText(R.string.download_state_failed);
                 break;
-//            case DownloadInfo.STATE_UPDATE:
-//                mDownload.setText(R.string.update);
-//                break;
-//            case DownloadInfo.GOTO_NEW:
-//                mDownload.setText(R.string.new_version);
-//                break;
+        }
+    }
+
+    private void updateDownloadFinishText() {
+        if (mDownloadInfo == null) {
+            mDownload.setText(R.string.download_state_downloaded);
+            return;
+        }
+
+        // 检测存储位置
+        com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation location =
+                com.hippo.ehviewer.ui.scene.download.part.StorageDetector.detectCached(mDownloadInfo);
+
+        // 检测是否为 CBZ 格式
+        boolean isCbz = false;
+        if (location == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.LOCAL
+                || location == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.BOTH) {
+            try {
+                UniFile dir = SpiderDen.getGalleryDownloadDir(mDownloadInfo);
+                if (dir != null) {
+                    isCbz = CbzUtils.isCbzMode(dir);
+                }
+            } catch (Exception e) {
+                // 忽略检测异常
+            }
+        }
+
+        // 根据存储位置和格式显示不同文本
+        if (location == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.SMB) {
+            mDownload.setText(R.string.download_state_downloaded_smb);
+        } else if (isCbz) {
+            mDownload.setText(R.string.download_state_downloaded_cbz);
+        } else {
+            mDownload.setText(R.string.download_state_downloaded);
         }
     }
 

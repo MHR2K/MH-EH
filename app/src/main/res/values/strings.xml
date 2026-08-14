@@ -469,6 +469,8 @@
     <string name="download_state_wait">Waiting</string>
     <string name="download_state_downloading">Downloading</string>
     <string name="download_state_downloaded">Downloaded</string>
+    <string name="download_state_downloaded_cbz">Downloaded CBZ</string>
+    <string name="download_state_downloaded_smb">Downloaded SMB</string>
     <string name="download_state_failed">Failed</string>
     <string name="download_state_failed_2">%d incomplete</string>
     <string name="download_state_finish">Done</string>
