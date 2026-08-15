@@ -29,6 +29,9 @@ public class StatisticsActivity extends ToolbarActivity {
     private static final int METRIC_DOWNLOAD_ADDED = 2;
     private static final int METRIC_DOWNLOAD_COMPLETED = 3;
 
+    private TextView mTodayTotalTime;
+    private TextView mTodayReadTime;
+    private TextView mTodayDownloadTime;
     private TextView mTodayReadCount;
     private TextView mTodayDownloadAdded;
     private TextView mTodayDownloadCompleted;
@@ -48,6 +51,9 @@ public class StatisticsActivity extends ToolbarActivity {
 
         mStatsManager = StatsManager.getInstance(this);
 
+        mTodayTotalTime = findViewById(R.id.today_total_time);
+        mTodayReadTime = findViewById(R.id.today_read_time);
+        mTodayDownloadTime = findViewById(R.id.today_download_time);
         mTodayReadCount = findViewById(R.id.today_read_count);
         mTodayDownloadAdded = findViewById(R.id.today_download_added);
         mTodayDownloadCompleted = findViewById(R.id.today_download_completed);
@@ -100,10 +106,17 @@ public class StatisticsActivity extends ToolbarActivity {
             mTodayReadCount.setText(String.valueOf(today.readCount));
             mTodayDownloadAdded.setText(String.valueOf(today.downloadAdded));
             mTodayDownloadCompleted.setText(String.valueOf(today.downloadCompleted));
+            mTodayTotalTime.setText(StatsManager.formatDuration(today.totalTimeSeconds));
+            mTodayReadTime.setText(StatsManager.formatDuration(today.readTimeSeconds));
+            long downloadTimeSeconds = today.totalTimeSeconds - today.readTimeSeconds;
+            mTodayDownloadTime.setText(StatsManager.formatDuration(Math.max(0, downloadTimeSeconds)));
         } else {
             mTodayReadCount.setText("0");
             mTodayDownloadAdded.setText("0");
             mTodayDownloadCompleted.setText("0");
+            mTodayTotalTime.setText("0m");
+            mTodayReadTime.setText("0m");
+            mTodayDownloadTime.setText("0m");
         }
 
         // 更新图表
@@ -180,6 +193,12 @@ public class StatisticsActivity extends ToolbarActivity {
             holder.readCount.setText(String.valueOf(stats.readCount));
             holder.downloadAdded.setText(String.valueOf(stats.downloadAdded));
             holder.downloadCompleted.setText(String.valueOf(stats.downloadCompleted));
+
+            // 时间统计
+            holder.totalTime.setText(StatsManager.formatDuration(stats.totalTimeSeconds));
+            holder.readTime.setText(StatsManager.formatDuration(stats.readTimeSeconds));
+            long downloadTimeSeconds = stats.totalTimeSeconds - stats.readTimeSeconds;
+            holder.downloadTime.setText(StatsManager.formatDuration(Math.max(0, downloadTimeSeconds)));
         }
 
         @Override
@@ -192,6 +211,9 @@ public class StatisticsActivity extends ToolbarActivity {
             TextView readCount;
             TextView downloadAdded;
             TextView downloadCompleted;
+            TextView totalTime;
+            TextView readTime;
+            TextView downloadTime;
 
             ViewHolder(View view) {
                 super(view);
@@ -199,6 +221,9 @@ public class StatisticsActivity extends ToolbarActivity {
                 readCount = view.findViewById(R.id.stats_read_count);
                 downloadAdded = view.findViewById(R.id.stats_download_added);
                 downloadCompleted = view.findViewById(R.id.stats_download_completed);
+                totalTime = view.findViewById(R.id.stats_total_time);
+                readTime = view.findViewById(R.id.stats_read_time);
+                downloadTime = view.findViewById(R.id.stats_download_time);
             }
         }
     }

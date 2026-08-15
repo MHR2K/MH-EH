@@ -182,6 +182,30 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     private int mSize;
     private int mCurrentIndex;
     private boolean mReadCompleted = false;
+    private long mReadStartTime = 0;
+    private boolean mReadIdle = false;
+    private final Handler mReadIdleHandler = new Handler(Looper.getMainLooper());
+    private static final long READ_IDLE_TIMEOUT_MS = 30_000; // 30秒无操作算空闲
+    private final Runnable mReadIdleRunnable = () -> {
+        flushReadTime();
+        mReadIdle = true;
+    };
+
+    private void flushReadTime() {
+        if (mReadStartTime > 0) {
+            long elapsed = System.currentTimeMillis() - mReadStartTime;
+            long seconds = elapsed / 1000;
+            if (seconds > 0) {
+                com.hippo.ehviewer.stats.StatsManager.getInstance(this).addReadTime(seconds);
+            }
+            mReadStartTime = 0;
+        }
+    }
+
+    private void resetReadIdleTimer() {
+        mReadIdleHandler.removeCallbacks(mReadIdleRunnable);
+        mReadIdleHandler.postDelayed(mReadIdleRunnable, READ_IDLE_TIMEOUT_MS);
+    }
 
     private boolean canFinish = false;
     private boolean autoTransferring = false;
@@ -627,6 +651,11 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     protected void onPause() {
         super.onPause();
 
+        // 取消空闲计时器，记录已累积的阅读时间
+        mReadIdleHandler.removeCallbacks(mReadIdleRunnable);
+        flushReadTime();
+        mReadIdle = false;
+
         if (mGLRootView != null) {
             mGLRootView.onPause();
         }
@@ -635,6 +664,21 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     @Override
     protected void onResume() {
         super.onResume();
+
+        // 开始计时阅读时间
+        mReadStartTime = System.currentTimeMillis();
+        mReadIdle = false;
+        resetReadIdleTimer();
+
+        // 监听触摸事件，重置空闲计时器
+        getWindow().getDecorView().setOnTouchListener((v, event) -> {
+            if (mReadIdle) {
+                mReadStartTime = System.currentTimeMillis();
+                mReadIdle = false;
+            }
+            resetReadIdleTimer();
+            return false;
+        });
 
         if (mGLRootView != null) {
             mGLRootView.onResume();

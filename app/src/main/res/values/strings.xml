@@ -1251,4 +1251,8 @@
     <string name="statistics_chart_title">最近7天</string>
     <string name="statistics_history">历史记录</string>
     <string name="statistics_no_data">暂无统计数据</string>
+    <string name="statistics_today_time">今日使用时间</string>
+    <string name="statistics_total_time">总时间</string>
+    <string name="statistics_read_time">阅读时间</string>
+    <string name="statistics_download_time">下载时间</string>
 </resources>

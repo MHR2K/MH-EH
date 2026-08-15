@@ -27,6 +27,7 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.AsyncTask;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Debug;
 import android.os.Handler;
 import android.os.Looper;
@@ -281,7 +282,95 @@ public class EhApplication extends RecordingApplication {
         networkStateMonitor = new com.hippo.ehviewer.network.NetworkStateMonitor(this);
         networkStateMonitor.start();
 
+        // 追踪 App 前台使用时间
+        setupForegroundTimeTracking();
+
         initialized = true;
+    }
+
+    // ========== 前台时间追踪 ==========
+
+    private static final long IDLE_TIMEOUT_MS = 30_000; // 30秒无操作算空闲
+
+    private int mActivityRefCount = 0;
+    private long mForegroundStartTime = 0;
+    private boolean mAppIdle = false;
+    private final Handler mIdleHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mIdleRunnable = () -> {
+        // 60秒无操作，记录已累积的前台时间，进入空闲状态
+        flushForegroundTime();
+        mAppIdle = true;
+    };
+
+    private void flushForegroundTime() {
+        if (mForegroundStartTime > 0) {
+            long elapsed = System.currentTimeMillis() - mForegroundStartTime;
+            long seconds = elapsed / 1000;
+            if (seconds > 0) {
+                com.hippo.ehviewer.stats.StatsManager.getInstance(this).addTotalTime(seconds);
+            }
+            mForegroundStartTime = 0;
+        }
+    }
+
+    private void resetIdleTimer() {
+        mIdleHandler.removeCallbacks(mIdleRunnable);
+        mIdleHandler.postDelayed(mIdleRunnable, IDLE_TIMEOUT_MS);
+    }
+
+    private void setupForegroundTimeTracking() {
+        registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
+            @Override
+            public void onActivityResumed(@NonNull Activity activity) {
+                if (mActivityRefCount == 0) {
+                    // App 从后台回到前台
+                    mForegroundStartTime = System.currentTimeMillis();
+                    mAppIdle = false;
+                    resetIdleTimer();
+                } else if (mAppIdle) {
+                    // 空闲后恢复操作，重新开始计时
+                    mForegroundStartTime = System.currentTimeMillis();
+                    mAppIdle = false;
+                    resetIdleTimer();
+                }
+                mActivityRefCount++;
+
+                // 在 DecorView 上监听触摸，重置空闲计时器
+                View decorView = activity.getWindow().getDecorView();
+                decorView.setOnTouchListener((v, event) -> {
+                    if (mAppIdle) {
+                        // 空闲后首次触摸，重新开始计时
+                        mForegroundStartTime = System.currentTimeMillis();
+                        mAppIdle = false;
+                    }
+                    resetIdleTimer();
+                    return false;
+                });
+            }
+
+            @Override
+            public void onActivityPaused(@NonNull Activity activity) {
+                mActivityRefCount--;
+                if (mActivityRefCount <= 0) {
+                    mActivityRefCount = 0;
+                    // App 进入后台，取消空闲计时器，记录已累积的时间
+                    mIdleHandler.removeCallbacks(mIdleRunnable);
+                    flushForegroundTime();
+                    mAppIdle = false;
+                }
+            }
+
+            @Override
+            public void onActivityCreated(@NonNull Activity activity, Bundle savedInstanceState) {}
+            @Override
+            public void onActivityStarted(@NonNull Activity activity) {}
+            @Override
+            public void onActivityStopped(@NonNull Activity activity) {}
+            @Override
+            public void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {}
+            @Override
+            public void onActivityDestroyed(@NonNull Activity activity) {}
+        });
     }
 
     /**

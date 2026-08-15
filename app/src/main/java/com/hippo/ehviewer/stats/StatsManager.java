@@ -75,6 +75,34 @@ public class StatsManager {
         );
     }
 
+    /** 累加总使用时间（秒） */
+    public void addTotalTime(long seconds) {
+        if (seconds <= 0) return;
+        addTimeField(StatsDatabase.COL_TOTAL_TIME_SECONDS, seconds);
+    }
+
+    /** 累加阅读时间（秒） */
+    public void addReadTime(long seconds) {
+        if (seconds <= 0) return;
+        addTimeField(StatsDatabase.COL_READ_TIME_SECONDS, seconds);
+    }
+
+    private void addTimeField(String column, long seconds) {
+        SQLiteDatabase db = mDb.getWritableDatabase();
+        String date = getTodayDateString();
+        long now = System.currentTimeMillis();
+
+        db.execSQL(
+                "INSERT INTO " + StatsDatabase.TABLE_DAILY_STATS +
+                        " (" + StatsDatabase.COL_DATE + ", " + column + ", " + StatsDatabase.COL_UPDATE_TIME + ") " +
+                        "VALUES (?, ?, ?) " +
+                        "ON CONFLICT(" + StatsDatabase.COL_DATE + ") DO UPDATE SET " +
+                        column + " = " + column + " + ?, " +
+                        StatsDatabase.COL_UPDATE_TIME + " = ?",
+                new Object[]{date, seconds, now, seconds, now}
+        );
+    }
+
     /** 获取今日统计 */
     public DailyStats getTodayStats() {
         return getStatsByDate(getTodayDateString());
@@ -148,7 +176,26 @@ public class StatsManager {
         stats.readCount = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_READ_COUNT));
         stats.downloadAdded = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_DOWNLOAD_ADDED));
         stats.downloadCompleted = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_DOWNLOAD_COMPLETED));
+        stats.totalTimeSeconds = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_TOTAL_TIME_SECONDS));
+        stats.readTimeSeconds = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_READ_TIME_SECONDS));
         stats.updateTime = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_UPDATE_TIME));
         return stats;
+    }
+
+    /**
+     * 格式化时长为可读字符串。
+     * 例如：0s, 5m, 1h 30m
+     */
+    public static String formatDuration(long totalSeconds) {
+        if (totalSeconds <= 0) {
+            return "0m";
+        }
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        if (hours > 0) {
+            return hours + "h " + minutes + "m";
+        } else {
+            return minutes + "m";
+        }
     }
 }

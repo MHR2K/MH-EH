@@ -7,13 +7,15 @@ import android.database.sqlite.SQLiteOpenHelper;
 public class StatsDatabase extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "stats.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     static final String TABLE_DAILY_STATS = "daily_stats";
     static final String COL_DATE = "date";
     static final String COL_READ_COUNT = "read_count";
     static final String COL_DOWNLOAD_ADDED = "download_added";
     static final String COL_DOWNLOAD_COMPLETED = "download_completed";
+    static final String COL_TOTAL_TIME_SECONDS = "total_time_seconds";
+    static final String COL_READ_TIME_SECONDS = "read_time_seconds";
     static final String COL_UPDATE_TIME = "update_time";
 
     private static final String SQL_CREATE =
@@ -22,6 +24,8 @@ public class StatsDatabase extends SQLiteOpenHelper {
                     COL_READ_COUNT + " INTEGER NOT NULL DEFAULT 0, " +
                     COL_DOWNLOAD_ADDED + " INTEGER NOT NULL DEFAULT 0, " +
                     COL_DOWNLOAD_COMPLETED + " INTEGER NOT NULL DEFAULT 0, " +
+                    COL_TOTAL_TIME_SECONDS + " INTEGER NOT NULL DEFAULT 0, " +
+                    COL_READ_TIME_SECONDS + " INTEGER NOT NULL DEFAULT 0, " +
                     COL_UPDATE_TIME + " INTEGER NOT NULL)";
 
     public StatsDatabase(Context context) {
@@ -35,6 +39,11 @@ public class StatsDatabase extends SQLiteOpenHelper {
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // 未来版本升级时处理
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE " + TABLE_DAILY_STATS +
+                    " ADD COLUMN " + COL_TOTAL_TIME_SECONDS + " INTEGER NOT NULL DEFAULT 0");
+            db.execSQL("ALTER TABLE " + TABLE_DAILY_STATS +
+                    " ADD COLUMN " + COL_READ_TIME_SECONDS + " INTEGER NOT NULL DEFAULT 0");
+        }
     }
 }
