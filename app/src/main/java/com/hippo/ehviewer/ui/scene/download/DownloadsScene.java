@@ -154,7 +154,7 @@ public class DownloadsScene extends ToolbarScene
         implements DownloadManager.DownloadInfoListener, DownloadSearchCallback,
         EasyRecyclerView.OnItemClickListener,
         EasyRecyclerView.OnItemLongClickListener,
-        FabLayout.OnClickFabListener, FabLayout.OnExpandListener, FastScroller.OnDragHandlerListener, SearchBar.Helper, SearchBarMover.Helper, SearchBar.OnStateChangeListener, DownloadAdapter.DownloadAdapterCallback {
+        FabLayout.OnClickFabListener, FabLayout.OnExpandListener, FastScroller.OnDragHandlerListener, SearchBar.Helper, SearchBarMover.Helper, SearchBar.OnStateChangeListener, DownloadAdapter.DownloadAdapterCallback, DownloadAdapter.GroupToggleCallback {
 
     private static final String TAG = DownloadsScene.class.getSimpleName();
 
@@ -240,6 +240,13 @@ public class DownloadsScene extends ToolbarScene
     private CheckBox mIgnoreCaseCheckbox;
     private CheckBox mChineseConversionCheckbox;
     private CheckBox mSortByRelevanceCheckbox;
+    private CheckBox mSearchAllLabelsCheckbox;
+    private View mSearchProgressContainer;
+    private TextView mSearchProgressText;
+    private boolean mSearchAllLabelsMode = false;
+    private Map<String, List<DownloadInfo>> mGroupedSearchResults;
+    private final Set<String> mCollapsedLabels = new HashSet<>();
+    private DownloadListInfosExecutor mSearchExecutor;
     @Nullable
     private PaginationIndicator mPaginationIndicator;
 
@@ -325,10 +332,25 @@ public class DownloadsScene extends ToolbarScene
         mDownloadManager = EhApplication.getDownloadManager(context);
         mDownloadManager.addDownloadInfoListener(this);
         canPagination = Settings.getDownloadPagination();
+
+        // 保存分组搜索状态（onInit 中的 updateForLabel 会清除它们）
+        Map<String, List<DownloadInfo>> savedGroupedResults = mGroupedSearchResults;
+        Set<String> savedCollapsedLabels = new HashSet<>(mCollapsedLabels);
+        String savedSearchKey = searchKey;
+
         if (savedInstanceState == null) {
             onInit();
         } else {
             onRestore(savedInstanceState);
+        }
+
+        // 恢复分组搜索状态
+        if (savedGroupedResults != null && !savedGroupedResults.isEmpty()
+                && savedSearchKey != null && !savedSearchKey.isEmpty()) {
+            mGroupedSearchResults = savedGroupedResults;
+            mCollapsedLabels.clear();
+            mCollapsedLabels.addAll(savedCollapsedLabels);
+            searchKey = savedSearchKey;
         }
     }
 
@@ -358,6 +380,13 @@ public class DownloadsScene extends ToolbarScene
     public void updateForLabel() {
         if (null == mDownloadManager) {
             return;
+        }
+
+        // 切换标签时清除分组搜索状态
+        mGroupedSearchResults = null;
+        mCollapsedLabels.clear();
+        if (mOriginalAdapter != null) {
+            mOriginalAdapter.clearGroupMode();
         }
 
         if (mLabel == null) {
@@ -407,9 +436,18 @@ public class DownloadsScene extends ToolbarScene
     @SuppressLint("StringFormatMatches")
     private void updateTitle() {
         try {
-            setTitle(getString(R.string.scene_download_title_new,
-                    mLabel != null ? mLabel : getString(R.string.default_download_label_name),
-                    Integer.toString(mList == null ? 0 : mList.size())));
+            // 全部标签搜索模式下，显示搜索结果总数量
+            if (mGroupedSearchResults != null && !mGroupedSearchResults.isEmpty()) {
+                int totalCount = 0;
+                for (List<DownloadInfo> items : mGroupedSearchResults.values()) {
+                    totalCount += items.size();
+                }
+                setTitle(getString(R.string.search_all_labels) + " (" + totalCount + ")");
+            } else {
+                setTitle(getString(R.string.scene_download_title_new,
+                        mLabel != null ? mLabel : getString(R.string.default_download_label_name),
+                        Integer.toString(mList == null ? 0 : mList.size())));
+            }
         } catch (Exception e) {
             e.printStackTrace();
             CrashlyticsUtils.record(e);
@@ -588,6 +626,8 @@ public class DownloadsScene extends ToolbarScene
         mCategorySpinner.setSelection(0);
 
         mProgressView = (ProgressView) ViewUtils.$$(view, R.id.download_progress_view);
+        mSearchProgressContainer = ViewUtils.$$(view, R.id.search_progress_container);
+        mSearchProgressText = (TextView) ViewUtils.$$(view, R.id.search_progress_text);
         View content = ViewUtils.$$(view, R.id.content);
         mRecyclerView = (MyEasyRecyclerView) ViewUtils.$$(content, R.id.recycler_view);
         FastScroller fastScroller = (FastScroller) ViewUtils.$$(content, R.id.fast_scroller);
@@ -808,8 +848,20 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
-        updateTitle();
         setNavigationIcon(R.drawable.v_arrow_left_dark_x24);
+
+        // 从详情页返回时，如果有分组搜索结果，直接恢复（无需重新搜索）
+        if (mGroupedSearchResults != null && !mGroupedSearchResults.isEmpty()) {
+            if (mOriginalAdapter == null) {
+                updateAdapter();
+            }
+            if (mOriginalAdapter != null) {
+                mOriginalAdapter.setGroupedData(mGroupedSearchResults, mCollapsedLabels);
+            }
+            updateTitle();
+        } else {
+            updateTitle();
+        }
     }
 
     @Override
@@ -1072,12 +1124,10 @@ public class DownloadsScene extends ToolbarScene
                 if (!mRecyclerView.isInCustomChoice()) return false;
                 SparseBooleanArray array = mRecyclerView.getCheckedItemPositions();
                 List<DownloadInfo> targets = new ArrayList<>();
-                if (mList != null) {
-                    for (int i = 0; i < array.size(); i++) {
-                        if (array.valueAt(i)) {
-                            int pos = positionInList(array.keyAt(i));
-                            if (pos >=0 && pos < mList.size()) targets.add(mList.get(pos));
-                        }
+                for (int i = 0; i < array.size(); i++) {
+                    if (array.valueAt(i)) {
+                        DownloadInfo di = getDownloadInfoAtAdapterPosition(array.keyAt(i));
+                        if (di != null) targets.add(di);
                     }
                 }
                 if (targets.isEmpty()) return true;
@@ -1133,12 +1183,14 @@ public class DownloadsScene extends ToolbarScene
         mIgnoreCaseCheckbox = linearLayout.findViewById(R.id.ignore_case_checkbox);
         mChineseConversionCheckbox = linearLayout.findViewById(R.id.chinese_conversion_checkbox);
         mSortByRelevanceCheckbox = linearLayout.findViewById(R.id.sort_by_relevance_checkbox);
-        
+        mSearchAllLabelsCheckbox = linearLayout.findViewById(R.id.search_all_labels_checkbox);
+
         // 初始化当前设置状态，从 Settings 加载所有搜索相关设置
         mFuzzySearchCheckbox.setChecked(Settings.getEnableFuzzySearch());
         mIgnoreCaseCheckbox.setChecked(Settings.getEnableIgnoreCase());
         mChineseConversionCheckbox.setChecked(Settings.getEnableChineseConversion());
         mSortByRelevanceCheckbox.setChecked(Settings.getEnableSortByRelevance());
+        mSearchAllLabelsCheckbox.setChecked(false);
         
         // 设置"按相关性排序"复选框的启用状态，只有在模糊搜索启用时才可用
         updateSortByRelevanceState();
@@ -1224,6 +1276,10 @@ public class DownloadsScene extends ToolbarScene
 
     private void onSearchDialogDismiss(DialogInterface dialog) {
         mSearchMode = false;
+        // 清除复选框引用，避免对话框关闭后 startSearching() 读到旧的勾选状态
+        mSearchAllLabelsCheckbox = null;
+        // 重置 Settings，防止旧版残留值影响非对话框入口的搜索（如"查找相同作者"）
+        Settings.putEnableSearchAllLabels(false);
     }
 
     /**
@@ -1328,6 +1384,12 @@ public class DownloadsScene extends ToolbarScene
         // 清除搜索状态
         searching = false;
         searchKey = null;
+        // 清除分组搜索状态
+        mGroupedSearchResults = null;
+        mCollapsedLabels.clear();
+        if (mOriginalAdapter != null) {
+            mOriginalAdapter.clearGroupMode();
+        }
         // 重置 Spinner 为"全部"
         if (mCategorySpinner != null) {
             mCategorySpinner.setSelection(0);
@@ -1374,15 +1436,11 @@ public class DownloadsScene extends ToolbarScene
             recyclerView.toggleItemChecked(position);
             return true;
         } else {
-            List<DownloadInfo> list = mList;
-            if (list == null) {
+            // group-mode-aware：分组模式从 adapter 的 mFlatList 取，普通模式走原有逻辑
+            DownloadInfo downloadInfo = getDownloadInfoAtAdapterPosition(position);
+            if (downloadInfo == null) {
                 return false;
             }
-            if (position < 0 || position >= list.size()) {
-                return false;
-            }
-
-            DownloadInfo downloadInfo = list.get(positionInList(position));
             Intent intent = new Intent(activity, GalleryActivity.class);
             // Check if this is an imported archive
             if (downloadInfo.archiveUri != null && downloadInfo.archiveUri.startsWith("content://")) {
@@ -1450,19 +1508,25 @@ public class DownloadsScene extends ToolbarScene
             return false;
         }
         
-        int posInList = positionInList(position);
-        if (posInList < 0 || posInList >= mList.size()) {
+        // group-mode-aware：分组模式从 adapter 的 mFlatList 取，普通模式走原有逻辑
+        DownloadInfo info = getDownloadInfoAtAdapterPosition(position);
+        if (info == null) {
             return false;
         }
-        
-        // 获取下载项信息
-        DownloadInfo info = mList.get(posInList);
+        // posInList 用于排序功能（showMoveToPositionDialog），在分组模式下需要从 mList 中查找
+        int posInList = mList.indexOf(info);
         
         // 创建弹出菜单，如果提供了锚点视图，则使用它；否则使用RecyclerView中的项目视图
         View menuAnchor = (anchorView != null) ? anchorView : mRecyclerView.getChildAt(position);
         android.widget.PopupMenu popupMenu = new android.widget.PopupMenu(context, menuAnchor);
         android.view.MenuInflater inflater = popupMenu.getMenuInflater();
         inflater.inflate(R.menu.download_item_menu, popupMenu.getMenu());
+        // 分组模式下隐藏"移动到位置"（搜索结果中排序无意义）
+        if (mGroupedSearchResults != null && !mGroupedSearchResults.isEmpty()) {
+            android.view.Menu menu = popupMenu.getMenu();
+            android.view.MenuItem moveItem = menu.findItem(R.id.menu_move_to_position);
+            if (moveItem != null) moveItem.setVisible(false);
+        }
         
         // 设置菜单项点击事件
         popupMenu.setOnMenuItemClickListener(item -> {
@@ -1716,7 +1780,8 @@ public class DownloadsScene extends ToolbarScene
             SparseBooleanArray stateArray = recyclerView.getCheckedItemPositions();
             for (int i = 0, n = stateArray.size(); i < n; i++) {
                 if (stateArray.valueAt(i)) {
-                    DownloadInfo info = list.get(positionInList(stateArray.keyAt(i)));
+                    DownloadInfo info = getDownloadInfoAtAdapterPosition(stateArray.keyAt(i));
+                    if (info == null) continue;
                     if (collectDownloadInfo) {
                         downloadInfoList.add(info);
                     }
@@ -2629,6 +2694,23 @@ public class DownloadsScene extends ToolbarScene
         return position;
     }
 
+    /**
+     * 根据 adapter 位置获取 DownloadInfo（分组模式感知）。
+     * 分组模式下从 adapter 的 mFlatList 中取，跳过头部；
+     * 普通模式下走原有的 positionInList 逻辑。
+     */
+    @Nullable
+    private DownloadInfo getDownloadInfoAtAdapterPosition(int adapterPosition) {
+        if (mOriginalAdapter != null) {
+            return mOriginalAdapter.getDownloadInfoAtAdapterPosition(adapterPosition);
+        }
+        // fallback：普通模式
+        List<DownloadInfo> list = mList;
+        if (list == null) return null;
+        int pos = positionInList(adapterPosition);
+        return (pos >= 0 && pos < list.size()) ? list.get(pos) : null;
+    }
+
     @Override
     public int listIndexInPage(int position) {
         if (mList != null && mList.size() > paginationSize && canPagination) {
@@ -2740,6 +2822,10 @@ public class DownloadsScene extends ToolbarScene
     }
 
     protected void startSearching() {
+        // 显示搜索进度容器
+        if (mSearchProgressContainer != null) {
+            mSearchProgressContainer.setVisibility(View.VISIBLE);
+        }
         mProgressView.setVisibility(View.VISIBLE);
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.GONE);
@@ -2761,9 +2847,43 @@ public class DownloadsScene extends ToolbarScene
             updateForLabel();
         }
 
-        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mList, searchKey);
+        // 根据"在全部标签中搜索"复选框决定搜索范围（复选框为 null 时回退到 Settings）
+        boolean searchAllLabels = mSearchAllLabelsCheckbox != null
+                ? mSearchAllLabelsCheckbox.isChecked()
+                : Settings.getEnableSearchAllLabels();
+        List<DownloadInfo> searchTarget;
+        if (searchAllLabels && mDownloadManager != null) {
+            searchTarget = mDownloadManager.getAllDownloadInfoList();
+        } else {
+            searchTarget = mList;
+        }
+
+        DownloadListInfosExecutor executor = new DownloadListInfosExecutor(searchTarget, searchKey);
+
+        // 设置搜索选项（复选框为 null 时回退到 Settings）
+        boolean fuzzySearch = mFuzzySearchCheckbox != null
+                ? mFuzzySearchCheckbox.isChecked() : Settings.getEnableFuzzySearch();
+        boolean ignoreCase = mIgnoreCaseCheckbox != null
+                ? mIgnoreCaseCheckbox.isChecked() : Settings.getEnableIgnoreCase();
+        boolean enableChineseConversion = mChineseConversionCheckbox != null
+                ? mChineseConversionCheckbox.isChecked() : Settings.getEnableChineseConversion();
+        boolean sortByRelevance = fuzzySearch && (mSortByRelevanceCheckbox != null
+                ? mSortByRelevanceCheckbox.isChecked() : Settings.getEnableSortByRelevance());
+
+        executor.setSearchOptions(fuzzySearch, ignoreCase, enableChineseConversion);
+        if (sortByRelevance) {
+            executor.enableSortByRelevance(true);
+        }
+
+        // 全部标签搜索时启用分组模式
+        mSearchAllLabelsMode = searchAllLabels;
+        if (searchAllLabels) {
+            executor.setGroupByLabel(true);
+            mCollapsedLabels.clear();
+        }
 
         executor.setDownloadSearchingListener(this);
+        mSearchExecutor = executor;
 
         executor.executeSearching();
     }
@@ -2802,6 +2922,10 @@ public class DownloadsScene extends ToolbarScene
         mOriginalAdapter.setHasStableIds(true);
         // 避免重复创建包装适配器，直接使用原始适配器
         mAdapter = mOriginalAdapter;
+        // 恢复分组搜索状态（从详情页返回等场景）
+        if (mGroupedSearchResults != null && !mGroupedSearchResults.isEmpty()) {
+            mOriginalAdapter.setGroupedData(mGroupedSearchResults, mCollapsedLabels);
+        }
         if (mRecyclerView != null) {
             mRecyclerView.setAdapter(mAdapter);
         }
@@ -2881,19 +3005,68 @@ public class DownloadsScene extends ToolbarScene
     }
 
     @Override
+    public void onSearchProgress(int scanned, int total) {
+        if (!isAdded()) return;
+        if (mSearchProgressText != null) {
+            mSearchProgressText.setText(getString(R.string.search_progress_format, scanned, total));
+            mSearchProgressText.setVisibility(View.VISIBLE);
+        }
+    }
+
+    @Override
     public void onDownloadSearchSuccess(List<DownloadInfo> list) {
         // 检查 Fragment 是否已附加，如果未附加则忽略回调
         if (!isAdded()) {
             return;
         }
-        mList = list;
-        // 避免重新设置 Adapter 导致滚动位置回到顶部
-        if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
-        } else {
-            updateAdapter();
+
+        // 隐藏搜索进度
+        if (mSearchProgressContainer != null) {
+            mSearchProgressContainer.setVisibility(View.GONE);
         }
         mProgressView.setVisibility(View.GONE);
+        if (mSearchProgressText != null) {
+            mSearchProgressText.setVisibility(View.GONE);
+        }
+
+        // 处理全部标签搜索的分组结果
+        if (mSearchAllLabelsMode && mSearchExecutor != null) {
+            mGroupedSearchResults = mSearchExecutor.getGroupedResults();
+            if (mGroupedSearchResults != null && !mGroupedSearchResults.isEmpty()) {
+                mList = list;
+                // 确保适配器已创建，然后设置分组数据
+                if (mOriginalAdapter == null) {
+                    updateAdapter();
+                }
+                if (mOriginalAdapter != null) {
+                    mOriginalAdapter.setGroupedData(mGroupedSearchResults, mCollapsedLabels);
+                }
+            } else {
+                // 没有分组结果，回退到普通模式
+                mList = list;
+                if (mAdapter != null) {
+                    if (mOriginalAdapter != null) {
+                        mOriginalAdapter.clearGroupMode();
+                    }
+                    mAdapter.notifyDataSetChanged();
+                } else {
+                    updateAdapter();
+                }
+            }
+            mSearchExecutor = null;
+        } else {
+            // 普通搜索模式
+            mList = list;
+            if (mOriginalAdapter != null) {
+                mOriginalAdapter.clearGroupMode();
+            }
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            } else {
+                updateAdapter();
+            }
+        }
+
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }
@@ -2903,7 +3076,15 @@ public class DownloadsScene extends ToolbarScene
         updateTitle();
         updatePaginationIndicator();
         searching = false;
+        mSearchAllLabelsMode = false;
         queryUnreadSpiderInfo();
+    }
+
+    @Override
+    public void onToggleLabel(String label) {
+        if (mOriginalAdapter != null) {
+            mOriginalAdapter.toggleLabel(label);
+        }
     }
 
     @Override
@@ -2919,7 +3100,13 @@ public class DownloadsScene extends ToolbarScene
         } else {
             updateAdapter();
         }
+        if (mSearchProgressContainer != null) {
+            mSearchProgressContainer.setVisibility(View.GONE);
+        }
         mProgressView.setVisibility(View.GONE);
+        if (mSearchProgressText != null) {
+            mSearchProgressText.setVisibility(View.GONE);
+        }
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }

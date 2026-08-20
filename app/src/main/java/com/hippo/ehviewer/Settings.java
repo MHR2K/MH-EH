@@ -781,6 +781,17 @@ public class Settings {
         putBoolean(KEY_ENABLE_SORT_BY_RELEVANCE, value);
     }
 
+    private static final String KEY_ENABLE_SEARCH_ALL_LABELS = "enable_search_all_labels";
+    private static final boolean DEFAULT_ENABLE_SEARCH_ALL_LABELS = false;
+
+    public static boolean getEnableSearchAllLabels() {
+        return getBoolean(KEY_ENABLE_SEARCH_ALL_LABELS, DEFAULT_ENABLE_SEARCH_ALL_LABELS);
+    }
+
+    public static void putEnableSearchAllLabels(boolean value) {
+        putBoolean(KEY_ENABLE_SEARCH_ALL_LABELS, value);
+    }
+
     /********************
      ****** Download
      ********************/

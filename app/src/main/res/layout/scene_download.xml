@@ -32,13 +32,32 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent">
 
-        <com.hippo.widget.ProgressView
-            android:id="@+id/download_progress_view"
-            style="@style/ProgressView"
+        <LinearLayout
+            android:id="@+id/search_progress_container"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:visibility="gone" />
+            android:orientation="vertical"
+            android:gravity="center"
+            android:visibility="gone">
+
+            <com.hippo.widget.ProgressView
+                android:id="@+id/download_progress_view"
+                style="@style/ProgressView"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/search_progress_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="14sp"
+                android:textColor="?attr/textColorThemeAccent"
+                android:visibility="gone" />
+
+        </LinearLayout>
 
         <FrameLayout
             android:id="@+id/content"

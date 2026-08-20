@@ -59,6 +59,8 @@ public class DownloadListInfosExecutor {
     private boolean mIgnoreCase = true;
     private boolean mEnableChineseConversion = true;
     private boolean mSortByRelevance = false;
+    private boolean mGroupByLabel = false;
+    private Map<String, List<DownloadInfo>> mGroupedResults;
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey) {
         this.mList = mList;
@@ -104,6 +106,14 @@ public class DownloadListInfosExecutor {
         this.mSortByRelevance = enable;
     }
 
+    public void setGroupByLabel(boolean groupByLabel) {
+        this.mGroupByLabel = groupByLabel;
+    }
+
+    public Map<String, List<DownloadInfo>> getGroupedResults() {
+        return mGroupedResults;
+    }
+
     public void setDownloadSearchingListener(DownloadSearchCallback downloadSearchCallback) {
         mDownloadSearchCallback = downloadSearchCallback;
     }
@@ -113,8 +123,12 @@ public class DownloadListInfosExecutor {
      */
     public void executeSearching() {
         service.execute(() -> {
-            resultList = searchingInBackground();
-            
+            if (mGroupByLabel) {
+                resultList = searchingInBackgroundGrouped();
+            } else {
+                resultList = searchingInBackground();
+            }
+
             // 如果启用按相关性排序，对搜索结果进行排序
             if (mSortByRelevance && mSearchKey != null && !mSearchKey.isEmpty() && resultList != null && !resultList.isEmpty()) {
                 resultList = sortByRelevance(resultList, mSearchKey);
@@ -182,6 +196,73 @@ public class DownloadListInfosExecutor {
                                         scoreMap.getOrDefault(a, 0.0)));
 
         return cache;
+    }
+
+    /**
+     * 按标签分组的搜索实现，同时报告进度
+     * 搜索结果按 DownloadInfo.label 分组，每组内按相似度分数排序
+     */
+    private List<DownloadInfo> searchingInBackgroundGrouped() {
+        android.util.Log.d("EhSearch", "开始执行分组搜索: 关键词=" + mSearchKey);
+
+        if (mSearchKey == null || mSearchKey.isEmpty()) {
+            // 关键词为空时，返回全部列表（不按标签分组）
+            mGroupedResults = null;
+            return mList != null ? mList : new ArrayList<>();
+        }
+        if (mList == null) {
+            mGroupedResults = null;
+            return new ArrayList<>();
+        }
+
+        // 分组结果：标签名 -> (DownloadInfo -> 分数)
+        Map<String, List<DownloadInfo>> grouped = new HashMap<>();
+        Map<String, Map<DownloadInfo, Double>> groupScoreMaps = new HashMap<>();
+        int total = mList.size();
+
+        for (int i = 0; i < total; i++) {
+            DownloadInfo info = mList.get(i);
+            double score = calculateSimilarityScore(info, mSearchKey);
+
+            if (score > 0) {
+                String label = (info.label != null && !info.label.isEmpty())
+                        ? info.label : "默认";
+                grouped.computeIfAbsent(label, k -> new ArrayList<>()).add(info);
+                groupScoreMaps.computeIfAbsent(label, k -> new HashMap<>()).put(info, score);
+            }
+
+            // 每200个报告一次进度
+            if (i % 200 == 0 && mDownloadSearchCallback != null) {
+                final int scanned = i;
+                handler.post(() -> mDownloadSearchCallback.onSearchProgress(scanned, total));
+            }
+        }
+
+        // 报告最终进度
+        if (mDownloadSearchCallback != null) {
+            handler.post(() -> mDownloadSearchCallback.onSearchProgress(total, total));
+        }
+
+        // 每个分组内部按相似度分数排序
+        for (Map.Entry<String, List<DownloadInfo>> entry : grouped.entrySet()) {
+            String label = entry.getKey();
+            List<DownloadInfo> items = entry.getValue();
+            Map<DownloadInfo, Double> scoreMap = groupScoreMaps.get(label);
+            if (scoreMap != null) {
+                items.sort((a, b) -> Double.compare(
+                        scoreMap.getOrDefault(b, 0.0),
+                        scoreMap.getOrDefault(a, 0.0)));
+            }
+        }
+
+        mGroupedResults = grouped;
+
+        // 返回展平后的列表（兼容现有回调）
+        List<DownloadInfo> flatResult = new ArrayList<>();
+        for (List<DownloadInfo> items : grouped.values()) {
+            flatResult.addAll(items);
+        }
+        return flatResult;
     }
 
     @SuppressLint("NonConstantResourceId")

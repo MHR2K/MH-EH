@@ -29,10 +29,12 @@ import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.Toast;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.view.ViewCompat;
 import androidx.recyclerview.widget.RecyclerView;
@@ -79,19 +81,25 @@ import com.h6ah4i.android.widget.advrecyclerview.draggable.ItemDraggableRange;
 import com.h6ah4i.android.widget.advrecyclerview.utils.AbstractDraggableItemViewHolder;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 下载列表适配器
  */
-public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.DownloadHolder>
-        implements DraggableItemAdapter<DownloadAdapter.DownloadHolder> {
+public class DownloadAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
+        implements DraggableItemAdapter<RecyclerView.ViewHolder> {
 
     private static final String TAG = DownloadAdapter.class.getSimpleName();
     public static boolean DRAG_ENABLE = false;
+
+    private static final int TYPE_ITEM = 0;
+    private static final int TYPE_HEADER = 1;
 
     private final LayoutInflater mInflater;
     private final int mListThumbWidth;
@@ -102,6 +110,17 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
     private View movedItem = null;
 
     private final Map<String, Bitmap> thumbnailCache = new HashMap<>();
+
+    // 分组模式数据
+    private boolean mGroupMode = false;
+    private Map<String, List<DownloadInfo>> mGroupedData;
+    private List<String> mSortedLabels;
+    private Set<String> mCollapsedLabels = new HashSet<>();
+    private List<Object> mFlatList = new ArrayList<>();
+
+    public interface GroupToggleCallback {
+        void onToggleLabel(String label);
+    }
 
     public interface DownloadAdapterCallback {
         int getIndexPage();
@@ -149,8 +168,91 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         mListThumbWidth = mListThumbHeight * 2 / 3;
     }
 
+    // ========== 分组模式方法 ==========
+
+    public void setGroupedData(Map<String, List<DownloadInfo>> groupedData, Set<String> collapsedLabels) {
+        mGroupMode = groupedData != null && !groupedData.isEmpty();
+        mGroupedData = groupedData;
+        mCollapsedLabels = collapsedLabels != null ? collapsedLabels : new HashSet<>();
+        if (mGroupMode) {
+            rebuildFlatList();
+        }
+        notifyDataSetChanged();
+    }
+
+    public void toggleLabel(String label) {
+        if (mCollapsedLabels.contains(label)) {
+            mCollapsedLabels.remove(label);
+        } else {
+            mCollapsedLabels.add(label);
+        }
+        rebuildFlatList();
+        notifyDataSetChanged();
+    }
+
+    public void clearGroupMode() {
+        mGroupMode = false;
+        mGroupedData = null;
+        mFlatList.clear();
+    }
+
+    private void rebuildFlatList() {
+        mFlatList.clear();
+        if (mGroupedData == null) return;
+        String defaultLabel = mScene.getString(R.string.default_download_label_name);
+        mSortedLabels = new ArrayList<>(mGroupedData.keySet());
+        mSortedLabels.sort((a, b) -> {
+            boolean aDefault = a.equals(defaultLabel);
+            boolean bDefault = b.equals(defaultLabel);
+            if (aDefault && !bDefault) return -1;
+            if (!aDefault && bDefault) return 1;
+            return a.compareToIgnoreCase(b);
+        });
+        for (String label : mSortedLabels) {
+            mFlatList.add(label);  // TYPE_HEADER
+            if (!mCollapsedLabels.contains(label)) {
+                mFlatList.addAll(mGroupedData.get(label));  // TYPE_ITEM
+            }
+        }
+    }
+
+    /**
+     * 根据 adapter 位置获取 DownloadInfo（group-mode-aware）。
+     * 分组模式下从 mFlatList 中取，跳过头部；
+     * 普通模式下走原有的 mCallback.getList() + positionInList 逻辑。
+     * @return DownloadInfo 或 null（当位置是头部或越界时）
+     */
+    @Nullable
+    public DownloadInfo getDownloadInfoAtAdapterPosition(int adapterPosition) {
+        if (mGroupMode) {
+            if (adapterPosition < 0 || adapterPosition >= mFlatList.size()) {
+                return null;
+            }
+            Object item = mFlatList.get(adapterPosition);
+            return (item instanceof DownloadInfo) ? (DownloadInfo) item : null;
+        }
+        // 普通模式：走原有逻辑
+        List<DownloadInfo> list = mCallback.getList();
+        if (list == null) {
+            return null;
+        }
+        int pos = mCallback.positionInList(adapterPosition);
+        if (pos < 0 || pos >= list.size()) {
+            return null;
+        }
+        return list.get(pos);
+    }
+
     @Override
     public long getItemId(int position) {
+        if (mGroupMode) {
+            Object item = mFlatList.get(position);
+            if (item instanceof String) {
+                // Header: use hash of label as ID
+                return ("header:" + item).hashCode();
+            }
+            return ((DownloadInfo) item).gid;
+        }
         int posInList = mCallback.positionInList(position);
         List<DownloadInfo> list = mCallback.getList();
         if (list == null || posInList < 0 || posInList >= list.size()) {
@@ -159,9 +261,21 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
         return list.get(posInList).gid;
     }
 
+    @Override
+    public int getItemViewType(int position) {
+        if (mGroupMode && mFlatList.get(position) instanceof String) {
+            return TYPE_HEADER;
+        }
+        return TYPE_ITEM;
+    }
+
     @NonNull
     @Override
-    public DownloadHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == TYPE_HEADER) {
+            View view = mInflater.inflate(R.layout.item_download_label_header, parent, false);
+            return new LabelHeaderViewHolder(view);
+        }
         DownloadHolder holder = new DownloadHolder(mInflater.inflate(R.layout.item_download, parent, false));
 
         ViewGroup.LayoutParams lp = holder.thumb.getLayoutParams();
@@ -173,16 +287,40 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
     }
 
     @Override
-    public void onBindViewHolder(DownloadHolder holder, int position) {
-        List<DownloadInfo> list = mCallback.getList();
-        if (list == null) {
-            return;
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder viewHolder, int position) {
+        if (mGroupMode) {
+            Object item = mFlatList.get(position);
+            if (item instanceof String) {
+                // TYPE_HEADER
+                String label = (String) item;
+                List<DownloadInfo> items = mGroupedData != null ? mGroupedData.get(label) : null;
+                LabelHeaderViewHolder headerHolder = (LabelHeaderViewHolder) viewHolder;
+                headerHolder.bind(label,
+                        mCollapsedLabels.contains(label),
+                        items != null ? items.size() : 0);
+                return;
+            }
+            // TYPE_ITEM in group mode
+            DownloadInfo info = (DownloadInfo) item;
+            bindDownloadItem((DownloadHolder) viewHolder, info);
+        } else {
+            // 普通模式
+            List<DownloadInfo> list = mCallback.getList();
+            if (list == null) {
+                return;
+            }
+            try {
+                int pos = mCallback.positionInList(position);
+                DownloadInfo info = list.get(pos);
+                bindDownloadItem((DownloadHolder) viewHolder, info);
+            } catch (Exception e) {
+                CrashlyticsUtils.record(e);
+            }
         }
+    }
 
+    private void bindDownloadItem(DownloadHolder holder, DownloadInfo info) {
         try {
-            int pos = mCallback.positionInList(position);
-            DownloadInfo info = list.get(pos);
-
             String title = EhUtils.getSuitableTitle(info);
             // Add special prefix for imported archives
             if (info.archiveUri != null && info.archiveUri.startsWith("content://")) {
@@ -201,17 +339,13 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                         true, false);
             }
 
-
-
             holder.title.setText(title);
             holder.uploader.setText(info.uploader);
 
             // Handle rating display for imported archives
             if (info.archiveUri != null && info.archiveUri.startsWith("content://")) {
-                // For imported archives, show 5 stars or hide rating
                 holder.rating.setRating(5.0f);
             } else {
-                // For normal downloads, show actual rating
                 holder.rating.setRating(info.rating);
             }
 
@@ -226,21 +360,19 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             }
 
             TextView category = holder.category;
-            String newCategoryText = EhUtils.getCategory(info.category);
+            String newCategoryText;
             int categoryColor;
-            // Special handling for imported archives - prioritize archiveUri over category field
             if (info.archiveUri != null && info.archiveUri.startsWith("content://")) {
                 newCategoryText = mScene.getString(R.string.imported_archive_category);
-                categoryColor = 0xFF4CAF50; // Green color for imported archives
+                categoryColor = 0xFF4CAF50;
             } else {
                 newCategoryText = EhUtils.getCategory(info.category);
                 categoryColor = EhUtils.getCategoryColor(info.category);
             }
-
             if (!newCategoryText.equals(category.getText())) {
                 category.setText(newCategoryText);
-                category.setBackgroundColor(EhUtils.getCategoryColor(info.category));
             }
+            category.setBackgroundColor(categoryColor);
             bindForState(holder, info);
 
             // Update transition name
@@ -252,6 +384,9 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
 
     @Override
     public int getItemCount() {
+        if (mGroupMode) {
+            return mFlatList.size();
+        }
         List<DownloadInfo> list = mCallback.getList();
         if (list == null) {
             return 0;
@@ -412,16 +547,20 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
 
     // 拖拽排序相关方法实现
     @Override
-    public boolean onCheckCanStartDrag(@NonNull DownloadHolder holder, int position, int x, int y) {
-        if (!DRAG_ENABLE){
+    public boolean onCheckCanStartDrag(@NonNull RecyclerView.ViewHolder holder, int position, int x, int y) {
+        if (!DRAG_ENABLE || mGroupMode) {
             return false;
         }
+        if (!(holder instanceof DownloadHolder)) {
+            return false;
+        }
+        DownloadHolder downloadHolder = (DownloadHolder) holder;
         // 检查是否点击在thumb上
-        return ViewUtils.isViewUnder(holder.thumb, x, y, 0);
+        return ViewUtils.isViewUnder(downloadHolder.thumb, x, y, 0);
     }
 
     @Override
-    public ItemDraggableRange onGetItemDraggableRange(DownloadHolder holder, int position) {
+    public ItemDraggableRange onGetItemDraggableRange(@NonNull RecyclerView.ViewHolder holder, int position) {
         return null;
     }
 
@@ -461,7 +600,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
 
     @Override
     public boolean onCheckCanDrop(int draggingPosition, int dropPosition) {
-        return DRAG_ENABLE;
+        return DRAG_ENABLE && !mGroupMode;
     }
 
     @Override
@@ -788,21 +927,21 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             if (null == context || null == recyclerView || recyclerView.isInCustomChoice()) {
                 return;
             }
-            List<DownloadInfo> list = mCallback.getList();
-            if (list == null) {
+            int index = recyclerView.getChildAdapterPosition(itemView);
+            if (index < 0) {
                 return;
             }
-            int size = list.size();
-            int index = recyclerView.getChildAdapterPosition(itemView);
-            if (index < 0 || index >= size) {
+
+            // group-mode-aware：分组模式从 mFlatList 取，普通模式走原有逻辑
+            DownloadInfo info = getDownloadInfoAtAdapterPosition(index);
+            if (info == null) {
                 return;
             }
 
             if (thumb == v) {
-                DownloadInfo currentInfo = list.get(mScene.positionInList(index));
-                if (currentInfo.archiveUri != null && currentInfo.archiveUri.startsWith("content://")) {
+                if (info.archiveUri != null && info.archiveUri.startsWith("content://")) {
                     // Show info dialog for imported archive
-                    String message = mScene.getString(R.string.imported_archive_info_message) + "\n\n" + currentInfo.archiveUri;
+                    String message = mScene.getString(R.string.imported_archive_info_message) + "\n\n" + info.archiveUri;
                     new AlertDialog.Builder(context)
                             .setTitle(R.string.imported_archive_info_title)
                             .setMessage(message)
@@ -812,14 +951,13 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
                     // Normal behavior for regular downloads
                     Bundle args = new Bundle();
                     args.putString(GalleryDetailScene.KEY_ACTION, GalleryDetailScene.ACTION_DOWNLOAD_GALLERY_INFO);
-                    args.putParcelable(GalleryDetailScene.KEY_GALLERY_INFO, list.get(mCallback.positionInList(index)));
+                    args.putParcelable(GalleryDetailScene.KEY_GALLERY_INFO, info);
                     Announcer announcer = new Announcer(GalleryDetailScene.class).setArgs(args);
                     announcer.setTranHelper(new EnterGalleryDetailTransaction(thumb));
                     mScene.startScene(announcer);
                 }
 
             } else if (start == v) {
-                final DownloadInfo info = list.get(mCallback.positionInList(index));
                 Intent intent = new Intent(context, DownloadService.class);
                 intent.setAction(DownloadService.ACTION_START);
                 intent.putExtra(DownloadService.KEY_GALLERY_INFO, info);
@@ -827,12 +965,39 @@ public class DownloadAdapter extends RecyclerView.Adapter<DownloadAdapter.Downlo
             } else if (stop == v) {
                 DownloadManager downloadManager = mCallback.getDownloadManager();
                 if (null != downloadManager) {
-                    downloadManager.stopDownload(list.get(mCallback.positionInList(index)).gid);
+                    downloadManager.stopDownload(info.gid);
                 }
             } else if (edit == v) {
-                final DownloadInfo info = list.get(mCallback.positionInList(index));
                 showEditDialog(info);
             }
+        }
+    }
+
+    /**
+     * 标签分组头部 ViewHolder
+     */
+    public class LabelHeaderViewHolder extends RecyclerView.ViewHolder {
+        final ImageView expandIcon;
+        final TextView labelName;
+        final TextView labelCount;
+
+        public LabelHeaderViewHolder(View itemView) {
+            super(itemView);
+            expandIcon = itemView.findViewById(R.id.expand_icon);
+            labelName = itemView.findViewById(R.id.label_name);
+            labelCount = itemView.findViewById(R.id.label_count);
+        }
+
+        public void bind(String label, boolean collapsed, int count) {
+            labelName.setText(label);
+            labelCount.setText("(" + count + ")");
+            // collapsed=true 时箭头朝右（-90度），展开时朝下（0度）
+            expandIcon.setRotation(collapsed ? -90f : 0f);
+            itemView.setOnClickListener(v -> {
+                if (mCallback instanceof GroupToggleCallback) {
+                    ((GroupToggleCallback) mCallback).onToggleLabel(label);
+                }
+            });
         }
     }
 
