@@ -489,6 +489,7 @@
     <string name="download_remove_option_remove_all">Remove download item and delete folder</string>
     <string name="download_remove_option_keep_item">Delete folder only (keep download item)</string>
     <string name="download_remove_option_images_only">Delete local images only</string>
+    <string name="download_remove_option_delete_reading_progress">Delete reading progress</string>
     <string name="stat_download_action_stop_all">Stop all</string>
     <string name="drawer_download_label_title">Label</string>
     <string name="default_download_label_name">Default</string>

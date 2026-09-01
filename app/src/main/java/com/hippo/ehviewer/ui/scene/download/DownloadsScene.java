@@ -51,6 +51,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -1828,15 +1829,36 @@ public class DownloadsScene extends ToolbarScene
                             getString(R.string.download_remove_option_keep_item),
                             getString(R.string.download_remove_option_images_only)
                     };
-                    
+
                     // 默认选中第一项
                     final int[] selectedOption = {0};
 
+                    // 创建自定义布局
+                    android.view.View dialogView = android.view.LayoutInflater.from(context)
+                            .inflate(R.layout.dialog_delete_download, null);
+                    android.widget.ListView listView = dialogView.findViewById(R.id.list_view);
+                    android.widget.CheckBox deleteReadingProgressCheckBox = dialogView.findViewById(R.id.checkbox_delete_reading_progress);
+
+                    // 设置单选列表
+                    listView.setAdapter(new android.widget.ArrayAdapter<>(context,
+                            R.layout.item_select_dialog_radio, options));
+                    listView.setChoiceMode(android.widget.ListView.CHOICE_MODE_SINGLE);
+                    listView.setItemChecked(0, true);
+
+                    // 设置复选框文本和默认状态（默认选中第一项时勾选）
+                    deleteReadingProgressCheckBox.setText(R.string.download_remove_option_delete_reading_progress);
+                    deleteReadingProgressCheckBox.setChecked(true); // 默认选中第一项，所以默认勾选
+
+                    // 监听列表选择变化，动态更新复选框默认状态
+                    listView.setOnItemClickListener((parent, itemView, itemPosition, id) -> {
+                        selectedOption[0] = itemPosition;
+                        // 更新复选框默认状态：选择第一项时默认勾选，其他选项默认不勾选
+                        deleteReadingProgressCheckBox.setChecked(itemPosition == 0);
+                    });
+
                     new AlertDialog.Builder(context)
                             .setTitle(R.string.download_remove_dialog_title)
-                            .setSingleChoiceItems(options, 0, (dialog, which) -> {
-                                selectedOption[0] = which;
-                            })
+                            .setView(dialogView)
                             .setNegativeButton(android.R.string.cancel, null)
                             .setPositiveButton(android.R.string.ok, (d, w) -> {
                                 // 退出选择模式
@@ -1845,16 +1867,17 @@ public class DownloadsScene extends ToolbarScene
                                 }
 
                                 int option = selectedOption[0];
-                                
+                                boolean deleteReadingProgress = deleteReadingProgressCheckBox.isChecked();
+
                                 // 0: 移除下载项并删除文件夹
                                 // 1: 仅删除文件夹（保留下载项）
                                 // 2: 仅删除本地图片
-                                
+
                                 if (option == 0 || option == 1) {
                                     // 删除整个文件夹（本地 + SMB）
                                     List<UniFile> fileList = new ArrayList<>();
                                     List<DownloadInfo> smbInfoList = new ArrayList<>();
-                                    
+
                                     for (DownloadInfo info : selectedInfoList) {
                                         // 处理本地文件
                                         UniFile dir = getGalleryDownloadDir(info);
@@ -1863,14 +1886,14 @@ public class DownloadsScene extends ToolbarScene
                                         }
                                         // 清除路径映射
                                         EhDB.removeDownloadDirname(info.gid);
-                                        
+
                                         // 检查是否在 SMB 上
                                         com.hippo.ehviewer.smb.Client.Target smbCheck =
                                             com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
                                         if (smbCheck != null) {
                                             smbInfoList.add(info);
                                         }
-                                        
+
                                         if (option == 1) {
                                             // 仅删除文件夹（保留下载项）：重置状态以便重新下载
                                             info.state = DownloadInfo.STATE_NONE;
@@ -1884,12 +1907,12 @@ public class DownloadsScene extends ToolbarScene
                                             StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.UNKNOWN);
                                         }
                                     }
-                                    
+
                                     // 删除本地文件
                                     if (!fileList.isEmpty()) {
                                         deleteFileAsync(fileList.toArray(new UniFile[0]));
                                     }
-                                    
+
                                     // 删除 SMB 文件（异步）
                                     if (!smbInfoList.isEmpty()) {
                                         final int finalOption = option;
@@ -1920,10 +1943,10 @@ public class DownloadsScene extends ToolbarScene
                                                                 }
                                                             }
                                                         );
-                                                        
+
                                                         // option 0 或 option 1：已删除远端目录
                                                         com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
-                                                        
+
                                                         count++;
                                                     } catch (Exception e) {
                                                         android.util.Log.e("DownloadsScene", "删除 SMB 文件异常: gid=" + info.gid, e);
@@ -1939,11 +1962,11 @@ public class DownloadsScene extends ToolbarScene
                                         }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
                                     }
                                 }
-                                
+
                                 if (option == 2) {
                                     // 仅删除本地图片文件（保留 info.json 等其他文件）
                                     List<DownloadInfo> smbInfoList = new ArrayList<>();
-                                    
+
                                     for (DownloadInfo info : selectedInfoList) {
                                         // 处理本地文件
                                         UniFile dir = getGalleryDownloadDir(info);
@@ -1954,8 +1977,8 @@ public class DownloadsScene extends ToolbarScene
                                                 for (UniFile file : files) {
                                                     if (file.isFile()) {
                                                         String name = file.getName();
-                                                        if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") || 
-                                                            name.endsWith(".png") || name.endsWith(".gif") || 
+                                                        if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") ||
+                                                            name.endsWith(".png") || name.endsWith(".gif") ||
                                                             name.endsWith(".webp") || name.endsWith(".bmp"))) {
                                                             imageFiles.add(file);
                                                         }
@@ -1966,14 +1989,14 @@ public class DownloadsScene extends ToolbarScene
                                                 }
                                             }
                                         }
-                                        
+
                                         // 检查是否在 SMB 上
                                         com.hippo.ehviewer.smb.Client.Target smbCheck =
                                             com.hippo.ehviewer.smb.SmbPathResolver.resolve(info.gid);
                                         if (smbCheck != null) {
                                             smbInfoList.add(info);
                                         }
-                                        
+
                                         // 重置下载状态
                                         info.state = DownloadInfo.STATE_NONE;
                                         info.finished = 0;
@@ -1983,7 +2006,7 @@ public class DownloadsScene extends ToolbarScene
                                         if (info.total < 0) info.total = 0;
                                         EhDB.putDownloadInfo(info);
                                     }
-                                    
+
                                     // 删除 SMB 图片文件（异步）
                                     if (!smbInfoList.isEmpty()) {
                                         new android.os.AsyncTask<Void, Void, Integer>() {
@@ -2013,7 +2036,7 @@ public class DownloadsScene extends ToolbarScene
                                                                 }
                                                             }
                                                         );
-                                                        
+
                                                         // 保留 SMB 映射（用户可能想重新下载）
                                                         count++;
                                                     } catch (Exception e) {
@@ -2030,11 +2053,19 @@ public class DownloadsScene extends ToolbarScene
                                         }.executeOnExecutor(com.hippo.util.IoThreadPoolExecutor.getInstance());
                                     }
                                 }
-                                
+
                                 if (option == 0) {
                                     // 移除下载项
                                     if (mDownloadManager != null) {
                                         mDownloadManager.deleteRangeDownload(selectedGidList);
+                                    }
+                                }
+
+                                // 删除阅读进度（如果用户勾选了）
+                                if (deleteReadingProgress) {
+                                    for (DownloadInfo info : selectedInfoList) {
+                                        EhApplication.getSpiderInfoRepository(context).delete(info.gid, context);
+                                        mSpiderInfoMap.remove(info.gid);
                                     }
                                 }
 
