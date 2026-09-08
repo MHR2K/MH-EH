@@ -103,6 +103,10 @@ find_library(
 # can link multiple libraries, such as libraries you define in this
 # build script, prebuilt third-party libraries, or system libraries.
 
+find_library(
+        z-lib
+        z)
+
 target_link_libraries( # Specifies the target library.
         ehviewer
 
@@ -112,4 +116,5 @@ target_link_libraries( # Specifies the target library.
         ${jnigraphics-lib}
         ${glesv2-lib}
         archive_static
+        ${z-lib}
 )

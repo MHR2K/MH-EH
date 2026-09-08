@@ -124,44 +124,7 @@
         </com.hippo.ehviewer.widget.SeekBarPanel>
     </LinearLayout>
 
-    <!-- CBZ 下载进度面板 -->
-    <LinearLayout
-        android:id="@+id/cbz_download_progress_panel"
-        android:layout_width="280dp"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:background="@drawable/bg_dialog_round"
-        android:elevation="8dp"
-        android:gravity="center"
-        android:orientation="vertical"
-        android:padding="24dp"
-        android:visibility="gone">
 
-        <TextView
-            android:id="@+id/cbz_download_title"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="正在从 SMB 下载 CBZ…"
-            android:textColor="?android:attr/textColorPrimary"
-            android:textSize="14sp" />
-
-        <ProgressBar
-            android:id="@+id/cbz_download_progress_bar"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:max="100" />
-
-        <TextView
-            android:id="@+id/cbz_download_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="?android:attr/textColorSecondary"
-            android:textSize="12sp" />
-
-    </LinearLayout>
 
     <com.hippo.widget.ColorView
         android:id="@+id/mask"

@@ -592,4 +592,30 @@ object Client {
     }
     
     // endregion
+
+    // region 文件句柄（用于流式读取）
+
+    /**
+     * 打开 SMB 文件并返回 smbj File 句柄，用于随机读取。
+     * 调用方负责关闭返回的 File。
+     */
+    @Throws(IOException::class)
+    fun openFile(target: Target): com.hierynomus.smbj.share.File {
+        val session = getSession(target.authority)
+        val share = getDiskShare(session, target.share)
+        return try {
+            share.openFile(
+                target.pathInShare,
+                setOf(AccessMask.GENERIC_READ),
+                null,
+                setOf(SMB2ShareAccess.FILE_SHARE_READ),
+                SMB2CreateDisposition.FILE_OPEN,
+                null
+            )
+        } catch (e: SMBRuntimeException) {
+            throw IOException(e)
+        }
+    }
+
+    // endregion
 }

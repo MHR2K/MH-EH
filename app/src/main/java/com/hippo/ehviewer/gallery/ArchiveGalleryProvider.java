@@ -24,7 +24,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.hippo.ehviewer.GetText;
 import com.hippo.ehviewer.R;
-import com.hippo.ehviewer.jni.Archive;
+import com.hippo.ehviewer.jni.ArchiveKt;
 import com.hippo.lib.glgallery.GalleryPageView;
 import com.hippo.lib.image.Image;
 import com.hippo.unifile.UniFile;
@@ -90,7 +90,7 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
 
         // Close the native archive
         try {
-            Archive.closeArchive();
+            ArchiveKt.closeArchive();
         } catch (Throwable e) {
             e.printStackTrace();
         }
@@ -148,7 +148,7 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
     @Override
     public String getImageFilename(int index) {
         try {
-            String ext = Archive.getExtension(index);
+            String ext = ArchiveKt.getExtension(index);
             return index + (ext != null ? "." + ext : "");
         } catch (Throwable e) {
             return Integer.toString(index);
@@ -215,7 +215,7 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
                 long fileSize = uraf.length();
 
                 // Open archive using native library
-                int count = Archive.openArchive(fdInt, fileSize, true);
+                int count = ArchiveKt.openArchive(fdInt, fileSize, true);
                 if (count <= 0) {
                     size = STATE_ERROR;
                     error = GetText.getString(R.string.error_invalid_archive);
@@ -252,7 +252,7 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
 
                     try {
                         // Extract to ByteBuffer using native method
-                        ByteBuffer buffer = Archive.extractToByteBuffer(index);
+                        ByteBuffer buffer = ArchiveKt.extractToByteBuffer(index);
                         if (buffer != null) {
                             // Create InputStream from ByteBuffer
                             InputStream is = new ByteBufferInputStream(buffer, index);
@@ -379,7 +379,7 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
         public void close() {
             // Release the ByteBuffer back to native
             try {
-                Archive.releaseByteBuffer(buffer);
+                ArchiveKt.releaseByteBuffer(buffer);
             } catch (Throwable e) {
                 e.printStackTrace();
             }

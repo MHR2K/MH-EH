@@ -216,8 +216,7 @@ public class EhApplication extends RecordingApplication {
         ReadableTime.initialize(this);
         Html.initialize(this);
         AppConfig.initialize(this);
-        // SMB CBZ 本地缓存初始化
-        com.hippo.ehviewer.smb.CbzCacheManager.INSTANCE.init(this);
+
         // Best-effort Firebase init (will no-op if config is absent)
         try {
             com.hippo.ehviewer.util.CrashlyticsUtils.initIfPossible(this);
@@ -381,6 +380,9 @@ public class EhApplication extends RecordingApplication {
             try {
                 // Initialize SpiderDen
                 SpiderDen.initialize(EhApplication.this);
+
+                // Initialize ArchiveStreamPageCache for SMB CBZ streaming
+                com.hippo.ehviewer.smb.ArchiveStreamPageCache.INSTANCE.init(EhApplication.this);
 
                 // Initialize Chinese converter
                 ChineseConverterHelper.init();
