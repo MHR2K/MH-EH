@@ -42,6 +42,7 @@ import com.hippo.ehviewer.client.EhRequestBuilder;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.smb.Client;
 import com.hippo.ehviewer.smb.SmbPathResolver;
+import com.hippo.ehviewer.smb.SmbFileHelper;
 import com.hippo.ehviewer.smb.SmbStorageTracker;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.PreviewSet;
@@ -71,6 +72,7 @@ import com.hippo.lib.yorozuya.thread.PriorityThread;
 import com.hippo.lib.yorozuya.thread.PriorityThreadFactory;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -334,6 +336,11 @@ public final class SpiderQueen implements Runnable {
     @UiThread
     public static void releaseSpiderQueen(@NonNull SpiderQueen queen, @Mode int mode) {
         OSUtils.checkMainLoop();
+
+        // Sync progress to SMB before releasing read mode
+        if (mode == MODE_READ) {
+            queen.syncProgressToSmb();
+        }
 
         // Clear mode
         queen.clearMode(mode);
@@ -869,12 +876,25 @@ public final class SpiderQueen implements Runnable {
             }
         }
 
-        // Merge: prefer download dir, supplement with cache startPage, fallback to SMB
+        // Layer 2.5: database fallback when local file is missing
+        SpiderInfo fromDb = null;
+        if (fromDownload == null && fromCache == null) {
+            fromDb = EhApplication.getSpiderInfoRepository(EhApplication.getInstance())
+                    .getFromDbOnly(mGalleryInfo.gid);
+            if (!isValidSpiderInfo(fromDb, mGalleryInfo)) {
+                fromDb = null;
+            }
+        }
+
+        // Merge: prefer download dir, supplement with cache startPage, fallback to DB then SMB
         SpiderInfo best = fromDownload;
         if (best == null) {
             best = fromCache;
         } else if (fromCache != null) {
             best.startPage = Math.max(best.startPage, fromCache.startPage);
+        }
+        if (best == null) {
+            best = fromDb;
         }
         if (best == null) {
             best = fromSmb;
@@ -1056,6 +1076,34 @@ public final class SpiderQueen implements Runnable {
         } catch (Throwable ignore) {
             // ignore persistence errors
         }
+    }
+
+    /**
+     * Sync current reading progress to the SMB .ehviewer file.
+     * Called once when exiting the reader, not on every page turn,
+     * to avoid frequent SMB writes during reading.
+     */
+    public void syncProgressToSmb() {
+        if (!SmbStorageTracker.INSTANCE.isOnSmb(mGalleryInfo.gid)) {
+            return;
+        }
+        SpiderInfo spiderInfo = mSpiderInfo.get();
+        if (spiderInfo == null) {
+            return;
+        }
+        new AsyncTask<Void, Void, Void>() {
+            @Override
+            protected Void doInBackground(Void... params) {
+                try {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    spiderInfo.write(baos);
+                    SmbFileHelper.writeSmbFile(mGalleryInfo.gid, SPIDER_INFO_FILENAME, baos.toByteArray());
+                } catch (Throwable ignore) {
+                    // SMB write failure is non-critical
+                }
+                return null;
+            }
+        }.executeOnExecutor(IoThreadPoolExecutor.Companion.getInstance());
     }
 
     private void runInternal() {

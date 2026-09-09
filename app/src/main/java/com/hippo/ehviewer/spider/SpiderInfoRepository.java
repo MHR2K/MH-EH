@@ -157,6 +157,30 @@ public class SpiderInfoRepository {
         } catch (Throwable e) {
             ExceptionUtils.throwIfFatal(e);
         }
+        // Also reset SMB .ehviewer so progress doesn't come back from SMB on next open
+        try {
+            if (com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.isOnSmb(gid)) {
+                com.hippo.streampipe.InputStreamPipe pipe = com.hippo.ehviewer.smb.SmbFileHelper
+                    .getSmbFileInputStream(gid, com.hippo.ehviewer.spider.SpiderQueen.SPIDER_INFO_FILENAME);
+                if (pipe != null) {
+                    try {
+                        java.io.InputStream is = pipe.open();
+                        SpiderInfo smbInfo = SpiderInfo.read(is);
+                        if (smbInfo != null) {
+                            smbInfo.startPage = 0;
+                            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                            smbInfo.write(baos);
+                            com.hippo.ehviewer.smb.SmbFileHelper.writeSmbFile(
+                                gid, com.hippo.ehviewer.spider.SpiderQueen.SPIDER_INFO_FILENAME, baos.toByteArray());
+                        }
+                    } finally {
+                        pipe.close();
+                    }
+                }
+            }
+        } catch (Throwable ignore) {
+            // SMB reset failure is non-critical
+        }
     }
 
     /**
