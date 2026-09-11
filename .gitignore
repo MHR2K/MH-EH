@@ -30,3 +30,6 @@ ruvector.db
 .claude/helpers/
 .claude/statusline.mjs
 .claude/statusline.sh
+
+# python cached bytecode files (Python字节码缓存文件夹)
+scripts/__pycache__
