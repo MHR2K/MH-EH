@@ -85,6 +85,9 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
@@ -355,6 +358,87 @@ public class EhEngine {
             throw e;
         }
     }
+
+    /**
+     * 并发批量获取收藏数（gdata API 不返回 favcount，需逐个请求详情页）
+     * @param concurrency 并发数（建议 3-5）
+     * @param delayBetweenBatchesMs 每批间隔毫秒
+     * @param cancelled 取消标志，设为 true 后尽快退出
+     * @return int[]{成功数, 总数}
+     */
+    public static int[] batchGetFavoriteCounts(OkHttpClient okHttpClient, List<GalleryInfo> items,
+                                              int concurrency, int delayBetweenBatchesMs,
+                                              @Nullable java.util.concurrent.atomic.AtomicBoolean cancelled,
+                                              @Nullable OnBatchProgressListener listener) {
+        int total = items.size();
+        AtomicInteger success = new AtomicInteger(0);
+        AtomicInteger completed = new AtomicInteger(0);
+        java.util.concurrent.ExecutorService executor =
+                java.util.concurrent.Executors.newFixedThreadPool(concurrency);
+
+        for (int i = 0; i < total; i += concurrency) {
+            // 检查取消标志
+            if (cancelled != null && cancelled.get()) {
+                break;
+            }
+
+            int batchEnd = Math.min(i + concurrency, total);
+            List<GalleryInfo> batch = items.subList(i, batchEnd);
+            CountDownLatch latch = new CountDownLatch(batch.size());
+
+            for (GalleryInfo gi : batch) {
+                executor.submit(() -> {
+                    try {
+                        // 检查取消标志
+                        if (cancelled != null && cancelled.get()) {
+                            return;
+                        }
+                        String url = EhUrl.getGalleryDetailUrl(gi.gid, gi.token);
+                        GalleryDetail detail = getGalleryDetail(null, okHttpClient, url);
+                        if (detail != null) {
+                            gi.favoriteCount = detail.favoriteCount;
+                            success.incrementAndGet();
+                        }
+                    } catch (Throwable e) {
+                        Log.e(TAG, "Fav: failed gid=" + gi.gid, e);
+                    } finally {
+                        int done = completed.incrementAndGet();
+                        if (listener != null) {
+                            listener.onProgress(done, total);
+                        }
+                        latch.countDown();
+                    }
+                });
+            }
+
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                executor.shutdownNow();
+                return new int[]{success.get(), total};
+            }
+
+            // 批间等待，避免触发限流
+            if (batchEnd < total && delayBetweenBatchesMs > 0) {
+                try {
+                    Thread.sleep(delayBetweenBatchesMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    executor.shutdownNow();
+                    return new int[]{success.get(), total};
+                }
+            }
+        }
+
+        executor.shutdown();
+        return new int[]{success.get(), total};
+    }
+
+    public interface OnBatchProgressListener {
+        void onProgress(int current, int total);
+    }
+
 //    https://e-hentai.org/g/2914213/fc8bce61d9/
     public static GalleryDetail getGalleryDetail(@Nullable EhClient.Task task, OkHttpClient okHttpClient,
                                                  String url) throws Throwable {

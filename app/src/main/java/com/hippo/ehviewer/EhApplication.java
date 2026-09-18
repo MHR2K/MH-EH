@@ -212,6 +212,7 @@ public class EhApplication extends RecordingApplication {
         GetText.initialize(this);
         StatusCodeException.initialize(this);
         Settings.initialize(this);
+        com.hippo.ehviewer.util.FavCountStore.init(this);
         ArchiverDownloadCompleter.resumePendingDownloads(this);
         ReadableTime.initialize(this);
         Html.initialize(this);

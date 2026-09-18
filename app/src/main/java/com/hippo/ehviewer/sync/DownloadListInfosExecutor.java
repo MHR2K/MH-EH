@@ -295,6 +295,8 @@ public class DownloadListInfosExecutor {
                 case R.id.sort_by_name_desc:
                 case R.id.sort_by_file_size_asc:
                 case R.id.sort_by_file_size_desc:
+                case R.id.sort_by_fav_count_asc:
+                case R.id.sort_by_fav_count_desc:
                     resultList = sortByType(id);
                     break;
                 case R.id.all_kind:
@@ -589,6 +591,34 @@ public class DownloadListInfosExecutor {
                     } else if (arr[j].fileSize < 0) {
                         a[k++] = arr[i++];
                     } else if (arr[i].fileSize > arr[j].fileSize) {
+                        a[k++] = arr[i++];
+                    } else {
+                        a[k++] = arr[j++];
+                    }
+                    break;
+                case R.id.sort_by_fav_count_asc:
+                    // 未获取的收藏数(-1)排在最后
+                    if (arr[i].favoriteCount < 0 && arr[j].favoriteCount < 0) {
+                        a[k++] = arr[i++];
+                    } else if (arr[i].favoriteCount < 0) {
+                        a[k++] = arr[j++];
+                    } else if (arr[j].favoriteCount < 0) {
+                        a[k++] = arr[i++];
+                    } else if (arr[i].favoriteCount < arr[j].favoriteCount) {
+                        a[k++] = arr[i++];
+                    } else {
+                        a[k++] = arr[j++];
+                    }
+                    break;
+                case R.id.sort_by_fav_count_desc:
+                    // 未获取的收藏数(-1)排在最后
+                    if (arr[i].favoriteCount < 0 && arr[j].favoriteCount < 0) {
+                        a[k++] = arr[i++];
+                    } else if (arr[i].favoriteCount < 0) {
+                        a[k++] = arr[j++];
+                    } else if (arr[j].favoriteCount < 0) {
+                        a[k++] = arr[i++];
+                    } else if (arr[i].favoriteCount > arr[j].favoriteCount) {
                         a[k++] = arr[i++];
                     } else {
                         a[k++] = arr[j++];

@@ -215,6 +215,14 @@
                         android:id="@+id/sort_by_file_size_desc"
                         android:title="@string/sort_by_file_size_desc"
                         app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/sort_by_fav_count_asc"
+                        android:title="@string/sort_by_fav_count_asc"
+                        app:showAsAction="ifRoom"/>
+                    <item
+                        android:id="@+id/sort_by_fav_count_desc"
+                        android:title="@string/sort_by_fav_count_desc"
+                        app:showAsAction="ifRoom"/>
                 </menu>
             </item>
 
@@ -259,6 +267,12 @@
     <item
         android:id="@+id/action_convert_storage"
         android:title="@string/download_convert_storage"
+        app:showAsAction="never"/>
+
+    <!-- 批量刷新收藏数 -->
+    <item
+        android:id="@+id/action_refresh_fav_count"
+        android:title="@string/download_refresh_fav_count"
         app:showAsAction="never"/>
 
 </menu>

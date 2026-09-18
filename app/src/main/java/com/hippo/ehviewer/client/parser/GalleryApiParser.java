@@ -55,6 +55,7 @@ public class GalleryApiParser {
             }
             gi.simpleTags = tags;
             gi.pages = NumberUtils.parseIntSafely(g.getString("filecount"), 0);
+            // favcount 不在 gdata API 中，通过 getGalleryDetail 单独获取
             gi.generateSLang();
         }
     }

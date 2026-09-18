@@ -24,7 +24,11 @@ import static com.hippo.util.FileUtils.getFileName;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.DialogInterface;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Resources;
@@ -89,6 +93,7 @@ import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.callBack.DownloadSearchCallback;
 import com.hippo.ehviewer.client.EhConfig;
+import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
@@ -404,6 +409,8 @@ public class DownloadsScene extends ToolbarScene
             mAdapter.notifyDataSetChanged();
         }
         mBackList = mList;
+        // 从本地存储恢复收藏数
+        com.hippo.ehviewer.util.FavCountStore.applyTo(mBackList);
 //        filterByCategory();
         updateTitle();
         updatePaginationIndicator();
@@ -1003,6 +1010,8 @@ public class DownloadsScene extends ToolbarScene
             case R.id.sort_by_name_desc:
             case R.id.sort_by_file_size_asc:
             case R.id.sort_by_file_size_desc:
+            case R.id.sort_by_fav_count_asc:
+            case R.id.sort_by_fav_count_desc:
             case R.id.all_kind:
             case R.id.misc:
             case R.id.doujinshi:
@@ -1149,6 +1158,11 @@ public class DownloadsScene extends ToolbarScene
                         .show();
                 return true;
             }
+            case R.id.action_refresh_fav_count: {
+                if (mBackList == null || mBackList.isEmpty()) return false;
+                showRefreshFavCountDialog();
+                return true;
+            }
 
         }
         return false;
@@ -1218,6 +1232,113 @@ public class DownloadsScene extends ToolbarScene
                     mSearchBar.applySearch(true);
                     dialog.dismiss();
                 }).show();
+    }
+
+    private void showRefreshFavCountDialog() {
+        Context ctx = getEHContext();
+        if (ctx == null || mBackList == null) return;
+        int count = mBackList.size();
+        new AlertDialog.Builder(ctx)
+                .setTitle(R.string.download_refresh_fav_count)
+                .setMessage(getString(R.string.download_refresh_fav_count_message, count))
+                .setPositiveButton(android.R.string.ok, (d, w) -> startBatchGetFavCount())
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void startBatchGetFavCount() {
+        Context ctx = getEHContext();
+        if (ctx == null || mBackList == null) return;
+        // 跳过已有收藏数的项目，跳过7天内的新本子（收藏数还不稳定）
+        long sevenDaysAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000;
+        java.text.DateFormat df = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US);
+        List<DownloadInfo> items = new ArrayList<>();
+        int skippedNew = 0;
+        for (DownloadInfo di : mBackList) {
+            if (di.favoriteCount > 0) continue; // 已有收藏数，跳过
+            // 检查是否是7天内的新本子
+            if (di.posted != null && !di.posted.isEmpty()) {
+                try {
+                    long postedTime = df.parse(di.posted).getTime();
+                    if (postedTime > sevenDaysAgo) {
+                        skippedNew++;
+                        continue; // 新本子，跳过
+                    }
+                } catch (java.text.ParseException ignored) {
+                    // 解析失败则不跳过，继续获取
+                }
+            }
+            items.add(di);
+        }
+        Log.e("FavCount", "待获取: " + items.size() + ", 已有收藏数跳过: " + (mBackList.size() - items.size() - skippedNew) + ", 新本子跳过: " + skippedNew + ", 总计: " + mBackList.size());
+        if (items.isEmpty()) {
+            String msg = skippedNew > 0
+                    ? getString(R.string.download_refresh_fav_count_done, 0) + "（跳过" + skippedNew + "个7天内新本子）"
+                    : getString(R.string.download_refresh_fav_count_done, 0);
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 显示进度对话框（可取消）
+        final AtomicBoolean cancelled = new AtomicBoolean(false);
+        final List<GalleryInfo> galleryInfoList = new ArrayList<>(items);
+
+        ProgressDialog progressDialog = new ProgressDialog(ctx);
+        progressDialog.setTitle(R.string.download_refresh_fav_count);
+        progressDialog.setMessage(getString(R.string.download_refresh_fav_count_progress, 0, items.size()));
+        progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
+        progressDialog.setMax(items.size());
+        progressDialog.setCancelable(true);
+        progressDialog.setOnCancelListener(dialog -> cancelled.set(true));
+        progressDialog.setButton(DialogInterface.BUTTON_NEGATIVE,
+                ctx.getString(android.R.string.cancel),
+                (dialog, which) -> dialog.cancel());
+        progressDialog.show();
+
+        AsyncTask<Void, Integer, int[]> task = new AsyncTask<Void, Integer, int[]>() {
+            @Override
+            protected int[] doInBackground(Void... voids) {
+                return EhEngine.batchGetFavoriteCounts(
+                        EhApplication.getOkHttpClient(ctx),
+                        galleryInfoList,
+                        3,    // 3并发
+                        1000, // 每批间隔1秒
+                        cancelled,
+                        (current, total) -> publishProgress(current, total));
+            }
+
+            @Override
+            protected void onProgressUpdate(Integer... values) {
+                if (values.length >= 2) {
+                    progressDialog.setProgress(values[0]);
+                    progressDialog.setMessage(getString(R.string.download_refresh_fav_count_progress, values[0], values[1]));
+                }
+            }
+
+            @Override
+            protected void onPostExecute(int[] result) {
+                progressDialog.dismiss();
+                // 持久化到磁盘（包括中途中止时已获取的）
+                if (mBackList != null) {
+                    com.hippo.ehviewer.util.FavCountStore.saveFrom(mBackList);
+                }
+                // 刷新列表显示
+                if (mList != null) {
+                    updateAdapter();
+                }
+                if (result != null) {
+                    int success = result[0];
+                    int total = result[1];
+                    if (cancelled.get()) {
+                        Toast.makeText(ctx, "已中止，获取了 " + success + "/" + total + " 个", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(ctx, getString(R.string.download_refresh_fav_count_done, success), Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+        };
+
+        task.execute();
     }
 
     private void convertBatchAsync(List<DownloadInfo> infos, boolean toCbz) {

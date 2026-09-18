@@ -342,6 +342,14 @@ public class DownloadAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             holder.title.setText(title);
             holder.uploader.setText(info.uploader);
 
+            // 显示收藏数
+            if (info.favoriteCount > 0) {
+                holder.favCount.setText("❤ " + info.favoriteCount);
+                holder.favCount.setVisibility(View.VISIBLE);
+            } else {
+                holder.favCount.setVisibility(View.GONE);
+            }
+
             // Handle rating display for imported archives
             if (info.archiveUri != null && info.archiveUri.startsWith("content://")) {
                 holder.rating.setRating(5.0f);
@@ -512,6 +520,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
     private void bindProgress(DownloadHolder holder, DownloadInfo info) {
         holder.uploader.setVisibility(View.GONE);
         holder.rating.setVisibility(View.GONE);
+        holder.favCount.setVisibility(View.GONE);
         holder.category.setVisibility(View.GONE);
         holder.readProgress.setVisibility(View.GONE);
         holder.state.setVisibility(View.GONE);
@@ -874,6 +883,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
         public final android.widget.ProgressBar progressBar;
         public final TextView percent;
         public final TextView speed;
+        public final TextView favCount;
 
         public DownloadHolder(View itemView) {
             super(itemView);
@@ -881,6 +891,7 @@ public class DownloadAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             thumb = itemView.findViewById(R.id.thumb);
             title = itemView.findViewById(R.id.title);
             uploader = itemView.findViewById(R.id.uploader);
+            favCount = itemView.findViewById(R.id.fav_count);
             rating = itemView.findViewById(R.id.rating);
             category = itemView.findViewById(R.id.category);
             readProgress = itemView.findViewById(R.id.read_progress);

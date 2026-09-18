@@ -19,5 +19,6 @@
 
     <include domain="database" path="eh.db"/>
     <include domain="database" path="search_database.db"/>
+    <include domain="sharedpref" path="fav_count.xml"/>
 
 </full-backup-content>

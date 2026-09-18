@@ -135,6 +135,8 @@ public class GalleryInfo implements Parcelable {
     public int favoriteSlot = -2;
     public String favoriteName;
 
+    public int favoriteCount = -1; // -1 表示未获取
+
     public String toCSV() {
         return gid + "," +
                 token + "," +
@@ -155,7 +157,8 @@ public class GalleryInfo implements Parcelable {
                 spanGroupIndex + "," +
                 favoriteSlot + "," +
                 favoriteName + "," +
-                pages + "\n";
+                pages + "," +
+                favoriteCount + "\n";
     }
 
     public static GalleryInfo fromCSV(String csv) {
@@ -185,6 +188,9 @@ public class GalleryInfo implements Parcelable {
             gi.favoriteSlot = Integer.parseInt(values[17]);
             gi.favoriteName = values[18];
             gi.pages = Integer.parseInt(values[19].trim());
+            if (values.length > 20) {
+                gi.favoriteCount = Integer.parseInt(values[20].trim());
+            }
         } catch (NumberFormatException e) {
             return null;
         }
@@ -250,6 +256,7 @@ public class GalleryInfo implements Parcelable {
         dest.writeInt(this.spanGroupIndex);
         dest.writeInt(this.favoriteSlot);
         dest.writeString(this.favoriteName);
+        dest.writeInt(this.favoriteCount);
         dest.writeList(this.tgList);
     }
 
@@ -276,6 +283,7 @@ public class GalleryInfo implements Parcelable {
         this.spanGroupIndex = in.readInt();
         this.favoriteSlot = in.readInt();
         this.favoriteName = in.readString();
+        this.favoriteCount = in.readInt();
         this.tgList = in.readArrayList(String.class.getClassLoader());
     }
 
@@ -313,6 +321,7 @@ public class GalleryInfo implements Parcelable {
         i.spanGroupIndex = spanGroupIndex;
         i.favoriteSlot = favoriteSlot;
         i.favoriteName = favoriteName;
+        i.favoriteCount = favoriteCount;
         i.tgList = tgList;
         if (info != null) {
             i.state = info.state;
@@ -347,6 +356,7 @@ public class GalleryInfo implements Parcelable {
         jsonObject.put("spanGroupIndex", spanGroupIndex);
         jsonObject.put("favoriteSlot", favoriteSlot);
         jsonObject.put("favoriteName", favoriteName);
+        jsonObject.put("favoriteCount", favoriteCount);
         jsonObject.put("tgList", new JSONArray(Collections.singletonList(tgList)));
         jsonObject.put("pages", pages);
         return jsonObject;
@@ -358,6 +368,7 @@ public class GalleryInfo implements Parcelable {
         galleryInfo.category = object.getIntValue("category");
         galleryInfo.favoriteName = object.getString("favoriteName");
         galleryInfo.favoriteSlot = object.getIntValue("favoriteSlot");
+        galleryInfo.favoriteCount = object.getIntValue("favoriteCount");
         galleryInfo.gid = object.getLongValue("gid");
         galleryInfo.pages = object.getIntValue("pages");
         galleryInfo.rated = object.getBoolean("rated");

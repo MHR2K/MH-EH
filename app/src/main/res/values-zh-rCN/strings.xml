@@ -1105,6 +1105,12 @@
     <string name="storage_archives_only">只看压缩包</string>
     <string name="storage_images_only">只看图片</string>
     <string name="download_convert_storage">转换</string>
+    <string name="download_refresh_fav_count">刷新收藏数</string>
+    <string name="download_refresh_fav_count_message">将获取 %1$d 个漫画的收藏数，是否继续？</string>
+    <string name="download_refresh_fav_count_progress">获取收藏数：%1$d / %2$d</string>
+    <string name="download_refresh_fav_count_done">已获取 %1$d 个漫画的收藏数</string>
+    <string name="sort_by_fav_count_asc">收藏数 ↑</string>
+    <string name="sort_by_fav_count_desc">收藏数 ↓</string>
     <string name="convert_to_cbz">转换为 CBZ</string>
     <string name="convert_to_images">解压为图片</string>
     <string name="convert_in_progress">正在转换：%1$d/%2$d</string>
