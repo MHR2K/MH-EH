@@ -106,6 +106,7 @@ import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadArchiveImporter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadChoiceListener;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadGuideHelper;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadPaginationController;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.hippo.ehviewer.widget.SearchBar;
@@ -188,8 +189,6 @@ public class DownloadsScene extends ToolbarScene
     private List<DownloadInfo> mBackList;
     // 记录当前应用的过滤ID（状态/分类/排序等），用于编辑后重新应用
     private int mCurrentFilterId = -1;
-    // 记录过滤/搜索前的锚点 gid，用于恢复滚动位置
-    private long mRestoreScrollGid = -1;
 
     // 组合筛选的选中过滤器状态
     private Set<Integer> mSelectedStatusFilters = new HashSet<>();
@@ -200,17 +199,41 @@ public class DownloadsScene extends ToolbarScene
     /*---------------
      List pagination
      ---------------*/
-    private int indexPage = 1;
-    private int pageSize = 1;
-    private boolean canPagination = true;
-    private final int paginationSize = 500;
-    //    private final int paginationSize = 5;
-    private final int[] perPageCountChoices = {50, 100, 200, 300, 500};
-//    private final int[] perPageCountChoices = {1, 2, 3, 4, 5};
+    @NonNull
+    private final DownloadPaginationController mPaginationController =
+            new DownloadPaginationController(new DownloadPaginationController.Host() {
+                @Nullable
+                @Override
+                public List<DownloadInfo> getList() {
+                    return mList;
+                }
 
-    private MyPageChangeListener myPageChangeListener;
+                @Nullable
+                @Override
+                public RecyclerView.Adapter getNotifyAdapter() {
+                    return mAdapter;
+                }
 
-    private final Map<Long, SpiderInfo> mSpiderInfoMap = new HashMap<>();
+                @Nullable
+                @Override
+                public MyEasyRecyclerView getRecyclerView() {
+                    return mRecyclerView;
+                }
+
+                @Nullable
+                @Override
+                public AutoStaggeredGridLayoutManager getLayoutManager() {
+                    return mLayoutManager;
+                }
+
+                @Override
+                public void invalidateSpiderInfoCache(long gid) {
+                    Activity activity = getActivity2();
+                    if (activity != null) {
+                        EhApplication.getSpiderInfoRepository(activity).invalidate(gid);
+                    }
+                }
+            });
 
     /*---------------
      View life cycle
@@ -250,8 +273,6 @@ public class DownloadsScene extends ToolbarScene
     private Map<String, List<DownloadInfo>> mGroupedSearchResults;
     private final Set<String> mCollapsedLabels = new HashSet<>();
     private DownloadListInfosExecutor mSearchExecutor;
-    @Nullable
-    private PaginationIndicator mPaginationIndicator;
 
     private DownloadLabelDraw downloadLabelDraw;
     @Nullable
@@ -263,10 +284,6 @@ public class DownloadsScene extends ToolbarScene
     private int mInitPosition = -1;
 
     public boolean searching = false;
-    private boolean doNotScroll = false;
-
-    private boolean needInitPage = false;
-    private boolean needInitPageSize = false;
 
     @Nullable
     private Spinner mCategorySpinner;
@@ -369,7 +386,7 @@ public class DownloadsScene extends ToolbarScene
         AssertUtils.assertNotNull(context);
         mDownloadManager = EhApplication.getDownloadManager(context);
         mDownloadManager.addDownloadInfoListener(this);
-        canPagination = Settings.getDownloadPagination();
+        mPaginationController.setCanPagination(Settings.getDownloadPagination());
 
         // 保存分组搜索状态（onInit 中的 updateForLabel 会清除它们）
         Map<String, List<DownloadInfo>> savedGroupedResults = mGroupedSearchResults;
@@ -451,26 +468,7 @@ public class DownloadsScene extends ToolbarScene
     }
 
     private void updatePaginationIndicator() {
-        if (mPaginationIndicator == null || mList == null) {
-            return;
-        }
-        if (mList.size() < paginationSize || !canPagination) {
-            mPaginationIndicator.setVisibility(View.GONE);
-            return;
-        }
-        mPaginationIndicator.setVisibility(View.VISIBLE);
-        needInitPageSize = true;
-        mPaginationIndicator.initPaginationIndicator(pageSize, perPageCountChoices, mList.size(), indexPage);
-//        mPaginationIndicator.setTotalCount();
-        mPaginationIndicator.setListener(myPageChangeListener);
-
-        // 同步分页监听器的状态
-        if (myPageChangeListener != null) {
-            myPageChangeListener.setIndexPage(indexPage);
-            myPageChangeListener.setPageSize(pageSize);
-            myPageChangeListener.setNeedInitPage(needInitPage);
-            myPageChangeListener.setDoNotScroll(doNotScroll);
-        }
+        mPaginationController.updatePaginationIndicator();
     }
 
     @SuppressLint("StringFormatMatches")
@@ -673,12 +671,14 @@ public class DownloadsScene extends ToolbarScene
         FastScroller fastScroller = (FastScroller) ViewUtils.$$(content, R.id.fast_scroller);
         mFabLayout = (FabLayout) ViewUtils.$$(view, R.id.fab_layout);
         TextView tip = (TextView) ViewUtils.$$(view, R.id.tip);
-        if (mPaginationIndicator != null) {
-            needInitPage = true;
+        if (mPaginationController.getPaginationIndicator() != null) {
+            mPaginationController.setNeedInitPage(true);
         }
-        mPaginationIndicator = (PaginationIndicator) ViewUtils.$$(view, R.id.indicator);
+        PaginationIndicator indicator = (PaginationIndicator) ViewUtils.$$(view, R.id.indicator);
+        mPaginationController.setPaginationIndicator(indicator);
 
-        mPaginationIndicator.setPerPageCountChoices(perPageCountChoices, getPageSizePos(pageSize));
+        indicator.setPerPageCountChoices(mPaginationController.getPerPageCountChoices(),
+                mPaginationController.getPageSizePos(mPaginationController.getPageSize()));
 
         mViewTransition = new ViewTransition(content, tip);
 
@@ -705,20 +705,7 @@ public class DownloadsScene extends ToolbarScene
         mRecyclerView.setAdapter(mAdapter);
 
         // 初始化分页监听器
-        myPageChangeListener = new MyPageChangeListener(indexPage, pageSize, needInitPage, doNotScroll, mOriginalAdapter, mRecyclerView);
-
-        // 设置分页监听器的回调
-        myPageChangeListener.setPageChangeCallback(new MyPageChangeListener.PageChangeCallback() {
-            @Override
-            public void onPageChanged(int newIndexPage) {
-                indexPage = newIndexPage;
-            }
-
-            @Override
-            public void onPageSizeChanged(int newPageSize) {
-                pageSize = newPageSize;
-            }
-        });
+        mPaginationController.bindPageChangeListener(mOriginalAdapter, mRecyclerView);
         mLayoutManager = new AutoStaggeredGridLayoutManager(0, StaggeredGridLayoutManager.VERTICAL);
         mLayoutManager.setColumnSize(resources.getDimensionPixelOffset(Settings.getDetailSizeResId()));
         mLayoutManager.setStrategy(AutoStaggeredGridLayoutManager.STRATEGY_MIN_SIZE);
@@ -1745,7 +1732,7 @@ public class DownloadsScene extends ToolbarScene
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(android.R.string.ok, (d, w) -> {
                             EhApplication.getSpiderInfoRepository(context).delete(info.gid, context);
-                            mSpiderInfoMap.remove(info.gid);
+                            mPaginationController.getSpiderInfoMap().remove(info.gid);
                             // 同时停止下载，避免漫画仍在下载队列中被自动下载
                             if (mDownloadManager != null) {
                                 mDownloadManager.stopDownload(info.gid);
@@ -2185,7 +2172,7 @@ public class DownloadsScene extends ToolbarScene
                                 if (deleteReadingProgress) {
                                     for (DownloadInfo info : selectedInfoList) {
                                         EhApplication.getSpiderInfoRepository(context).delete(info.gid, context);
-                                        mSpiderInfoMap.remove(info.gid);
+                                        mPaginationController.getSpiderInfoMap().remove(info.gid);
                                     }
                                 }
 
@@ -2670,11 +2657,11 @@ public class DownloadsScene extends ToolbarScene
         // 如果之前处于某种过滤（例如"已下载"），则重新应用过滤，保持过滤视图
         if (savedFilterId != -1) {
             // 直接设置保存的滚动位置，不在 gotoFilterAndSort 中重新捕获
-            mRestoreScrollGid = restoreScrollGid;
+            mPaginationController.setRestoreScrollGid(restoreScrollGid);
             // 设置标志避免滚动到顶部，保持当前位置
-            doNotScroll = true;
-            if (myPageChangeListener != null) {
-                myPageChangeListener.setDoNotScroll(true);
+            mPaginationController.setDoNotScroll(true);
+            if (mPaginationController.getMyPageChangeListener() != null) {
+                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
             }
             // 使用 false 参数表示不需要重新捕获滚动位置
             gotoFilterAndSortWithScroll(savedFilterId, false);
@@ -2687,11 +2674,11 @@ public class DownloadsScene extends ToolbarScene
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
             // 直接设置保存的滚动位置
-            mRestoreScrollGid = restoreScrollGid;
+            mPaginationController.setRestoreScrollGid(restoreScrollGid);
             // 设置标志避免滚动到顶部，保持当前位置
-            doNotScroll = true;
-            if (myPageChangeListener != null) {
-                myPageChangeListener.setDoNotScroll(true);
+            mPaginationController.setDoNotScroll(true);
+            if (mPaginationController.getMyPageChangeListener() != null) {
+                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
             }
             // 重新应用组合筛选
             applyCombinedFilterWithScroll(false);
@@ -2702,12 +2689,12 @@ public class DownloadsScene extends ToolbarScene
 
         int index = mList.indexOf(newInfo);
         if (index >= 0 && mAdapter != null) {
-//            mSpiderInfoMap.put(info.gid,getSpiderInfo(info));
+//            mPaginationController.getSpiderInfoMap().put(info.gid,getSpiderInfo(info));
             mAdapter.notifyItemChanged(listIndexInPage(index));
         }
         List<DownloadInfo> infos = new ArrayList<>();
         infos.add(newInfo);
-        DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(infos, this::spiderInfoResultCallBack);
+        DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(infos, mPaginationController::spiderInfoResultCallBack);
         executor.execute();
     }
 
@@ -2754,9 +2741,9 @@ public class DownloadsScene extends ToolbarScene
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
             // 设置标志避免滚动到顶部，保持当前位置
-            doNotScroll = true;
-            if (myPageChangeListener != null) {
-                myPageChangeListener.setDoNotScroll(true);
+            mPaginationController.setDoNotScroll(true);
+            if (mPaginationController.getMyPageChangeListener() != null) {
+                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
             }
             // 重新应用组合筛选
             applyCombinedFilterWithScroll(false);
@@ -2784,9 +2771,9 @@ public class DownloadsScene extends ToolbarScene
             mSelectedStatusFilters = savedStatusFilters;
             mSelectedProgressFilters = savedProgressFilters;
             // 设置标志避免滚动到顶部，保持当前位置
-            doNotScroll = true;
-            if (myPageChangeListener != null) {
-                myPageChangeListener.setDoNotScroll(true);
+            mPaginationController.setDoNotScroll(true);
+            if (mPaginationController.getMyPageChangeListener() != null) {
+                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
             }
             // 重新应用组合筛选
             applyCombinedFilterWithScroll(false);
@@ -2819,30 +2806,27 @@ public class DownloadsScene extends ToolbarScene
     // DownloadAdapterCallback 接口实现
     @Override
     public int getIndexPage() {
-        return indexPage;
+        return mPaginationController.getIndexPage();
     }
 
     @Override
     public int getPageSize() {
-        return pageSize;
+        return mPaginationController.getPageSize();
     }
 
     @Override
     public int getPaginationSize() {
-        return paginationSize;
+        return mPaginationController.getPaginationSize();
     }
 
     @Override
     public boolean isCanPagination() {
-        return canPagination;
+        return mPaginationController.isCanPagination();
     }
 
     @Override
     public int positionInList(int position) {
-        if (mList != null && mList.size() > paginationSize && canPagination) {
-            return position + pageSize * (indexPage - 1);
-        }
-        return position;
+        return mPaginationController.positionInList(position);
     }
 
     /**
@@ -2864,10 +2848,7 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public int listIndexInPage(int position) {
-        if (mList != null && mList.size() > paginationSize && canPagination) {
-            return position % pageSize;
-        }
-        return position;
+        return mPaginationController.listIndexInPage(position);
     }
 
     @Override
@@ -2877,7 +2858,7 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public Map<Long, SpiderInfo> getSpiderInfoMap() {
-        return mSpiderInfoMap;
+        return mPaginationController.getSpiderInfoMap();
     }
 
     @Override
@@ -2893,12 +2874,12 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public void onSpiderInfoFromSmb(long gid, SpiderInfo spiderInfo) {
         new Handler(Looper.getMainLooper()).post(() -> {
-            SpiderInfo existing = mSpiderInfoMap.get(gid);
+            SpiderInfo existing = mPaginationController.getSpiderInfoMap().get(gid);
             if (existing != null && existing.startPage == spiderInfo.startPage
                     && existing.pages == spiderInfo.pages) {
                 return; // 数据未变化，跳过刷新
             }
-            mSpiderInfoMap.put(gid, spiderInfo);
+            mPaginationController.getSpiderInfoMap().put(gid, spiderInfo);
             // 持久化到 Repository，后续查询可直接命中缓存
             Activity activity = getActivity2();
             if (activity != null) {
@@ -3050,7 +3031,7 @@ public class DownloadsScene extends ToolbarScene
         // 仅在需要时捕获滚动位置（新过滤操作时）
         // 当从 onReplace 调用时，滚动位置已保存，不需重新捕获
         if (captureScroll) {
-            mRestoreScrollGid = captureFirstVisibleGid();
+            mPaginationController.setRestoreScrollGid(captureFirstVisibleGid());
         }
         mProgressView.setVisibility(View.VISIBLE);
         if (mRecyclerView != null) {
@@ -3086,44 +3067,14 @@ public class DownloadsScene extends ToolbarScene
      * 捕获当前第一个可见项的 gid，用于过滤/搜索后恢复滚动位置。
      */
     private long captureFirstVisibleGid() {
-        if (mRecyclerView == null || mLayoutManager == null || mList == null) {
-            return -1;
-        }
-        try {
-            int spanCount = mLayoutManager.getSpanCount();
-            int[] firsts = new int[spanCount];
-            mLayoutManager.findFirstVisibleItemPositions(firsts);
-            int min = Arrays.stream(firsts).filter(p -> p >= 0).min().orElse(-1);
-            if (min < 0) return -1;
-            int listPos = positionInList(min);
-            if (listPos >= 0 && listPos < mList.size()) {
-                return mList.get(listPos).gid;
-            }
-        } catch (Throwable ignore) {
-            // 容错处理，无法获取时返回 -1
-        }
-        return -1;
+        return mPaginationController.captureFirstVisibleGid();
     }
 
     /**
      * 过滤/搜索完成后，根据之前记录的 gid 恢复到相邻位置，避免回到顶部。
      */
     private void restoreScrollPositionIfNeeded() {
-        if (mRestoreScrollGid == -1 || mList == null || mRecyclerView == null) {
-            return;
-        }
-        int targetIndex = -1;
-        for (int i = 0; i < mList.size(); i++) {
-            if (mList.get(i).gid == mRestoreScrollGid) {
-                targetIndex = i;
-                break;
-            }
-        }
-        if (targetIndex >= 0) {
-            int adapterPos = listIndexInPage(targetIndex);
-            mRecyclerView.scrollToPosition(adapterPos);
-        }
-        mRestoreScrollGid = -1;
+        mPaginationController.restoreScrollPositionIfNeeded();
     }
 
     @Override
@@ -3288,87 +3239,16 @@ public class DownloadsScene extends ToolbarScene
 
     @SuppressLint("NotifyDataSetChanged")
     private void updateReadProcess(ActivityResult result) {
-        if (result.getResultCode() == LOCAL_GALLERY_INFO_CHANGE) {
-            Intent data = result.getData();
-            if (data != null) {
-                GalleryInfo info = data.getParcelableExtra("info");
-
-                // Check if this is an imported archive - skip SpiderInfo processing
-                boolean isImportedArchive = false;
-                if (info instanceof DownloadInfo downloadInfo) {
-                    isImportedArchive = downloadInfo.archiveUri != null &&
-                            downloadInfo.archiveUri.startsWith("content://");
-                }
-
-                if (!isImportedArchive && info != null) {
-                    // Only process SpiderInfo for regular downloads, not imported archives
-                    mSpiderInfoMap.remove(info.gid);
-                    // 清除Repository的内存缓存，强制重新加载最新进度
-                    Activity activity = getActivity2();
-                    if (activity != null) {
-                        EhApplication.getSpiderInfoRepository(activity).invalidate(info.gid);
-                    }
-                    SpiderInfo spiderInfo = getSpiderInfo(info);
-                    if (spiderInfo != null) {
-                        mSpiderInfoMap.put(info.gid, spiderInfo);
-                    }
-                }
-
-//                mSpiderInfoMap.remove(info.gid);
-//                SpiderInfo spiderInfo = getSpiderInfo(info);
-                int position = -1;
-                if (mList == null || mAdapter == null || info == null) {
-                    return;
-                }
-                for (int i = 0; i < mList.size(); i++) {
-                    if (mList.get(i).gid == info.gid) {
-                        position = listIndexInPage(i);
-                        break;
-                    }
-                }
-                if (position != -1) {
-                    mAdapter.notifyItemChanged(position);
-                } else {
-                    mAdapter.notifyDataSetChanged();
-                }
-
-            }
-        }
+        mPaginationController.updateReadProcess(result);
     }
 
     @SuppressLint("NotifyDataSetChanged")
     private void resetReadingProgressInUi() {
-        for (SpiderInfo spiderInfo : mSpiderInfoMap.values()) {
-            if (spiderInfo != null) {
-                spiderInfo.startPage = 0;
-            }
-        }
-        if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
-        }
+        mPaginationController.resetReadingProgressInUi();
     }
 
     private void queryUnreadSpiderInfo() {
-        if (mList == null) {
-            return;
-        }
-        List<DownloadInfo> requestList = new ArrayList<>();
-        for (int i = 0; i < mList.size(); i++) {
-            DownloadInfo info = mList.get(i);
-            if (!mSpiderInfoMap.containsKey(info.gid) || mSpiderInfoMap.get(info.gid) == null) {
-                requestList.add(info);
-            }
-        }
-        DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(requestList, this::spiderInfoResultCallBack);
-        executor.execute();
-    }
-
-    @SuppressLint("NotifyDataSetChanged")
-    private void spiderInfoResultCallBack(Map<Long, SpiderInfo> resultMap) {
-        mSpiderInfoMap.putAll(resultMap);
-        if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
-        }
+        mPaginationController.queryUnreadSpiderInfo();
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -3381,28 +3261,12 @@ public class DownloadsScene extends ToolbarScene
 
     @SuppressLint("NotifyDataSetChanged")
     private void initPage(int position) {
-        if (mList != null && mList.size() > paginationSize && canPagination) {
-            indexPage = position / pageSize + 1;
-        }
-        doNotScroll = true;
-        if (mPaginationIndicator != null) {
-            mPaginationIndicator.skip2Pos(indexPage);
-        }
-        int scrollTo = listIndexInPage(position);
-        int scrollTarget = Math.max(0, scrollTo - 1);
-        mRecyclerView.post(() -> mRecyclerView.scrollToPosition(scrollTarget));
+        mPaginationController.initPage(position);
     }
 
 
     private int getPageSizePos(int pageSize) {
-        int index = 0;
-        for (int i = 0; i < perPageCountChoices.length; i++) {
-            if (pageSize == perPageCountChoices[i]) {
-                index = i;
-                break;
-            }
-        }
-        return index;
+        return mPaginationController.getPageSizePos(pageSize);
     }
 
     public void runOnUiThread(Runnable runnable) {
@@ -3569,7 +3433,7 @@ public class DownloadsScene extends ToolbarScene
         } else {
             mList = new ArrayList<>();
             for (DownloadInfo info : mBackList) {
-                SpiderInfo spiderInfo = mSpiderInfoMap.get(info.gid);
+                SpiderInfo spiderInfo = mPaginationController.getSpiderInfoMap().get(info.gid);
                 int startPage = spiderInfo != null ? spiderInfo.startPage : 0;
                 int pages = spiderInfo != null ? spiderInfo.pages : 0;
 
@@ -3638,7 +3502,7 @@ public class DownloadsScene extends ToolbarScene
         }
 
         if (captureScroll) {
-            mRestoreScrollGid = captureFirstVisibleGid();
+            mPaginationController.setRestoreScrollGid(captureFirstVisibleGid());
         }
 
         if (mSelectedStatusFilters.isEmpty() && mSelectedProgressFilters.isEmpty()) {
@@ -3650,7 +3514,7 @@ public class DownloadsScene extends ToolbarScene
             updatePaginationIndicator();
             updateView();
             // 恢复滚动位置
-            if (mRestoreScrollGid != -1 && mRecyclerView != null) {
+            if (mPaginationController.getRestoreScrollGid() != -1 && mRecyclerView != null) {
                 mRecyclerView.post(this::restoreScrollPositionIfNeeded);
             }
         } else {
@@ -3658,7 +3522,7 @@ public class DownloadsScene extends ToolbarScene
             if (mRecyclerView != null) {
                 mRecyclerView.setVisibility(View.GONE);
             }
-            DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mBackList, mDownloadManager, mSpiderInfoMap);
+            DownloadListInfosExecutor executor = new DownloadListInfosExecutor(mBackList, mDownloadManager, mPaginationController.getSpiderInfoMap());
             executor.setDownloadSearchingListener(this);
             executor.executeCombinedFilter(mSelectedStatusFilters, mSelectedProgressFilters);
         }

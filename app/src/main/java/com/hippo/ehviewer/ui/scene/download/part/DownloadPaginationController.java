@@ -20,28 +20,30 @@ import static com.hippo.ehviewer.spider.SpiderInfo.getSpiderInfo;
 import static com.hippo.ehviewer.ui.scene.download.DownloadsScene.LOCAL_GALLERY_INFO_CHANGE;
 
 import android.annotation.SuppressLint;
+import android.app.Activity;
 import android.content.Intent;
 import android.view.View;
 
 import androidx.activity.result.ActivityResult;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.sync.DownloadSpiderInfoExecutor;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.sxj.paginationlib.PaginationIndicator;
+import com.hippo.widget.recyclerview.AutoStaggeredGridLayoutManager;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 下载列表分页与阅读进度。
@@ -57,6 +59,12 @@ public class DownloadPaginationController {
 
         @Nullable
         MyEasyRecyclerView getRecyclerView();
+
+        @Nullable
+        AutoStaggeredGridLayoutManager getLayoutManager();
+
+        /** 清除 Repository 内存缓存，强制重新加载最新阅读进度。 */
+        void invalidateSpiderInfoCache(long gid);
     }
 
     @NonNull
@@ -66,7 +74,9 @@ public class DownloadPaginationController {
     private int pageSize = 1;
     private boolean canPagination = true;
     private final int paginationSize = 500;
+    //    private final int paginationSize = 5;
     private final int[] perPageCountChoices = {50, 100, 200, 300, 500};
+    //    private final int[] perPageCountChoices = {1, 2, 3, 4, 5};
 
     private MyPageChangeListener myPageChangeListener;
     @Nullable
@@ -74,6 +84,7 @@ public class DownloadPaginationController {
 
     private final Map<Long, SpiderInfo> mSpiderInfoMap = new HashMap<>();
 
+    private long mRestoreScrollGid = -1;
     private boolean doNotScroll = false;
     private boolean needInitPage = false;
     private boolean needInitPageSize = false;
@@ -126,6 +137,26 @@ public class DownloadPaginationController {
         this.needInitPage = needInitPage;
     }
 
+    public void setNeedInitPageSize(boolean needInitPageSize) {
+        this.needInitPageSize = needInitPageSize;
+    }
+
+    public boolean isDoNotScroll() {
+        return doNotScroll;
+    }
+
+    public void setDoNotScroll(boolean doNotScroll) {
+        this.doNotScroll = doNotScroll;
+    }
+
+    public long getRestoreScrollGid() {
+        return mRestoreScrollGid;
+    }
+
+    public void setRestoreScrollGid(long restoreScrollGid) {
+        mRestoreScrollGid = restoreScrollGid;
+    }
+
     @Nullable
     public PaginationIndicator getPaginationIndicator() {
         return mPaginationIndicator;
@@ -135,20 +166,25 @@ public class DownloadPaginationController {
         mPaginationIndicator = paginationIndicator;
     }
 
+    @Nullable
+    public MyPageChangeListener getMyPageChangeListener() {
+        return myPageChangeListener;
+    }
+
     public void bindPageChangeListener(@Nullable RecyclerView.Adapter adapter,
                                        @Nullable MyEasyRecyclerView recyclerView) {
         myPageChangeListener = new MyPageChangeListener(indexPage, pageSize, needInitPage, doNotScroll, adapter, recyclerView);
+        // 注意：本地策略是一次查询全列表的 SpiderInfo（queryUnreadSpiderInfo 不分页），
+        // 因此翻页/改页大小不重新查询——与上游的每页查询策略不同，保持本地行为。
         myPageChangeListener.setPageChangeCallback(new MyPageChangeListener.PageChangeCallback() {
             @Override
             public void onPageChanged(int newIndexPage) {
                 indexPage = newIndexPage;
-                queryUnreadSpiderInfo();
             }
 
             @Override
             public void onPageSizeChanged(int newPageSize) {
                 pageSize = newPageSize;
-                queryUnreadSpiderInfo();
             }
         });
     }
@@ -210,15 +246,14 @@ public class DownloadPaginationController {
                 if (!isImportedArchive && info != null) {
                     // Only process SpiderInfo for regular downloads, not imported archives
                     mSpiderInfoMap.remove(info.gid);
+                    // 清除Repository的内存缓存，强制重新加载最新进度
+                    mHost.invalidateSpiderInfoCache(info.gid);
                     SpiderInfo spiderInfo = getSpiderInfo(info);
                     if (spiderInfo != null) {
                         mSpiderInfoMap.put(info.gid, spiderInfo);
                     }
-                    trimSpiderInfoMapToCurrentPage();
                 }
 
-//                mSpiderInfoMap.remove(info.gid);
-//                SpiderInfo spiderInfo = getSpiderInfo(info);
                 int position = -1;
                 List<DownloadInfo> list = mHost.getList();
                 RecyclerView.Adapter adapter = mHost.getNotifyAdapter();
@@ -254,45 +289,14 @@ public class DownloadPaginationController {
         }
     }
 
-    @NonNull
-    public List<DownloadInfo> getCurrentPageList() {
-        List<DownloadInfo> list = mHost.getList();
-        if (list == null) {
-            return Collections.emptyList();
-        }
-        if (list.size() > paginationSize && canPagination) {
-            int from = pageSize * (indexPage - 1);
-            if (from < 0) {
-                from = 0;
-            }
-            if (from >= list.size()) {
-                return Collections.emptyList();
-            }
-            int to = Math.min(from + pageSize, list.size());
-            return list.subList(from, to);
-        }
-        return list;
-    }
-
-    public void trimSpiderInfoMapToCurrentPage() {
-        List<DownloadInfo> pageList = getCurrentPageList();
-        Set<Long> keep = new HashSet<>(pageList.size());
-        for (DownloadInfo info : pageList) {
-            keep.add(info.gid);
-        }
-        mSpiderInfoMap.keySet().retainAll(keep);
-    }
-
     public void queryUnreadSpiderInfo() {
         List<DownloadInfo> list = mHost.getList();
         if (list == null) {
             return;
         }
-        trimSpiderInfoMapToCurrentPage();
-        List<DownloadInfo> pageList = getCurrentPageList();
         List<DownloadInfo> requestList = new ArrayList<>();
-        for (int i = 0; i < pageList.size(); i++) {
-            DownloadInfo info = pageList.get(i);
+        for (int i = 0; i < list.size(); i++) {
+            DownloadInfo info = list.get(i);
             if (!mSpiderInfoMap.containsKey(info.gid) || mSpiderInfoMap.get(info.gid) == null) {
                 requestList.add(info);
             }
@@ -300,18 +304,13 @@ public class DownloadPaginationController {
         if (requestList.isEmpty()) {
             return;
         }
-        fetchSpiderInfo(requestList);
-    }
-
-    public void fetchSpiderInfo(List<DownloadInfo> infos) {
-        DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(infos, this::spiderInfoResultCallBack);
+        DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(requestList, this::spiderInfoResultCallBack);
         executor.execute();
     }
 
     @SuppressLint("NotifyDataSetChanged")
     public void spiderInfoResultCallBack(Map<Long, SpiderInfo> resultMap) {
         mSpiderInfoMap.putAll(resultMap);
-        trimSpiderInfoMapToCurrentPage();
         RecyclerView.Adapter adapter = mHost.getNotifyAdapter();
         if (adapter != null) {
             adapter.notifyDataSetChanged();
@@ -328,8 +327,12 @@ public class DownloadPaginationController {
         if (mPaginationIndicator != null) {
             mPaginationIndicator.skip2Pos(indexPage);
         }
+        int scrollTo = listIndexInPage(position);
+        int scrollTarget = Math.max(0, scrollTo - 1);
         MyEasyRecyclerView recyclerView = mHost.getRecyclerView();
-        recyclerView.scrollToPosition(listIndexInPage(position));
+        if (recyclerView != null) {
+            recyclerView.post(() -> recyclerView.scrollToPosition(scrollTarget));
+        }
     }
 
     public int getPageSizePos(int pageSize) {
@@ -341,5 +344,54 @@ public class DownloadPaginationController {
             }
         }
         return index;
+    }
+
+    /**
+     * 捕获当前第一个可见项的 gid，用于过滤/搜索后恢复滚动位置。
+     */
+    public long captureFirstVisibleGid() {
+        MyEasyRecyclerView recyclerView = mHost.getRecyclerView();
+        AutoStaggeredGridLayoutManager layoutManager = mHost.getLayoutManager();
+        List<DownloadInfo> list = mHost.getList();
+        if (recyclerView == null || layoutManager == null || list == null) {
+            return -1;
+        }
+        try {
+            int spanCount = layoutManager.getSpanCount();
+            int[] firsts = new int[spanCount];
+            layoutManager.findFirstVisibleItemPositions(firsts);
+            int min = Arrays.stream(firsts).filter(p -> p >= 0).min().orElse(-1);
+            if (min < 0) return -1;
+            int listPos = positionInList(min);
+            if (listPos >= 0 && listPos < list.size()) {
+                return list.get(listPos).gid;
+            }
+        } catch (Throwable ignore) {
+            // 容错处理，无法获取时返回 -1
+        }
+        return -1;
+    }
+
+    /**
+     * 过滤/搜索完成后，根据之前记录的 gid 恢复到相邻位置，避免回到顶部。
+     */
+    public void restoreScrollPositionIfNeeded() {
+        List<DownloadInfo> list = mHost.getList();
+        MyEasyRecyclerView recyclerView = mHost.getRecyclerView();
+        if (mRestoreScrollGid == -1 || list == null || recyclerView == null) {
+            return;
+        }
+        int targetIndex = -1;
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).gid == mRestoreScrollGid) {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex >= 0) {
+            int adapterPos = listIndexInPage(targetIndex);
+            recyclerView.scrollToPosition(adapterPos);
+        }
+        mRestoreScrollGid = -1;
     }
 }
