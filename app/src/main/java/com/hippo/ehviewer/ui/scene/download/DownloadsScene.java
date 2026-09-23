@@ -33,7 +33,6 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Color;
-import android.graphics.Point;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.NinePatchDrawable;
@@ -44,13 +43,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.util.SparseBooleanArray;
-import android.view.Display;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
@@ -70,10 +67,6 @@ import androidx.core.content.res.ResourcesCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 
-import com.github.amlcurran.showcaseview.ShowcaseView;
-import com.github.amlcurran.showcaseview.SimpleShowcaseEventListener;
-import com.github.amlcurran.showcaseview.targets.PointTarget;
-import com.github.amlcurran.showcaseview.targets.ViewTarget;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.h6ah4i.android.widget.advrecyclerview.animator.DraggableItemAnimator;
 import com.h6ah4i.android.widget.advrecyclerview.animator.GeneralItemAnimator;
@@ -111,6 +104,7 @@ import com.hippo.ehviewer.ui.dialog.DownloadFilterDialog;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadChoiceListener;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadGuideHelper;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.hippo.ehviewer.widget.SearchBar;
@@ -237,7 +231,8 @@ public class DownloadsScene extends ToolbarScene
     @Nullable
     private RecyclerViewDragDropManager mDragDropManager;
 
-    private ShowcaseView mShowcaseView;
+    @Nullable
+    private DownloadGuideHelper mGuideHelper;
 
     private ProgressView mProgressView;
 
@@ -788,92 +783,33 @@ public class DownloadsScene extends ToolbarScene
 
         updateView();
 
-        guide();
+        mGuideHelper = new DownloadGuideHelper(new DownloadGuideHelper.Host() {
+            @Nullable
+            @Override
+            public MainActivity getActivity2() {
+                return DownloadsScene.this.getActivity2();
+            }
+
+            @Nullable
+            @Override
+            public MyEasyRecyclerView getRecyclerView() {
+                return mRecyclerView;
+            }
+
+            @Nullable
+            @Override
+            public AutoStaggeredGridLayoutManager getLayoutManager() {
+                return mLayoutManager;
+            }
+
+            @Override
+            public void openDrawer(int gravity) {
+                DownloadsScene.this.openDrawer(gravity);
+            }
+        });
+        mGuideHelper.guide();
         updatePaginationIndicator();
         return view;
-    }
-
-    private void guide() {
-        if (Settings.getGuideDownloadThumb() && null != mRecyclerView) {
-            mRecyclerView.getViewTreeObserver().addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                @Override
-                public void onGlobalLayout() {
-                    if (Settings.getGuideDownloadThumb()) {
-                        guideDownloadThumb();
-                    }
-                    if (null != mRecyclerView) {
-                        ViewUtils.removeOnGlobalLayoutListener(mRecyclerView.getViewTreeObserver(), this);
-                    }
-                }
-            });
-        } else {
-            guideDownloadLabels();
-        }
-    }
-
-    private void guideDownloadThumb() {
-        MainActivity activity = getActivity2();
-        if (null == activity || !Settings.getGuideDownloadThumb() || null == mLayoutManager || null == mRecyclerView) {
-            guideDownloadLabels();
-            return;
-        }
-        int position = mLayoutManager.findFirstCompletelyVisibleItemPositions(null)[0];
-        if (position < 0) {
-            guideDownloadLabels();
-            return;
-        }
-        RecyclerView.ViewHolder holder = mRecyclerView.findViewHolderForAdapterPosition(position);
-        if (null == holder) {
-            guideDownloadLabels();
-            return;
-        }
-
-        mShowcaseView = new ShowcaseView.Builder(activity)
-                .withMaterialShowcase()
-                .setStyle(R.style.Guide)
-                .setTarget(new ViewTarget(((DownloadAdapter.DownloadHolder) holder).thumb))
-                .blockAllTouches()
-                .setContentTitle(R.string.guide_download_thumb_title)
-                .setContentText(R.string.guide_download_thumb_text)
-                .replaceEndButton(R.layout.button_guide)
-                .setShowcaseEventListener(new SimpleShowcaseEventListener() {
-                    @Override
-                    public void onShowcaseViewDidHide(ShowcaseView showcaseView) {
-                        mShowcaseView = null;
-                        ViewUtils.removeFromParent(showcaseView);
-                        Settings.putGuideDownloadThumb(false);
-                        guideDownloadLabels();
-                    }
-                }).build();
-    }
-
-    private void guideDownloadLabels() {
-        MainActivity activity = getActivity2();
-        if (null == activity || !Settings.getGuideDownloadLabels()) {
-            return;
-        }
-
-        Display display = activity.getWindowManager().getDefaultDisplay();
-        Point point = new Point();
-        display.getSize(point);
-
-        mShowcaseView = new ShowcaseView.Builder(activity)
-                .withMaterialShowcase()
-                .setStyle(R.style.Guide)
-                .setTarget(new PointTarget(point.x, point.y / 3))
-                .blockAllTouches()
-                .setContentTitle(R.string.guide_download_labels_title)
-                .setContentText(R.string.guide_download_labels_text)
-                .replaceEndButton(R.layout.button_guide)
-                .setShowcaseEventListener(new SimpleShowcaseEventListener() {
-                    @Override
-                    public void onShowcaseViewDidHide(ShowcaseView showcaseView) {
-                        mShowcaseView = null;
-                        ViewUtils.removeFromParent(showcaseView);
-                        Settings.puttGuideDownloadLabels(false);
-                        openDrawer(Gravity.RIGHT);
-                    }
-                }).build();
     }
 
     @Override
@@ -899,9 +835,9 @@ public class DownloadsScene extends ToolbarScene
     public void onDestroyView() {
         super.onDestroyView();
 
-        if (null != mShowcaseView) {
-            ViewUtils.removeFromParent(mShowcaseView);
-            mShowcaseView = null;
+        if (null != mGuideHelper) {
+            mGuideHelper.destroy();
+            mGuideHelper = null;
         }
         if (null != mRecyclerView) {
             mRecyclerView.stopScroll();
@@ -1482,7 +1418,7 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public void onBackPressed() {
-        if (null != mShowcaseView) {
+        if (mGuideHelper != null && mGuideHelper.isShowing()) {
             return;
         }
 
