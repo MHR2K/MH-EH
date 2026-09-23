@@ -18,6 +18,7 @@ package com.hippo.ehviewer;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import android.util.Log;
 
 import com.hippo.conaco.ValueHelper;
 import com.hippo.lib.image.Image;
@@ -28,6 +29,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 
 public class ImageBitmapHelper implements ValueHelper<Image> {
+    private static final String TAG = "ImageBitmapHelper";
 
     private static final int MAX_CACHE_SIZE = 512 * 512;
 
@@ -42,17 +44,21 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
         try {
             isPipe.obtain();
             java.io.InputStream rawIs = isPipe.open();
-            
+
             // 如果是 FileInputStream，直接使用；否则复制到临时文件
             if (rawIs instanceof FileInputStream) {
-                return Image.decode((FileInputStream) rawIs, hardware);
+                Image decoded = Image.decode((FileInputStream) rawIs, hardware);
+                if (decoded == null) {
+                    Log.w(TAG, "Image decode failed, result is null. hardware=" + hardware);
+                }
+                return decoded;
             } else {
                 // 对于 SMB 和其他非文件流，复制到临时文件以确保流可重复使用
                 java.io.File tempFile = null;
                 try {
-                    tempFile = java.io.File.createTempFile("img_", null, 
+                    tempFile = java.io.File.createTempFile("img_", null,
                         com.hippo.ehviewer.EhApplication.getInstance().getCacheDir());
-                    
+
                     // 复制流到临时文件，使用更大的缓冲区以提高效率
                     try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempFile)) {
                         byte[] buffer = new byte[65536]; // 64KB 缓冲区
@@ -67,10 +73,14 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
                             return null;
                         }
                     }
-                    
+
                     // 使用临时文件中的数据
                     try (FileInputStream fis = new FileInputStream(tempFile)) {
-                        return Image.decode(fis, hardware);
+                        Image decoded = Image.decode(fis, hardware);
+                        if (decoded == null) {
+                            Log.w(TAG, "Image decode failed, result is null. hardware=" + hardware);
+                        }
+                        return decoded;
                     }
                 } finally {
                     // 确保临时文件被删除
@@ -84,13 +94,19 @@ public class ImageBitmapHelper implements ValueHelper<Image> {
         } catch (OutOfMemoryError e) {
             Analytics.recordException(e);
             return null;
+        } catch (ClassCastException e) {
+            Analytics.recordException(e);
+            Log.w(TAG, "InputStream is not FileInputStream. hardware=" + hardware, e);
+            return null;
         } catch (IOException e) {
             // 记录 IO 异常以便调试
             Analytics.recordException(e);
+            Log.w(TAG, "Open image stream failed. hardware=" + hardware, e);
             return null;
         } catch (Exception e) {
             // 捕获其他异常（如图片格式不支持等）
             Analytics.recordException(e);
+            Log.w(TAG, "Image decode failed. hardware=" + hardware, e);
             return null;
         } finally {
             try {

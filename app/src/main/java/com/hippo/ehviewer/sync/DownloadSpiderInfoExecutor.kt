@@ -2,6 +2,7 @@ package com.hippo.ehviewer.sync
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.hippo.ehviewer.EhApplication
 import com.hippo.ehviewer.callBack.SpiderInfoReadCallBack
 import com.hippo.ehviewer.client.data.GalleryInfo
@@ -28,9 +29,17 @@ class DownloadSpiderInfoExecutor(
     fun execute() {
         // ========== 第一阶段：快速从数据库加载 ==========
         for (info in mList) {
-            val dbInfo = repository.getFromDbOnly(info.gid)
-            if (dbInfo != null) {
-                resultMap[info.gid] = dbInfo
+            try {
+                val dbInfo = repository.getFromDbOnly(info.gid)
+                if (dbInfo != null) {
+                    resultMap[info.gid] = dbInfo
+                }
+            } catch (e: OutOfMemoryError) {
+                Log.e(TAG, "OOM reading spider info header for gid=" + info.gid, e)
+                resultMap.put(info.gid, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed reading spider info header for gid=" + info.gid, e)
+                resultMap.put(info.gid, null)
             }
         }
 
@@ -88,6 +97,10 @@ class DownloadSpiderInfoExecutor(
         } catch (e: Exception) {
             return false
         }
+    }
+
+    companion object {
+        private const val TAG = "DownloadSpiderInfoExec"
     }
 }
 

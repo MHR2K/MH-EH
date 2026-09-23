@@ -43,6 +43,7 @@ import com.hippo.util.ExceptionUtils;
 import com.hippo.lib.yorozuya.IOUtils;
 import com.hippo.lib.yorozuya.NumberUtils;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
@@ -85,15 +86,29 @@ public class SpiderInfo {
     public int endPage = -1;
 
     public static SpiderInfo read(@Nullable UniFile file) {
+        return readFromFile(file, true);
+    }
+
+    /**
+     * Parse header fields only (startPage, gid, token, pages). Does not load pTokenMap.
+     * For download-list progress display; do not {@link #write} this object back to disk.
+     */
+    @Nullable
+    public static SpiderInfo readHeader(@Nullable UniFile file) {
+        return readFromFile(file, false);
+    }
+
+    @Nullable
+    private static SpiderInfo readFromFile(@Nullable UniFile file, boolean includePTokens) {
         if (file == null) {
             return null;
         }
 
         InputStream is = null;
         try {
-            is = file.openInputStream();
-            return read(is);
-        } catch (IOException e) {
+            is = new BufferedInputStream(file.openInputStream());
+            return read(is, includePTokens);
+        } catch (IOException | OutOfMemoryError e) {
             return null;
         } finally {
             IOUtils.closeQuietly(is);
@@ -132,77 +147,116 @@ public class SpiderInfo {
 
     @Nullable
     public static SpiderInfo read(@Nullable InputStream is) {
+        return read(is, true);
+    }
+
+    @Nullable
+    public static SpiderInfo readHeader(@Nullable InputStream is) {
+        return read(is, false);
+    }
+
+    @Nullable
+    public static SpiderInfo read(@Nullable InputStream is, boolean includePTokens) {
         if (null == is) {
             return null;
         }
 
+        InputStream in = (is instanceof BufferedInputStream) ? is : new BufferedInputStream(is);
         SpiderInfo spiderInfo = null;
         try {
-            spiderInfo = new SpiderInfo();
-            // Get version
-            String line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
-            int version = getVersion(line);
-            if (version == VERSION) {
-                // Read next line
-                line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
-            } else if (version == 1) {
-                // pass
-            } else {
-                // Invalid version
+            spiderInfo = parseHeader(in);
+            if (spiderInfo == null) {
                 return null;
             }
-            // Start page
-            spiderInfo.startPage = getStartPage(line);
-            // Gid
-            spiderInfo.gid = Long.parseLong(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
-            // Token
-            spiderInfo.token = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
-            // Deprecated, mode, skip it
-            IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
-            // Preview pages
-            spiderInfo.previewPages = Integer.parseInt(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
-            // Preview pre page
-            line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
-            if (version == 1) {
-                // Skip it
+            if (includePTokens) {
+                readPTokens(in, spiderInfo);
             } else {
-                spiderInfo.previewPerPage = Integer.parseInt(line);
+                spiderInfo.pTokenMap = new SparseArray<>(0);
             }
-            // Pages
-            spiderInfo.pages = Integer.parseInt(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
-            // Check pages
-            if (spiderInfo.pages <= 0 || spiderInfo.pages > MAX_SPIDER_INFO_PAGES) {
-                return null;
-            }
-            // PToken (at most one line per page in valid files; cap lines to avoid OOM on corrupt files)
-            spiderInfo.pTokenMap = new SparseArray<>(spiderInfo.pages);
-            for (int linesRead = 0; linesRead < spiderInfo.pages; linesRead++) {
-                try {
-                    line = IOUtils.readAsciiLine(is, MAX_PTOKEN_FILE_LINE);
-                } catch (EOFException e) {
-                    break;
-                }
-                int pos = line.indexOf(" ");
-                if (pos > 0) {
-                    int index = Integer.parseInt(line.substring(0, pos));
-                    String pToken = line.substring(pos + 1);
-                    if (!TextUtils.isEmpty(pToken) && pToken.length() <= MAX_STORED_PTOKEN_CHARS) {
-                        spiderInfo.pTokenMap.put(index, pToken);
-                    }
-                } else {
-                    Log.e(TAG, "Can't parse index and pToken, index = " + pos);
-                }
-            }
-        } catch (IOException | NumberFormatException e) {
-            // Ignore
+        } catch (IOException | NumberFormatException | OutOfMemoryError e) {
+            return null;
         }
 
-        if (spiderInfo == null || spiderInfo.gid == -1 || spiderInfo.token == null ||
+        if (spiderInfo.gid == -1 || spiderInfo.token == null ||
                 spiderInfo.pages == -1 || spiderInfo.pTokenMap == null) {
             return null;
         } else {
             return spiderInfo;
         }
+    }
+
+    @Nullable
+    private static SpiderInfo parseHeader(@NonNull InputStream is) throws IOException {
+        SpiderInfo spiderInfo = new SpiderInfo();
+        String line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
+        int version = getVersion(line);
+        if (version == VERSION) {
+            line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
+        } else if (version == 1) {
+            // pass
+        } else {
+            return null;
+        }
+        spiderInfo.startPage = getStartPage(line);
+        spiderInfo.gid = Long.parseLong(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
+        spiderInfo.token = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
+        IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
+        spiderInfo.previewPages = Integer.parseInt(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
+        line = IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE);
+        if (version != 1) {
+            spiderInfo.previewPerPage = Integer.parseInt(line);
+        }
+        spiderInfo.pages = Integer.parseInt(IOUtils.readAsciiLine(is, MAX_SPIDER_INFO_HEADER_LINE));
+        if (spiderInfo.pages <= 0 || spiderInfo.pages > MAX_SPIDER_INFO_PAGES) {
+            return null;
+        }
+        return spiderInfo;
+    }
+
+    private static void readPTokens(@NonNull InputStream is, @NonNull SpiderInfo spiderInfo)
+            throws IOException {
+        spiderInfo.pTokenMap = new SparseArray<>(spiderInfo.pages);
+        for (int linesRead = 0; linesRead < spiderInfo.pages; linesRead++) {
+            String line;
+            try {
+                line = IOUtils.readAsciiLine(is, MAX_PTOKEN_FILE_LINE);
+            } catch (EOFException e) {
+                break;
+            }
+            int[] indexOut = new int[1];
+            String pToken = tryParsePTokenLine(line, indexOut);
+            if (pToken != null) {
+                spiderInfo.pTokenMap.put(indexOut[0], pToken);
+            } else if (line.indexOf(" ") <= 0) {
+                Log.e(TAG, "Can't parse index and pToken, index = " + line.indexOf(" "));
+            } else {
+                // Corrupt index (e.g. NumberFormatException) — skip line, keep header.
+                Log.w(TAG, "Skip bad pToken line: " + line);
+            }
+        }
+    }
+
+    /**
+     * Parse one "{index} {pToken}" line.
+     * Returns the pToken when valid; null means skip this line (bad format or corrupt index).
+     * Package-visible for unit tests.
+     */
+    @Nullable
+    static String tryParsePTokenLine(@NonNull String line, @NonNull int[] indexOut) {
+        int pos = line.indexOf(" ");
+        if (pos <= 0) {
+            return null;
+        }
+        try {
+            indexOut[0] = Integer.parseInt(line.substring(0, pos));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        String pToken = line.substring(pos + 1);
+        if (pToken.isEmpty() || pToken.length() > MAX_STORED_PTOKEN_CHARS) {
+            return null;
+        }
+        return pToken;
     }
 
     public void write(@NonNull OutputStream os) {
@@ -311,6 +365,7 @@ public class SpiderInfo {
         UniFile mDownloadDir = getGalleryDownloadDir(info);
         if (mDownloadDir != null && mDownloadDir.isDirectory()) {
             UniFile file = mDownloadDir.findFile(SPIDER_INFO_FILENAME);
+            // 完整读取（含 pToken），因为结果会 repository.save 持久化
             SpiderInfo spiderInfo = SpiderInfo.read(file);
             if (spiderInfo != null && spiderInfo.gid == info.gid &&
                     spiderInfo.token.equals(info.token)) {

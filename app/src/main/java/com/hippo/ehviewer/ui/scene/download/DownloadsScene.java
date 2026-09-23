@@ -980,7 +980,11 @@ public class DownloadsScene extends ToolbarScene
                         .setPositiveButton(android.R.string.ok, (dialog, which) -> {
                             resetReadingProgressInUi();
                             if (mDownloadManager != null) {
-                                mDownloadManager.resetAllReadingProgress();
+                                Toast.makeText(context, R.string.reset_reading_progress_processing,
+                                        Toast.LENGTH_SHORT).show();
+                                mDownloadManager.resetAllReadingProgress(() ->
+                                        Toast.makeText(context, R.string.reset_reading_progress_done,
+                                                Toast.LENGTH_SHORT).show());
                             }
                         }).show();
                 return true;

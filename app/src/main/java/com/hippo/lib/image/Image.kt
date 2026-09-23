@@ -129,10 +129,14 @@ class Image private constructor(
                                 inSampleSize = simpleSize
                             }
                             val bitmap = BitmapFactory.decodeStream(fallbackStream, null, option)
+                            if (bitmap == null) {
+                                throw IllegalArgumentException("BitmapFactory.decodeStream 回退解码返回空")
+                            }
                             mObtainedDrawable =
-                                bitmap?.toDrawable(EhApplication.getInstance().resources)
+                                bitmap.toDrawable(EhApplication.getInstance().resources)
                         } else {
                             mObtainedDrawable = BitmapDrawable.createFromStream(fallbackStream, null)
+                                ?: throw IllegalArgumentException("BitmapDrawable.createFromStream 回退解码返回空")
                         }
 
                         if (mObtainedDrawable == null) {
@@ -152,16 +156,20 @@ class Image private constructor(
                         inSampleSize = simpleSize
                     }
                     val bitmap = BitmapFactory.decodeStream(decodeStream, null, option)
+                    if (bitmap == null) {
+                        throw IllegalArgumentException("BitmapFactory.decodeStream 返回空")
+                    }
                     mObtainedDrawable =
                         BitmapDrawable(EhApplication.getInstance().resources, bitmap)
                 } else {
                     mObtainedDrawable = BitmapDrawable.createFromStream(decodeStream, null)
+                        ?: throw IllegalArgumentException("BitmapDrawable.createFromStream 返回空")
                 }
             }
         }
         if (mObtainedDrawable == null) {
             mObtainedDrawable = drawable
-//            throw IllegalArgumentException("数据解码出错")
+                ?: throw IllegalArgumentException("数据解码出错")
         }
     }
 
