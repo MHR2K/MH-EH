@@ -110,6 +110,7 @@ import com.hippo.ehviewer.ui.annotation.ViewLifeCircle;
 import com.hippo.ehviewer.ui.dialog.DownloadFilterDialog;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadChoiceListener;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.hippo.ehviewer.widget.SearchBar;
@@ -710,7 +711,29 @@ public class DownloadsScene extends ToolbarScene
         mRecyclerView.setOnItemClickListener(this);
         mRecyclerView.setOnItemLongClickListener(this);
         mRecyclerView.setChoiceMode(MyEasyRecyclerView.CHOICE_MODE_MULTIPLE_CUSTOM);
-        mRecyclerView.setCustomCheckedListener(new DownloadChoiceListener());
+        mRecyclerView.setCustomCheckedListener(new DownloadChoiceListener(new DownloadChoiceListener.Host() {
+            @Nullable
+            @Override
+            public MyEasyRecyclerView getRecyclerView() {
+                return mRecyclerView;
+            }
+
+            @Nullable
+            @Override
+            public FabLayout getFabLayout() {
+                return mFabLayout;
+            }
+
+            @Override
+            public void setDrawerLockMode(int lockMode, int edgeGravity) {
+                DownloadsScene.this.setDrawerLockMode(lockMode, edgeGravity);
+            }
+
+            @Override
+            public MyEasyRecyclerView.OnItemLongClickListener getItemLongClickListener() {
+                return DownloadsScene.this;
+            }
+        }));
 //        mRecyclerView.setOnGenericMotionListener(this::onGenericMotion);
         // Cancel change animation
         RecyclerView.ItemAnimator itemAnimator = mRecyclerView.getItemAnimator();
@@ -3717,49 +3740,6 @@ public class DownloadsScene extends ToolbarScene
 //            }
 //        }
 //    }
-
-    private class DownloadChoiceListener implements EasyRecyclerView.CustomChoiceListener {
-
-        @Override
-        public void onIntoCustomChoice(EasyRecyclerView view) {
-            if (mRecyclerView != null) {
-                mRecyclerView.setOnItemLongClickListener(null);
-                mRecyclerView.setLongClickable(false);
-            }
-            if (mFabLayout != null) {
-                mFabLayout.setExpanded(true);
-            }
-            // Lock drawer
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.LEFT);
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_LOCKED_CLOSED, Gravity.RIGHT);
-
-//            // 进入选择模式时，thumb保持可见（拖拽功能已直接附加到thumb上）
-//            updateThumbVisibility(true);
-        }
-
-        @Override
-        public void onOutOfCustomChoice(EasyRecyclerView view) {
-            if (mRecyclerView != null) {
-                mRecyclerView.setOnItemLongClickListener(DownloadsScene.this);
-            }
-            if (mFabLayout != null) {
-                mFabLayout.setExpanded(false);
-            }
-            // Unlock drawer
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.LEFT);
-            setDrawerLockMode(DrawerLayout.LOCK_MODE_UNLOCKED, Gravity.RIGHT);
-
-//            // 退出选择模式时，thumb保持可见（拖拽功能已直接附加到thumb上）
-//            updateThumbVisibility(false);
-        }
-
-        @Override
-        public void onItemCheckedStateChanged(EasyRecyclerView view, int position, long id, boolean checked) {
-            if (view.getCheckedItemCount() == 0) {
-                view.outOfCustomChoiceMode();
-            }
-        }
-    }
 
     private void filterByCategory() {
         if (mBackList == null) {
