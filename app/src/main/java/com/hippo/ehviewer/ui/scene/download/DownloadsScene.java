@@ -105,6 +105,7 @@ import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadArchiveImporter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadChoiceListener;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadFilterState;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadGuideHelper;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadPaginationController;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadSearchController;
@@ -229,8 +230,8 @@ public class DownloadsScene extends ToolbarScene
             });
 
     @NonNull
-    private final DownloadSearchController mSearchController =
-            new DownloadSearchController(new DownloadSearchController.Host() {
+    private final DownloadSearchController.Host mSearchHost =
+            new DownloadSearchController.Host() {
                 @Nullable
                 @Override
                 public Context getEHContext() {
@@ -392,7 +393,24 @@ public class DownloadsScene extends ToolbarScene
                 public DownloadSearchCallback getDownloadSearchCallback() {
                     return DownloadsScene.this;
                 }
-            });
+
+                @Override
+                public void setGroupedSearchResults(Map<String, List<DownloadInfo>> grouped) {
+                    mSearchController.setGroupedSearchResults(grouped);
+                }
+
+                @Override
+                public Set<String> getCollapsedLabels() {
+                    return mSearchController.getCollapsedLabels();
+                }
+            };
+
+    @NonNull
+    private final DownloadSearchController mSearchController =
+            new DownloadSearchController(mSearchHost);
+
+    @NonNull
+    private final DownloadFilterState mFilterState = new DownloadFilterState(mSearchHost);
 
     /*---------------
      View life cycle
@@ -652,14 +670,14 @@ public class DownloadsScene extends ToolbarScene
      * 注意：仅加载保存的状态用于显示在筛选对话框中，不自动应用筛选
      */
     private void loadSavedFilterState() {
-        mSearchController.loadSavedFilterState();
+        mFilterState.loadSavedFilterState();
     }
 
     /**
      * 保存组合筛选状态到Settings
      */
     private void saveFilterState() {
-        mSearchController.saveFilterState();
+        mFilterState.saveFilterState();
     }
 
     private void onRestore(@NonNull Bundle savedInstanceState) {
@@ -1472,14 +1490,14 @@ public class DownloadsScene extends ToolbarScene
      * 判断当前是否有任何筛选条件处于激活状态
      */
     private boolean isFilterActive() {
-        return mSearchController.isFilterActive();
+        return mFilterState.isFilterActive();
     }
 
     /**
      * 清除所有筛选条件，恢复到筛选前的完整列表
      */
     private void clearAllFilters() {
-        mSearchController.clearAllFilters();
+        mFilterState.clearAllFilters();
     }
 
     @Override
@@ -2549,10 +2567,10 @@ public class DownloadsScene extends ToolbarScene
             return;
         }
         // 先保存过滤ID和滚动位置，因为后面的 updateForLabel 会改变列表
-        final int savedFilterId = mSearchController.getCurrentFilterId();
+        final int savedFilterId = mFilterState.getCurrentFilterId();
         // 保存组合筛选的状态（用于恢复）
-        final Set<Integer> savedStatusFilters = new HashSet<>(mSearchController.getSelectedStatusFilters());
-        final Set<Integer> savedProgressFilters = new HashSet<>(mSearchController.getSelectedProgressFilters());
+        final Set<Integer> savedStatusFilters = new HashSet<>(mFilterState.getSelectedStatusFilters());
+        final Set<Integer> savedProgressFilters = new HashSet<>(mFilterState.getSelectedProgressFilters());
         final long restoreScrollGid = captureFirstVisibleGid();
 
         updateForLabel();
@@ -2572,10 +2590,10 @@ public class DownloadsScene extends ToolbarScene
         }
 
         // 如果之前处于组合筛选状态，也需要恢复
-        if (mSearchController.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
+        if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
             // 恢复组合筛选状态
-            mSearchController.setSelectedStatusFilters(savedStatusFilters);
-            mSearchController.setSelectedProgressFilters(savedProgressFilters);
+            mFilterState.setSelectedStatusFilters(savedStatusFilters);
+            mFilterState.setSelectedProgressFilters(savedProgressFilters);
             // 直接设置保存的滚动位置
             mPaginationController.setRestoreScrollGid(restoreScrollGid);
             // 设置标志避免滚动到顶部，保持当前位置
@@ -2632,17 +2650,17 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public void onChange() {
         // 保存组合筛选的状态（用于恢复）
-        final Set<Integer> savedStatusFilters = new HashSet<>(mSearchController.getSelectedStatusFilters());
-        final Set<Integer> savedProgressFilters = new HashSet<>(mSearchController.getSelectedProgressFilters());
+        final Set<Integer> savedStatusFilters = new HashSet<>(mFilterState.getSelectedStatusFilters());
+        final Set<Integer> savedProgressFilters = new HashSet<>(mFilterState.getSelectedProgressFilters());
         final long restoreScrollGid = captureFirstVisibleGid();
 
         mLabel = null;
         updateForLabel();
 
         // 恢复组合筛选状态
-        if (mSearchController.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
-            mSearchController.setSelectedStatusFilters(savedStatusFilters);
-            mSearchController.setSelectedProgressFilters(savedProgressFilters);
+        if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
+            mFilterState.setSelectedStatusFilters(savedStatusFilters);
+            mFilterState.setSelectedProgressFilters(savedProgressFilters);
             // 设置标志避免滚动到顶部，保持当前位置
             mPaginationController.setDoNotScroll(true);
             if (mPaginationController.getMyPageChangeListener() != null) {
@@ -2662,17 +2680,17 @@ public class DownloadsScene extends ToolbarScene
         }
 
         // 保存组合筛选的状态（用于恢复）
-        final Set<Integer> savedStatusFilters = new HashSet<>(mSearchController.getSelectedStatusFilters());
-        final Set<Integer> savedProgressFilters = new HashSet<>(mSearchController.getSelectedProgressFilters());
+        final Set<Integer> savedStatusFilters = new HashSet<>(mFilterState.getSelectedStatusFilters());
+        final Set<Integer> savedProgressFilters = new HashSet<>(mFilterState.getSelectedProgressFilters());
         final long restoreScrollGid = captureFirstVisibleGid();
 
         mLabel = to;
         updateForLabel();
 
         // 恢复组合筛选状态
-        if (mSearchController.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
-            mSearchController.setSelectedStatusFilters(savedStatusFilters);
-            mSearchController.setSelectedProgressFilters(savedProgressFilters);
+        if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
+            mFilterState.setSelectedStatusFilters(savedStatusFilters);
+            mFilterState.setSelectedProgressFilters(savedProgressFilters);
             // 设置标志避免滚动到顶部，保持当前位置
             mPaginationController.setDoNotScroll(true);
             if (mPaginationController.getMyPageChangeListener() != null) {
@@ -2856,11 +2874,11 @@ public class DownloadsScene extends ToolbarScene
     }
 
     private void gotoFilterAndSort(int id) {
-        mSearchController.gotoFilterAndSort(id);
+        mFilterState.gotoFilterAndSort(id);
     }
 
     private void gotoFilterAndSortWithScroll(int id, boolean captureScroll) {
-        mSearchController.gotoFilterAndSortWithScroll(id, captureScroll);
+        mFilterState.gotoFilterAndSortWithScroll(id, captureScroll);
     }
 
     private void updateAdapter() {
@@ -3216,19 +3234,19 @@ public class DownloadsScene extends ToolbarScene
 //    }
 
     private void filterByCategory() {
-        mSearchController.filterByCategory();
+        mFilterState.filterByCategory();
     }
 
     private void filterByReadingProgress(int filterId) {
-        mSearchController.filterByReadingProgress(filterId);
+        mFilterState.filterByReadingProgress(filterId);
     }
 
     private void showCombinedFilterDialog() {
-        mSearchController.showCombinedFilterDialog();
+        mFilterState.showCombinedFilterDialog();
     }
 
     private void applyCombinedFilter() {
-        mSearchController.applyCombinedFilter();
+        mFilterState.applyCombinedFilter();
     }
 
     /**
@@ -3236,7 +3254,7 @@ public class DownloadsScene extends ToolbarScene
      * @param captureScroll 是否捕获滚动位置
      */
     private void applyCombinedFilterWithScroll(boolean captureScroll) {
-        mSearchController.applyCombinedFilterWithScroll(captureScroll);
+        mFilterState.applyCombinedFilterWithScroll(captureScroll);
     }
 
     /**
