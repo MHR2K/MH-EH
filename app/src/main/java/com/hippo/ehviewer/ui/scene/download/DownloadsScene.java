@@ -340,6 +340,11 @@ public class DownloadsScene extends ToolbarScene
                 }
 
                 @Override
+                public boolean getDoNotScroll() {
+                    return mPaginationController.getDoNotScroll();
+                }
+
+                @Override
                 public void setDoNotScroll(boolean doNotScroll) {
                     mPaginationController.setDoNotScroll(doNotScroll);
                 }
@@ -593,6 +598,44 @@ public class DownloadsScene extends ToolbarScene
         @Override
         public DownloadManager getDownloadManager() {
             return DownloadsScene.this.getDownloadManager();
+        }
+    });
+
+    @NonNull
+    private final DownloadAlbumImporter mAlbumImporter = new DownloadAlbumImporter(new DownloadAlbumImporter.Host() {
+        @Override
+        public Context getEHContext() {
+            return DownloadsScene.this.getEHContext();
+        }
+
+        @Override
+        public String getString(int resId) {
+            return DownloadsScene.this.getString(resId);
+        }
+
+        @Override
+        public void runOnUiThread(Runnable runnable) {
+            DownloadsScene.this.runOnUiThread(runnable);
+        }
+
+        @Override
+        public void updateForLabel() {
+            DownloadsScene.this.updateForLabel();
+        }
+
+        @Override
+        public void updateView() {
+            DownloadsScene.this.updateView();
+        }
+
+        @Override
+        public DownloadManager getDownloadManager() {
+            return mDownloadManager;
+        }
+
+        @Override
+        public String getLabel() {
+            return mLabel;
         }
     });
 
@@ -1001,7 +1044,7 @@ public class DownloadsScene extends ToolbarScene
             }
         }
 
-        if (mInitPosition >= 0 && mPaginationController.indexPage != 1) {
+        if (mInitPosition >= 0 && mPaginationController.getIndexPage() != 1) {
             mPaginationController.initPage(mInitPosition);
             mRecyclerView.scrollToPosition(listIndexInPage(mInitPosition));
             mInitPosition = -1;
@@ -1059,7 +1102,6 @@ public class DownloadsScene extends ToolbarScene
         });
         mGuideHelper.guide();
         updatePaginationIndicator();
-        return view;
     }
 
     @Override
@@ -1928,22 +1970,22 @@ public class DownloadsScene extends ToolbarScene
     // DownloadAdapterCallback 接口实现
     @Override
     public int getIndexPage() {
-        return mPaginationController.indexPage;
+        return mPaginationController.getIndexPage();
     }
 
     @Override
     public int getPageSize() {
-        return mPaginationController.pageSize;
+        return mPaginationController.getPageSize();
     }
 
     @Override
     public int getPaginationSize() {
-        return mPaginationController.paginationSize;
+        return mPaginationController.getPaginationSize();
     }
 
     @Override
     public boolean isCanPagination() {
-        return mPaginationController.isCanPagination();
+        return mPaginationController.getCanPagination();
     }
 
     @Override
@@ -1989,7 +2031,6 @@ public class DownloadsScene extends ToolbarScene
     }
 
     @Nullable
-    @Override
     public String getLabel() {
         return mLabel;
     }
