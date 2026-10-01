@@ -27,9 +27,6 @@ import android.app.Activity;
 import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-
-import java.util.concurrent.atomic.AtomicBoolean;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.Color;
@@ -103,6 +100,7 @@ import com.hippo.ehviewer.ui.annotation.ViewLifeCircle;
 import com.hippo.ehviewer.ui.dialog.DownloadFilterDialog;
 import com.hippo.ehviewer.ui.scene.ToolbarScene;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadAlbumImporter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadArchiveImporter;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadBatchActions;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadChoiceListener;
@@ -111,6 +109,9 @@ import com.hippo.ehviewer.ui.scene.download.part.DownloadGuideHelper;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadPaginationController;
 import com.hippo.ehviewer.ui.scene.download.part.DownloadSearchController;
 import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
+import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.hippo.ehviewer.widget.SearchBar;
 import com.hippo.lib.yorozuya.AssertUtils;
@@ -127,17 +128,6 @@ import com.hippo.widget.ProgressView;
 import com.hippo.widget.SearchBarMover;
 import com.hippo.widget.recyclerview.AutoStaggeredGridLayoutManager;
 import com.sxj.paginationlib.PaginationIndicator;
-import com.hippo.ehviewer.util.CrashlyticsUtils;
-import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
-import com.hippo.ehviewer.ui.scene.download.part.DownloadAdapter;
-import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
-import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
-
-// 拖拽排序相关导入
-import com.h6ah4i.android.widget.advrecyclerview.animator.DraggableItemAnimator;
-import com.h6ah4i.android.widget.advrecyclerview.animator.GeneralItemAnimator;
-import com.h6ah4i.android.widget.advrecyclerview.draggable.RecyclerViewDragDropManager;
-import android.graphics.drawable.NinePatchDrawable;
 
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
@@ -612,6 +602,12 @@ public class DownloadsScene extends ToolbarScene
             mArchiveImporter::handleSelectedFile
     );
 
+    @NonNull
+    private final ActivityResultLauncher<Intent> folderPickerLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            mAlbumImporter::handleSelectedFolder
+    );
+
     @Override
     public int getNavCheckedItem() {
         return R.id.nav_downloads;
@@ -814,6 +810,12 @@ public class DownloadsScene extends ToolbarScene
         Context context = getEHContext();
         assert context != null;
 
+        setupCategorySpinner(view, context);
+
+        return view;
+    }
+
+    private void setupCategorySpinner(@NonNull View view, @NonNull Context context) {
         mCategorySpinner = (Spinner) ViewUtils.$$(view, R.id.category_spinner);
         // Initialize category spinner
         List<String> categoryList = new ArrayList<>();
@@ -999,8 +1001,9 @@ public class DownloadsScene extends ToolbarScene
             }
         }
 
-        if (mInitPosition >= 0) {
-            initPage(mInitPosition);
+        if (mInitPosition >= 0 && mPaginationController.indexPage != 1) {
+            mPaginationController.initPage(mInitPosition);
+            mRecyclerView.scrollToPosition(listIndexInPage(mInitPosition));
             mInitPosition = -1;
         }
 
@@ -1238,6 +1241,9 @@ public class DownloadsScene extends ToolbarScene
                 return true;
             case R.id.import_local_archive:
                 mArchiveImporter.importLocalArchive(filePickerLauncher);
+                return true;
+            case R.id.import_local_album:
+                mAlbumImporter.importLocalAlbum(folderPickerLauncher);
                 return true;
 //            case R.id.misc:
 //            case R.id.doujinshi:
@@ -1922,17 +1928,17 @@ public class DownloadsScene extends ToolbarScene
     // DownloadAdapterCallback 接口实现
     @Override
     public int getIndexPage() {
-        return mPaginationController.getIndexPage();
+        return mPaginationController.indexPage;
     }
 
     @Override
     public int getPageSize() {
-        return mPaginationController.getPageSize();
+        return mPaginationController.pageSize;
     }
 
     @Override
     public int getPaginationSize() {
-        return mPaginationController.getPaginationSize();
+        return mPaginationController.paginationSize;
     }
 
     @Override
@@ -1980,6 +1986,12 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public DownloadManager getDownloadManager() {
         return mDownloadManager;
+    }
+
+    @Nullable
+    @Override
+    public String getLabel() {
+        return mLabel;
     }
 
     @Override

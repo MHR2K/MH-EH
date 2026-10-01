@@ -1230,6 +1230,14 @@
     <string name="imported_archive_info_title">Local Import Info</string>
     <string name="imported_archive_info_message">This is an item imported from local storage</string>
     <string name="imported_archive_category">Local Import</string>
+    <string name="import_local_album">Import local album</string>
+    <string name="import_album_title">Select image folder</string>
+    <string name="import_album_processing">Importing album…</string>
+    <string name="import_album_failed">Failed to import album</string>
+    <string name="import_album_no_images">No supported images in the selected folder</string>
+    <string name="import_album_already_imported">Album already imported</string>
+    <string name="import_album_success">Imported %d images successfully</string>
+
     <!-- Storage indicator labels -->
     <string name="storage_smb">SMB</string>
     <string name="storage_local">Local</string>
@@ -1262,7 +1270,6 @@
     <string name="settings_auto_backup_enabled_title">自动备份</string>
     <string name="settings_auto_backup_enabled_summary">每24小时自动备份完整数据</string>
     <string name="settings_backup_retention_title">备份保留天数</string>
-
     <!-- TagSelectActivity -->
     <string name="tag_search_entrance">Tag Selector</string>
 
