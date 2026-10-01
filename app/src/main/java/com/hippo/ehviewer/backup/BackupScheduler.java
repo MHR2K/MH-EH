@@ -49,25 +49,25 @@ public class BackupScheduler {
         }
 
         try {
-            // 创建约束条件：避免前台使用时触发，尽量在更安全的状态下执行
+            // 创建约束条件：仅在低电量时不执行
             Constraints constraints = new Constraints.Builder()
-                .setRequiresDeviceIdle(true)         // 设备空闲（息屏）时执行，避免前台交互期间触发
+                .setRequiresBatteryNotLow(true)
                 .build();
 
             // 创建定期备份任务：每24小时执行一次
             PeriodicWorkRequest backupRequest = new PeriodicWorkRequest.Builder(
                     AutoBackupWorker.class,
                     24, TimeUnit.HOURS,
-                    15, TimeUnit.MINUTES  // 灵活间隔15分钟
+                    30, TimeUnit.MINUTES  // 灵活间隔30分钟
             )
                     .setConstraints(constraints)
                     .addTag(BACKUP_WORK_NAME)
                     .build();
 
-            // 使用 UPDATE 策略：若已存在则更新约束，避免旧约束导致启动即运行
+            // 使用 KEEP 策略：若已存在则保留现有调度，避免更新约束导致立即触发
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                     BACKUP_WORK_NAME,
-                    ExistingPeriodicWorkPolicy.UPDATE,
+                    ExistingPeriodicWorkPolicy.KEEP,
                     backupRequest
             );
 
@@ -86,23 +86,6 @@ public class BackupScheduler {
             Log.i(TAG, "Auto backup task cancelled");
         } catch (Exception e) {
             Log.e(TAG, "Error cancelling auto backup", e);
-        }
-    }
-
-    /**
-     * 立即执行一次备份（不等待定时）
-     * 这会将任务加入队列，立即开始
-     */
-    public static void executeBackupNow(Context context) {
-        try {
-            androidx.work.OneTimeWorkRequest backupRequest = new androidx.work.OneTimeWorkRequest.Builder(
-                    AutoBackupWorker.class
-            ).addTag(BACKUP_WORK_NAME).build();
-
-            WorkManager.getInstance(context).enqueue(backupRequest);
-            Log.i(TAG, "Backup task enqueued for immediate execution");
-        } catch (Exception e) {
-            Log.e(TAG, "Error executing backup now", e);
         }
     }
 }

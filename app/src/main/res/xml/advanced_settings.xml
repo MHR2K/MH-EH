@@ -158,6 +158,24 @@
         android:summary="@string/settings_advanced_auto_cbz_summary"
         app:allowDividerAbove="true" />
 
+    <!-- 自动备份 -->
+    <com.hippo.preference.SwitchPreference
+        android:key="auto_backup_enabled"
+        android:defaultValue="true"
+        android:title="@string/settings_auto_backup_enabled_title"
+        android:summary="@string/settings_auto_backup_enabled_summary"
+        app:allowDividerAbove="true" />
+
+    <com.hippo.preference.ListPreference
+        android:key="backup_retention_days_ui"
+        android:defaultValue="7"
+        android:title="@string/settings_backup_retention_title"
+        android:summary="%s"
+        android:dependency="auto_backup_enabled"
+        app:entries="@array/backup_retention_entries"
+        app:entryValues="@array/backup_retention_values" />
+
+    <!-- 完整备份/恢复 -->
     <com.hippo.ehviewer.preference.FullBackupPreference
         android:key="full_backup"
         android:title="@string/settings_advanced_full_backup_title"

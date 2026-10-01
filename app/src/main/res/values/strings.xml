@@ -1258,6 +1258,11 @@
     <string name="restart_now">立即重启</string>
     <string name="restart_later">稍后重启</string>
 
+    <!-- Auto Backup -->
+    <string name="settings_auto_backup_enabled_title">自动备份</string>
+    <string name="settings_auto_backup_enabled_summary">每24小时自动备份完整数据</string>
+    <string name="settings_backup_retention_title">备份保留天数</string>
+
     <!-- TagSelectActivity -->
     <string name="tag_search_entrance">Tag Selector</string>
 

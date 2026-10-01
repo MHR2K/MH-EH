@@ -24,17 +24,16 @@ import androidx.work.Worker;
 import androidx.work.WorkerParameters;
 
 import com.hippo.ehviewer.AppConfig;
-import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.Settings;
 import com.hippo.util.ReadableTime;
-import com.hippo.lib.yorozuya.FileUtils;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Calendar;
 
 /**
  * 自动备份 Worker
- * 在后台线程中执行数据库备份，不阻塞主线程
+ * 在后台线程中执行完整数据备份，不阻塞主线程
  */
 public class AutoBackupWorker extends Worker {
     private static final String TAG = AutoBackupWorker.class.getSimpleName();
@@ -51,15 +50,20 @@ public class AutoBackupWorker extends Worker {
             return Result.success();
         }
 
-        // 若应用当前处于前台使用（存在顶层 Activity），避免在用户操作时触发备份造成卡顿
-        try {
-            com.hippo.ehviewer.EhApplication app = com.hippo.ehviewer.EhApplication.getInstance();
-            if (app != null && app.getTopActivity() != null) {
-                Log.i(TAG, "Skip auto backup: app in foreground");
-                return Result.success();
-            }
-        } catch (Throwable ignored) {
-            // 前台检测失败不影响后续逻辑
+        long now = System.currentTimeMillis();
+
+        // 清理上次中断留下的临时目录
+        File staleTempDir = new File(getApplicationContext().getCacheDir(), "backup_temp");
+        if (staleTempDir.exists()) {
+            BackupManager.deleteDirectory(staleTempDir);
+            Log.i(TAG, "Cleaned up stale temp directory");
+        }
+
+        // 去重检查：今天已备份则跳过
+        long lastBackup = Settings.getLastBackupTime();
+        if (isSameDay(lastBackup, now)) {
+            Log.i(TAG, "Already backed up today, skipping");
+            return Result.success();
         }
 
         try {
@@ -75,17 +79,21 @@ public class AutoBackupWorker extends Worker {
                 return Result.retry();
             }
 
-            String filename = "backup_" + ReadableTime.getFilenamableTime(System.currentTimeMillis()) + ".db";
+            String filename = "backup_" + ReadableTime.getFilenamableTime(now) + ".zip";
             File backupFile = new File(backupDir, filename);
 
-            if (EhDB.exportDB(getApplicationContext(), backupFile)) {
-                Settings.putLastBackupTime(System.currentTimeMillis());
-                // 清理旧备份文件
+            if (BackupManager.createFullBackup(getApplicationContext(), backupFile)) {
+                Settings.putLastBackupTime(now);
+                // 清理旧备份文件（按天数）
                 cleanupOldBackups(backupDir);
                 Log.i(TAG, "Auto backup successful: " + backupFile.getAbsolutePath());
                 return Result.success();
             } else {
-                Log.e(TAG, "Auto backup failed: exportDB returned false");
+                Log.e(TAG, "Auto backup failed: createFullBackup returned false");
+                // 删除可能部分写入的文件
+                if (backupFile.exists()) {
+                    backupFile.delete();
+                }
                 return Result.retry();
             }
         } catch (Exception e) {
@@ -94,20 +102,44 @@ public class AutoBackupWorker extends Worker {
         }
     }
 
+    /**
+     * 判断两个时间戳是否在同一天
+     */
+    private static boolean isSameDay(long time1, long time2) {
+        if (time1 == 0 || time2 == 0) {
+            return false;
+        }
+        Calendar cal1 = Calendar.getInstance();
+        Calendar cal2 = Calendar.getInstance();
+        cal1.setTimeInMillis(time1);
+        cal2.setTimeInMillis(time2);
+        return cal1.get(Calendar.YEAR) == cal2.get(Calendar.YEAR)
+                && cal1.get(Calendar.DAY_OF_YEAR) == cal2.get(Calendar.DAY_OF_YEAR);
+    }
+
+    /**
+     * 按保留天数清理旧备份文件
+     * 删除修改时间超过 retentionDays 天的备份
+     */
     private void cleanupOldBackups(File backupDir) {
         try {
-            File[] backupFiles = backupDir.listFiles((dir, name) -> name.startsWith("backup_") && name.endsWith(".db"));
-            if (backupFiles == null || backupFiles.length <= Settings.getBackupRetentionDays()) {
+            int retentionDays = Settings.getBackupRetentionDays();
+            long cutoffTime = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
+
+            File[] backupFiles = backupDir.listFiles((dir, name) ->
+                    (name.startsWith("backup_") && name.endsWith(".db"))
+                    || (name.startsWith("backup_") && name.endsWith(".zip")));
+            if (backupFiles == null || backupFiles.length == 0) {
                 return;
             }
 
-            // 按修改时间排序，最新的在前面
-            Arrays.sort(backupFiles, (f1, f2) -> Long.compare(f2.lastModified(), f1.lastModified()));
-
-            // 删除超过保留天数的旧备份
-            for (int i = Settings.getBackupRetentionDays(); i < backupFiles.length; i++) {
-                if (!backupFiles[i].delete()) {
-                    Log.w(TAG, "Failed to delete old backup: " + backupFiles[i].getAbsolutePath());
+            for (File file : backupFiles) {
+                if (file.lastModified() < cutoffTime) {
+                    if (!file.delete()) {
+                        Log.w(TAG, "Failed to delete old backup: " + file.getAbsolutePath());
+                    } else {
+                        Log.i(TAG, "Deleted old backup: " + file.getName());
+                    }
                 }
             }
         } catch (Exception e) {

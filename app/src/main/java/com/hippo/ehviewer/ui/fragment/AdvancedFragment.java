@@ -35,6 +35,8 @@ import com.hippo.ehviewer.AppConfig;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
+import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.backup.BackupScheduler;
 import com.hippo.ehviewer.ui.wifi.WiFiClientActivity;
 import com.hippo.ehviewer.ui.wifi.WiFiServerActivity;
 import com.hippo.ehviewer.smb.ui.SmbAddServerActivity;
@@ -61,6 +63,8 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     private static final String KEY_WIFI_CLIENT = "wifi_client";
     private static final String KEY_SMB_ADD_SERVER = "smb_add_server";
     private static final String KEY_SMB_SCAN_MAPPING = "smb_scan_mapping";
+    private static final String KEY_AUTO_BACKUP_ENABLED = "auto_backup_enabled";
+    private static final String KEY_BACKUP_RETENTION_DAYS = "backup_retention_days_ui";
 
     private final DbSyncHandle dbSyncHandle = new DbSyncHandle(Looper.getMainLooper());
 
@@ -99,6 +103,19 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         if (smbScan != null) smbScan.setOnPreferenceClickListener(this);
 
         appLanguage.setOnPreferenceChangeListener(this);
+
+        // 自动备份设置
+        Preference autoBackupEnabled = findPreference(KEY_AUTO_BACKUP_ENABLED);
+        Preference backupRetentionDays = findPreference(KEY_BACKUP_RETENTION_DAYS);
+        if (autoBackupEnabled != null) {
+            autoBackupEnabled.setOnPreferenceChangeListener(this);
+        }
+        if (backupRetentionDays != null) {
+            backupRetentionDays.setOnPreferenceChangeListener(this);
+            // 同步 Settings 中的当前值到 UI
+            ((com.hippo.preference.ListPreference) backupRetentionDays)
+                    .setValue(String.valueOf(Settings.getBackupRetentionDays()));
+        }
     }
 
     @Override
@@ -325,6 +342,22 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         String key = preference.getKey();
         if (KEY_APP_LANGUAGE.equals(key)) {
             ((EhApplication) getActivity().getApplication()).recreate();
+            return true;
+        } else if (KEY_AUTO_BACKUP_ENABLED.equals(key)) {
+            boolean enabled = Boolean.TRUE.equals(newValue);
+            Settings.putAutoBackupEnabled(enabled);
+            if (enabled) {
+                BackupScheduler.scheduleAutoBackup(context);
+            } else {
+                BackupScheduler.cancelAutoBackup(context);
+            }
+            return true;
+        } else if (KEY_BACKUP_RETENTION_DAYS.equals(key)) {
+            try {
+                int days = Integer.parseInt((String) newValue);
+                Settings.putBackupRetentionDays(days);
+            } catch (NumberFormatException ignored) {
+            }
             return true;
         }
         return false;

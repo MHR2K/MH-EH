@@ -386,7 +386,7 @@ public class BackupManager {
     /**
      * 删除目录及其内容
      */
-    private static void deleteDirectory(File dir) {
+    static void deleteDirectory(File dir) {
         if (dir == null || !dir.exists()) {
             return;
         }
