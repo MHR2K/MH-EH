@@ -562,6 +562,12 @@ public final class SpiderQueen implements Runnable {
             queenThread.interrupt();
             mQueenThread = null;
         }
+        // 释放本地 CBZ 随机访问句柄
+        try {
+            mSpiderDen.closeCbzZipFile();
+        } catch (Throwable ignore) {
+            // Ignore
+        }
     }
 
     public int size() {

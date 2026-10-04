@@ -52,6 +52,7 @@ import java.io.OutputStream;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
 public final class SpiderDen {
@@ -75,6 +76,14 @@ public final class SpiderDen {
 
     // SMB 扩展名缓存：gid -> 已发现的文件扩展名（如 ".jpg"），避免重复探测
     private static final ConcurrentHashMap<Long, String> sSmbExtCache = new ConcurrentHashMap<>();
+
+    // 本地 CBZ 随机访问句柄：ZipFile 读一次中央目录后可按条目 O(1) 定位解压。
+    // 避免 ZipInputStream 每读一页都从第 0 个 entry 顺序扫描（O(N)，越往后越慢）。
+    @Nullable
+    private java.util.zip.ZipFile mCbzZipFile;
+    @Nullable
+    private android.net.Uri mCbzZipSourceUri;
+    private final Object mCbzZipLock = new Object();
 
     public static void initialize(Context context) {
         sCache = new SimpleDiskCache(new File(context.getCacheDir(), "image"),
@@ -596,6 +605,147 @@ public final class SpiderDen {
         return sCache.getInputStreamPipe(key);
     }
 
+    /**
+     * 获取 CBZ 的随机访问句柄（{@link ZipFile}：读一次中央目录，之后按条目 O(1) 定位解压）。
+     * 仅当 CBZ 是本地文件（file:// URI）时可用；否则返回 null，调用方回退 ZipInputStream。
+     * 句柄按 CBZ 缓存，跨页复用；由 {@link #closeCbzZipFile()} 释放。
+     */
+    @Nullable
+    private java.util.zip.ZipFile getCbzZipFile(UniFile cbz) {
+        android.net.Uri uri = cbz.getUri();
+        if (uri == null || !"file".equals(uri.getScheme()) || uri.getPath() == null) {
+            return null;
+        }
+        synchronized (mCbzZipLock) {
+            if (mCbzZipFile != null && uri.equals(mCbzZipSourceUri)) {
+                return mCbzZipFile;
+            }
+            closeCbzZipFileLocked();
+            try {
+                java.util.zip.ZipFile zf = new java.util.zip.ZipFile(new File(uri.getPath()));
+                mCbzZipFile = zf;
+                mCbzZipSourceUri = uri;
+                return zf;
+            } catch (Throwable e) {
+                android.util.Log.w("SpiderDen", "getCbzZipFile failed, fallback to ZipInputStream", e);
+                mCbzZipFile = null;
+                mCbzZipSourceUri = null;
+                return null;
+            }
+        }
+    }
+
+    private void closeCbzZipFileLocked() {
+        if (mCbzZipFile != null) {
+            try {
+                mCbzZipFile.close();
+            } catch (Throwable ignore) {
+                // Ignore
+            }
+            mCbzZipFile = null;
+        }
+        mCbzZipSourceUri = null;
+    }
+
+    /** 释放本地 CBZ 随机访问句柄（Queen 停止时调用）。 */
+    public void closeCbzZipFile() {
+        synchronized (mCbzZipLock) {
+            closeCbzZipFileLocked();
+        }
+    }
+
+    /**
+     * 在 {@link ZipFile} 的中央目录里按索引查找图片条目。
+     * 只遍历内存中的 CD（仅字符串比较，不解压），匹配策略与 {@link #findMatchingEntryInZip} 一致。
+     */
+    @Nullable
+    private static ZipEntry findCbzEntry(java.util.zip.ZipFile zf, int index, String[] exts) {
+        String exactExpect = generateImageFilename(index, "").toLowerCase(Locale.US); // "00000001"
+        String zeroStripped = String.valueOf(index + 1);                              // "1"
+        String oneIndexed = String.valueOf(index + 2);                                // "2" (1-indexed)
+
+        // 快路径：本应用打包的 CBZ 条目名为 generateImageFilename(index, ext)，直接按名 O(1) 命中
+        for (String ext : exts) {
+            ZipEntry e = zf.getEntry(generateImageFilename(index, ext));
+            if (e != null && !e.isDirectory()) return e;
+        }
+
+        ZipEntry firstImage = null;
+        java.util.Enumeration<? extends ZipEntry> entries = zf.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (entry.isDirectory()) continue;
+            String en = entry.getName();
+            if (en == null) continue;
+
+            String lowerEn = en.toLowerCase(Locale.US);
+            boolean hasValidExt = false;
+            for (String ext : exts) {
+                if (lowerEn.endsWith(ext.toLowerCase(Locale.US))) {
+                    hasValidExt = true;
+                    break;
+                }
+            }
+            if (!hasValidExt) continue;
+
+            if (firstImage == null) firstImage = entry;
+
+            int lastDot = en.lastIndexOf('.');
+            String namePart = lastDot > 0 ? en.substring(0, lastDot) : en;
+            String nameLower = namePart.toLowerCase(Locale.US);
+
+            if (nameLower.equals(exactExpect)) return entry;
+            if (nameLower.replaceFirst("^0+", "").equals(zeroStripped)) return entry;
+            if (nameLower.equals(oneIndexed)) return entry;
+            if (nameLower.matches("^0+" + (index + 1) + "$")) return entry;
+        }
+        // 兜底：返回第一个图片条目
+        return firstImage;
+    }
+
+    /**
+     * 基于 {@link ZipFile} 的随机访问读页管道：按中央目录 O(1) 定位条目。
+     * 注意：不关闭 ZipFile（跨页共享，由 SpiderDen 统一释放）。
+     */
+    private static final class CbzZipFileInputStreamPipe implements InputStreamPipe {
+        private final java.util.zip.ZipFile mZipFile;
+        private final int mIndex;
+        private final String[] mExts;
+        private java.io.InputStream mIs;
+
+        CbzZipFileInputStreamPipe(java.util.zip.ZipFile zipFile, int index, String[] exts) {
+            mZipFile = zipFile;
+            mIndex = index;
+            mExts = exts;
+        }
+
+        @Override
+        public void obtain() {
+        }
+
+        @Override
+        public void release() {
+        }
+
+        @Override
+        public java.io.InputStream open() throws IOException {
+            if (mIs != null) return mIs;
+            ZipEntry entry = findCbzEntry(mZipFile, mIndex, mExts);
+            if (entry == null) {
+                throw new IOException("Entry not found in CBZ for index=" + mIndex);
+            }
+            mIs = mZipFile.getInputStream(entry);
+            return mIs;
+        }
+
+        @Override
+        public void close() {
+            com.hippo.lib.yorozuya.IOUtils.closeQuietly(mIs);
+            mIs = null;
+            // 不关闭 mZipFile —— 跨页共享
+        }
+    }
+
     @Nullable
     public InputStreamPipe openDownloadInputStreamPipe(int index) {
         UniFile dir = getDownloadDir();
@@ -612,7 +762,12 @@ public final class SpiderDen {
                 UniFile cbz = com.hippo.ehviewer.util.CbzUtils.findCbzFile(dir);
                 if (cbz != null) {
                     final String[] exts = com.hippo.ehviewer.gallery.GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
-                    // 返回一个 InputStreamPipe：每次 open 时新建 ZipInputStream，定位到目标条目
+                    // 快路径：ZipFile 中央目录随机访问（O(1) 定位条目，避免 ZipInputStream 顺序扫描）
+                    final java.util.zip.ZipFile zf = getCbzZipFile(cbz);
+                    if (zf != null) {
+                        return new CbzZipFileInputStreamPipe(zf, index, exts);
+                    }
+                    // 回退：ZipInputStream 顺序扫描（非本地文件时）
                     return new InputStreamPipe() {
                         private ZipInputStream mZis;
                         private java.io.InputStream mBase;
@@ -678,6 +833,12 @@ public final class SpiderDen {
             return null;
         }
         final String[] exts = GalleryProvider2.SUPPORT_IMAGE_EXTENSIONS;
+        // 快路径：ZipFile 中央目录随机访问（O(1) 定位条目，避免 ZipInputStream 顺序扫描）
+        final java.util.zip.ZipFile zf = getCbzZipFile(cbz);
+        if (zf != null) {
+            return new CbzZipFileInputStreamPipe(zf, index, exts);
+        }
+        // 回退：ZipInputStream 顺序扫描（非本地文件时）
         final UniFile cbzFinal = cbz;
         return new InputStreamPipe() {
             private ZipInputStream mZis;

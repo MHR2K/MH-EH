@@ -17,7 +17,6 @@
 package com.hippo.ehviewer.gallery;
 
 import android.content.Context;
-import android.graphics.drawable.BitmapDrawable;
 import android.net.Uri;
 import android.os.Process;
 import androidx.annotation.NonNull;
@@ -323,7 +322,9 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
                 }
 
                 try {
-                    Image image = Image.decode(BitmapDrawable.createFromStream(stream, null), false);
+                    // 使用 InputStream 解码路径（ImageDecoder + 屏幕尺寸采样），
+                    // 避免 BitmapDrawable.createFromStream 的全分辨率软件解码。
+                    Image image = Image.decode(stream, false);
                     if (image != null) {
                         notifyPageSucceed(index, image);
                     } else {
@@ -334,6 +335,11 @@ public class ArchiveGalleryProvider extends GalleryProvider2 {
                     notifyPageFailed(index, GetText.getString(R.string.error_decoding_failed));
                 } finally {
                     decodingIndices.remove(index);
+                    try {
+                        stream.close(); // 释放原生 ByteBuffer 回解码池，避免泄漏
+                    } catch (IOException e) {
+                        // Ignore
+                    }
                 }
             }
         }

@@ -95,6 +95,8 @@ static size_t entryCount = 0;
 static ssize_t max_file_size = 0;
 /** Stream ZIP opened via EOCD + central-directory parse. */
 static bool use_zip_cd_index = false;
+/** Local mmap ZIP opened via EOCD + central-directory parse (direct memory access). */
+static bool use_local_zip_index = false;
 /** Stream TAR opened via header-only walk (seek past bodies). */
 static bool use_tar_index = false;
 /** Bytes actually pulled through stream I/O (diagnostics + scan budget). */
@@ -642,6 +644,213 @@ static int zip_stream_extract_entry(entry *e, void *out, size_t out_cap) {
     return 0;
 }
 
+/**
+ * Open local mmap ZIP by EOCD + central directory only (no local-header / member walk).
+ * Mirrors zip_stream_open_from_cd but reads directly from [archiveAddr] (mmap) instead of
+ * the stream bridge. Avoids libarchive's streaming-zip O(N) per-page re-scan that made
+ * later pages in large CBZ files load progressively slower.
+ * @return entry count, or 0 if not a zip / parse failed (caller falls back to libarchive).
+ */
+static jint zip_mem_open_from_cd(jboolean sort_entries) {
+    if (!archiveAddr || archiveAddr == MAP_FAILED || archiveSize < 22) return 0;
+    const uint8_t *base = (const uint8_t *) archiveAddr;
+
+    // Locate EOCD within the last 22..65557 bytes (22 min + 65535 max comment).
+    size_t scan_from = archiveSize >= 65557 ? archiveSize - 65557 : 0;
+    ssize_t eocd = -1;
+    for (ssize_t i = (ssize_t) archiveSize - 22; i >= (ssize_t) scan_from; i--) {
+        if (base[i] == 'P' && base[i + 1] == 'K' && base[i + 2] == 5 && base[i + 3] == 6) {
+            eocd = i;
+            break;
+        }
+    }
+    if (eocd < 0) return 0;
+
+    uint32_t cd_size32 = zip_u32(base + eocd + 12);
+    uint32_t cd_off32 = zip_u32(base + eocd + 16);
+    uint64_t cd_size = cd_size32;
+    uint64_t cd_off = cd_off32;
+    uint64_t total_entries = zip_u16(base + eocd + 10);
+
+    // ZIP64: locator sits immediately before EOCD when fields are 0xFFFF/0xFFFFFFFF.
+    if (cd_off32 == 0xFFFFFFFFu || cd_size32 == 0xFFFFFFFFu ||
+        zip_u16(base + eocd + 8) == 0xFFFFu || zip_u16(base + eocd + 10) == 0xFFFFu) {
+        if ((size_t) eocd >= 20 &&
+            base[eocd - 20] == 'P' && base[eocd - 19] == 'K' &&
+            base[eocd - 18] == 6 && base[eocd - 17] == 7) {
+            uint64_t eocd64_off = zip_u64(base + eocd - 20 + 8);
+            if (eocd64_off + 56 <= archiveSize &&
+                base[eocd64_off] == 'P' && base[eocd64_off + 1] == 'K' &&
+                base[eocd64_off + 2] == 6 && base[eocd64_off + 3] == 6) {
+                total_entries = zip_u64(base + eocd64_off + 32);
+                cd_size = zip_u64(base + eocd64_off + 40);
+                cd_off = zip_u64(base + eocd64_off + 48);
+            }
+        }
+    }
+
+    if (cd_size == 0 || cd_off >= archiveSize || cd_size > archiveSize ||
+        cd_off + cd_size > archiveSize || cd_size > 64ull * 1024 * 1024) {
+        return 0;
+    }
+
+    const uint8_t *cd = base + cd_off;
+
+    size_t cap = (total_entries > 0 && total_entries < 100000 ? (size_t) total_entries : 64);
+    if (cap < 16) cap = 16;
+    entries = calloc(cap, sizeof(entry));
+    if (!entries) return 0;
+    entryCount = 0;
+    max_file_size = 0;
+    need_encrypt = false;
+
+    size_t pos = 0;
+    while (pos + 46 <= (size_t) cd_size) {
+        if (cd[pos] != 'P' || cd[pos + 1] != 'K' || cd[pos + 2] != 1 || cd[pos + 3] != 2)
+            break;
+        uint16_t gp_flag = zip_u16(cd + pos + 8);
+        uint16_t method = zip_u16(cd + pos + 10);
+        uint32_t comp32 = zip_u32(cd + pos + 20);
+        uint32_t uncomp32 = zip_u32(cd + pos + 24);
+        uint16_t name_len = zip_u16(cd + pos + 28);
+        uint16_t extra_len = zip_u16(cd + pos + 30);
+        uint16_t comment_len = zip_u16(cd + pos + 32);
+        uint32_t local32 = zip_u32(cd + pos + 42);
+        uint64_t comp_size = comp32;
+        uint64_t uncomp_size = uncomp32;
+        uint64_t local_off = local32;
+
+        size_t name_off = pos + 46;
+        size_t extra_off = name_off + name_len;
+        size_t next = extra_off + extra_len + comment_len;
+        if (next > (size_t) cd_size || name_off + name_len > (size_t) cd_size) break;
+
+        // ZIP64 extra (0x0001)
+        if ((comp32 == 0xFFFFFFFFu || uncomp32 == 0xFFFFFFFFu || local32 == 0xFFFFFFFFu) &&
+            extra_len >= 4) {
+            size_t ex = 0;
+            while (ex + 4 <= extra_len) {
+                uint16_t tag = zip_u16(cd + extra_off + ex);
+                uint16_t sz = zip_u16(cd + extra_off + ex + 2);
+                if (ex + 4 + sz > extra_len) break;
+                if (tag == 0x0001) {
+                    size_t o = ex + 4;
+                    if (uncomp32 == 0xFFFFFFFFu && o + 8 <= ex + 4 + sz) {
+                        uncomp_size = zip_u64(cd + extra_off + o);
+                        o += 8;
+                    }
+                    if (comp32 == 0xFFFFFFFFu && o + 8 <= ex + 4 + sz) {
+                        comp_size = zip_u64(cd + extra_off + o);
+                        o += 8;
+                    }
+                    if (local32 == 0xFFFFFFFFu && o + 8 <= ex + 4 + sz) {
+                        local_off = zip_u64(cd + extra_off + o);
+                    }
+                    break;
+                }
+                ex += 4 + sz;
+            }
+        }
+
+        if (gp_flag & 1) need_encrypt = true;
+
+        char *name = (char *) malloc(name_len + 1);
+        if (!name) break;
+        memcpy(name, cd + name_off, name_len);
+        name[name_len] = '\0';
+
+        // Skip directories (name ends with /) and non-images / mac junk.
+        bool is_dir = name_len > 0 && name[name_len - 1] == '/';
+        if (!is_dir && filename_is_playable_file(name) &&
+            (method == 0 || method == 8) && uncomp_size > 0 && uncomp_size < (1ull << 31)) {
+            if (entryCount >= cap) {
+                size_t ncap = cap * 2;
+                entry *grown = realloc(entries, ncap * sizeof(entry));
+                if (!grown) {
+                    free(name);
+                    break;
+                }
+                memset(grown + cap, 0, (ncap - cap) * sizeof(entry));
+                entries = grown;
+                cap = ncap;
+            }
+            entries[entryCount].filename = name;
+            entries[entryCount].index = (int) entryCount;
+            entries[entryCount].size = (ssize_t) uncomp_size;
+            entries[entryCount].addr = NULL;
+            entries[entryCount].local_header_offset = (int64_t) local_off;
+            entries[entryCount].compressed_size = (int64_t) comp_size;
+            entries[entryCount].compression_method = method;
+            max_file_size = max((ssize_t) uncomp_size, max_file_size);
+            entryCount++;
+        } else {
+            free(name);
+        }
+        pos = next;
+    }
+
+    if (!entryCount) {
+        free(entries);
+        entries = NULL;
+        return 0;
+    }
+    if (sort_entries) qsort(entries, entryCount, sizeof(entry), compare_entries);
+    use_local_zip_index = true;
+    LOGI("Found %zu images in archive (local ZIP CD)", entryCount);
+    return (int) entryCount;
+}
+
+/** Inflate (method 8) or copy (method 0) one ZIP member using CD sizes, from the mmap. */
+static int zip_mem_extract_entry(entry *e, void *out, size_t out_cap) {
+    if (!e || !out || e->size <= 0 || (size_t) e->size > out_cap) return -1;
+    if (e->local_header_offset < 0 || (size_t) e->local_header_offset > archiveSize) return -1;
+    const uint8_t *base = (const uint8_t *) archiveAddr;
+    const uint8_t *lh = base + e->local_header_offset;
+    if ((size_t) e->local_header_offset + 30 > archiveSize) return -1;
+    if (lh[0] != 'P' || lh[1] != 'K' || lh[2] != 3 || lh[3] != 4) {
+        LOGE("%s", "ZIP local header signature mismatch");
+        return -1;
+    }
+    uint16_t name_len = zip_u16(lh + 26);
+    uint16_t extra_len = zip_u16(lh + 28);
+    int64_t data_off = e->local_header_offset + 30 + name_len + extra_len;
+    if (data_off < 0 || (size_t) data_off > archiveSize) return -1;
+
+    int64_t csz = e->compressed_size;
+    if (csz < 0 || (size_t) (data_off + csz) > archiveSize) return -1;
+    const uint8_t *data = base + data_off;
+
+    if (e->compression_method == 0) {
+        if (csz != e->size) return -1;
+        memcpy(out, data, (size_t) e->size);
+        return 0;
+    }
+    if (e->compression_method != 8) {
+        LOGE("ZIP method %u not supported for mem extract", e->compression_method);
+        return -1;
+    }
+
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    // Negative windowBits = raw DEFLATE (ZIP).
+    if (inflateInit2(&zs, -MAX_WBITS) != Z_OK) return -1;
+    zs.next_in = (Bytef *) data;
+    zs.avail_in = (uInt) csz;
+    zs.next_out = (Bytef *) out;
+    zs.avail_out = (uInt) e->size;
+    int zret = inflate(&zs, Z_FINISH);
+    inflateEnd(&zs);
+    if (zret != Z_STREAM_END && zret != Z_OK) {
+        LOGE("ZIP inflate failed: %d", zret);
+        return -1;
+    }
+    if (zs.total_out != (uLong) e->size) {
+        LOGE("ZIP inflate size mismatch %lu vs %zd", zs.total_out, e->size);
+        return -1;
+    }
+    return 0;
+}
+
 // --- TAR header-only stream index (analog of ZIP EOCD/CD) ---
 // ustar/GNU/pax: read 512-byte headers, advance past padded bodies without reading them.
 
@@ -1116,6 +1325,7 @@ static void stream_bridge_clear(JNIEnv *env) {
     use_stream_io = false;
     use_zip_cd_index = false;
     use_tar_index = false;
+    use_local_zip_index = false;
     stream_bytes_read = 0;
     tar_walk_reset();
 }
@@ -1651,6 +1861,11 @@ static jint archive_open_common(JNIEnv *env, jboolean sort_entries, bool cover_o
         return archive_open_stream_single_pass(sort_entries, cover_only, progressive_tar);
     }
 
+    // Local mmap: prefer ZIP central-directory direct index (O(1) per-page extract).
+    // Falls through to libarchive for non-ZIP (7z/rar/tar) and malformed zips.
+    jint zip_n = zip_mem_open_from_cd(sort_entries);
+    if (zip_n > 0) return zip_n;
+
     ctx = archive_alloc_ctx();
     if (!ctx) return 0;
 
@@ -2047,6 +2262,14 @@ Java_com_hippo_ehviewer_jni_ArchiveKt_extractToByteBuffer(JNIEnv *env, jclass th
             result = (*env)->NewDirectByteBuffer(env, addr, size);
         } else {
             LOGE("%s%d", "TAR stream extract failed for index ", index);
+            release_decode_buffer(addr);
+        }
+    } else if (!use_stream_io && use_local_zip_index) {
+        // Direct range-read + inflate from the mmap — one member only (O(1)).
+        if (zip_mem_extract_entry(entry, addr, (size_t) size) == 0) {
+            result = (*env)->NewDirectByteBuffer(env, addr, size);
+        } else {
+            LOGE("%s%d", "ZIP mem extract failed for index ", index);
             release_decode_buffer(addr);
         }
     } else {
