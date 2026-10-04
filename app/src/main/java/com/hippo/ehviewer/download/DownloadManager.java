@@ -47,7 +47,6 @@ import com.hippo.lib.yorozuya.ObjectUtils;
 import com.hippo.lib.yorozuya.SimpleHandler;
 import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
-import com.hippo.lib.yorozuya.collect.SparseJLArray;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
 import android.util.SparseArray;
@@ -77,7 +76,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     // All download info list
     private final LinkedList<DownloadInfo> mAllInfoList;
     // All download info map
-    private final SparseJLArray<DownloadInfo> mAllInfoMap;
+    // 不用 SparseJLArray：其 put() 是 O(n) 的有序数组移位，
+    // 构建全部下载索引时退化为 O(n²)。几万条下载时这就是启动卡死的主因。
+    private final HashMap<Long, DownloadInfo> mAllInfoMap;
     // label and info list map, without default label info list
     private final Map<String, LinkedList<DownloadInfo>> mMap;
 
@@ -129,7 +130,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         mAllInfoList = new LinkedList<>(allInfoList);
 
         // Create all info map
-        SparseJLArray<DownloadInfo> allInfoMap = new SparseJLArray<>(allInfoList.size() + 10);
+        // 预分配 2 倍容量避免 rehash；HashMap 的 put 是 O(1)
+        HashMap<Long, DownloadInfo> allInfoMap = new HashMap<>(Math.max(16, allInfoList.size() * 2));
         mAllInfoMap = allInfoMap;
 
         for (int i = 0, n = allInfoList.size(); i < n; i++) {
@@ -384,7 +386,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public boolean containDownloadInfo(long gid) {
-        return mAllInfoMap.indexOfKey(gid) >= 0;
+        return mAllInfoMap.containsKey(gid);
     }
 
     @NonNull

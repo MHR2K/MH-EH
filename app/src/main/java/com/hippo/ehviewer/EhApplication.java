@@ -137,7 +137,11 @@ public class EhApplication extends RecordingApplication {
     private LruCache<Long, GalleryDetail> mGalleryDetailCache;
     private SimpleDiskCache mSpiderInfoCache;
     private com.hippo.ehviewer.spider.SpiderInfoRepository mSpiderInfoRepository;
-    private DownloadManager mDownloadManager;
+    // volatile: DownloadManager 可能在 deferred 后台线程预初始化，
+    // 随后由主线程读取，必须保证安全发布
+    private volatile DownloadManager mDownloadManager;
+    // DownloadManager 就绪前登记的回调，预初始化完成后在主线程统一触发
+    private final List<Runnable> mDownloadManagerReadyCallbacks = new ArrayList<>();
     private Hosts mHosts;
     private FavouriteStatusRouter mFavouriteStatusRouter;
     @Nullable
@@ -379,6 +383,18 @@ public class EhApplication extends RecordingApplication {
     private void initializeDeferredServicesAsync() {
         executorService.execute(() -> {
             try {
+                // 最先预初始化 DownloadManager：十万条下载时构造需数秒，
+                // 必须放在后台线程完成；主线程改用 peekDownloadManager() 非阻塞获取
+                try {
+                    long diagT0 = System.currentTimeMillis();
+                    getDownloadManager(EhApplication.this);
+                    Log.i(TAG, "DownloadManager pre-initialized in "
+                            + (System.currentTimeMillis() - diagT0) + "ms");
+                    notifyDownloadManagerReady();
+                } catch (Throwable t) {
+                    Log.e(TAG, "DownloadManager pre-init failed", t);
+                }
+
                 // Initialize SpiderDen
                 SpiderDen.initialize(EhApplication.this);
 
@@ -811,10 +827,68 @@ public class EhApplication extends RecordingApplication {
     @NonNull
     public static DownloadManager getDownloadManager(@NonNull Context context) {
         EhApplication application = ((EhApplication) context.getApplicationContext());
-        if (application.mDownloadManager == null) {
-            application.mDownloadManager = new DownloadManager(application);
+        DownloadManager manager = application.mDownloadManager;
+        if (manager == null) {
+            // 双重检查锁：DownloadManager 可能被后台预初始化线程与调用线程同时构造，
+            // 必须保证只构造一次并安全发布
+            synchronized (application) {
+                manager = application.mDownloadManager;
+                if (manager == null) {
+                    manager = new DownloadManager(application);
+                    application.mDownloadManager = manager;
+                }
+            }
         }
-        return application.mDownloadManager;
+        return manager;
+    }
+
+    /**
+     * 非阻塞获取 DownloadManager：只返回已构造好的实例，未就绪返回 null，
+     * 绝不构造、绝不等待。主线程应使用本方法，避免十万条下载时阻塞 UI。
+     * 需要数据就绪时配合 {@link #whenDownloadManagerReady}。
+     */
+    @Nullable
+    public static DownloadManager peekDownloadManager(@NonNull Context context) {
+        return ((EhApplication) context.getApplicationContext()).mDownloadManager;
+    }
+
+    /**
+     * 若 DownloadManager 已就绪则立即执行 callback，否则登记等预初始化完成后触发。
+     * 调用方应在主线程调用；登记后的回调由预初始化线程 post 回主线程执行。
+     */
+    public static void whenDownloadManagerReady(@NonNull Context context, @NonNull Runnable callback) {
+        EhApplication application = ((EhApplication) context.getApplicationContext());
+        boolean runNow;
+        synchronized (application.mDownloadManagerReadyCallbacks) {
+            runNow = application.mDownloadManager != null;
+            if (!runNow) {
+                application.mDownloadManagerReadyCallbacks.add(callback);
+            }
+        }
+        if (runNow) {
+            callback.run();
+        }
+    }
+
+    /** 预初始化完成后，切回主线程触发所有等待 DownloadManager 的回调 */
+    private void notifyDownloadManagerReady() {
+        final List<Runnable> callbacks;
+        synchronized (mDownloadManagerReadyCallbacks) {
+            if (mDownloadManagerReadyCallbacks.isEmpty()) {
+                return;
+            }
+            callbacks = new ArrayList<>(mDownloadManagerReadyCallbacks);
+            mDownloadManagerReadyCallbacks.clear();
+        }
+        new Handler(Looper.getMainLooper()).post(() -> {
+            for (Runnable callback : callbacks) {
+                try {
+                    callback.run();
+                } catch (Throwable t) {
+                    Log.e(TAG, "DownloadManager ready callback failed", t);
+                }
+            }
+        });
     }
 
     @NonNull

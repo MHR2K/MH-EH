@@ -99,7 +99,11 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
 
         setType(type);
 
-        mDownloadManager = EhApplication.getDownloadManager(inflater.getContext());
+        // 非阻塞获取，未就绪时先不显示下载徽标，就绪后刷新补上
+        mDownloadManager = EhApplication.peekDownloadManager(inflater.getContext());
+        if (mDownloadManager == null) {
+            EhApplication.whenDownloadManagerReady(inflater.getContext(), this::notifyDataSetChanged);
+        }
     }
 
     private void adjustPaddings() {
@@ -246,7 +250,7 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
                     holder.simpleLanguage.setVisibility(View.VISIBLE);
                 }
                 holder.favourited.setVisibility((mShowFavourited && gi.favoriteSlot >= -1 && gi.favoriteSlot <= 10) ? View.VISIBLE : View.GONE);
-                holder.downloaded.setVisibility(mDownloadManager.containDownloadInfo(gi.gid) ? View.VISIBLE : View.GONE);
+                holder.downloaded.setVisibility((mDownloadManager != null && mDownloadManager.containDownloadInfo(gi.gid)) ? View.VISIBLE : View.GONE);
                 break;
             }
             case TYPE_GRID: {

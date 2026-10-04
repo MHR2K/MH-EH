@@ -305,12 +305,19 @@ public class SubscriptionDraw {
 
         @Override
         public void onFailure(Exception e) {
-
+            progressView.setVisibility(View.GONE);
+            frameLayout.setVisibility(View.VISIBLE);
+            textView.setVisibility(View.VISIBLE);
+            textView.setText(R.string.empty_subscription);
+            if (e != null) {
+                e.printStackTrace();
+            }
         }
 
         @Override
         public void onCancel() {
-
+            progressView.setVisibility(View.GONE);
+            frameLayout.setVisibility(View.VISIBLE);
         }
     }
 

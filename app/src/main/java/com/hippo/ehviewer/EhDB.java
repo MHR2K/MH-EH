@@ -1006,9 +1006,22 @@ public class EhDB {
     }
 
     private static <T> boolean copyDao(AbstractDao<T, ?> from, AbstractDao<T, ?> to) {
+        // 批量插入：逐条 insert() 时每行是独立事务（每行一次 fsync），
+        // 十万条下载数据会耗时数十秒，且全程占用 EhDB 全局锁（EhDB 所有方法都是
+        // static synchronized），导致历史/下载/订阅等页面全部卡死。
+        // 分批 insertInTx 在同一事务内完成，快几个数量级。
+        final int BATCH_SIZE = 2000;
         try (CloseableListIterator<T> iterator = from.queryBuilder().listIterator()) {
+            List<T> batch = new ArrayList<>(BATCH_SIZE);
             while (iterator.hasNext()) {
-                to.insert(iterator.next());
+                batch.add(iterator.next());
+                if (batch.size() >= BATCH_SIZE) {
+                    to.insertInTx(batch);
+                    batch.clear();
+                }
+            }
+            if (!batch.isEmpty()) {
+                to.insertInTx(batch);
             }
         } catch (IOException e) {
             return false;

@@ -699,9 +699,29 @@ public class DownloadsScene extends ToolbarScene
 
         Context context = getEHContext();
         AssertUtils.assertNotNull(context);
-        mDownloadManager = EhApplication.getDownloadManager(context);
-        mDownloadManager.addDownloadInfoListener(this);
         mPaginationController.setCanPagination(Settings.getDownloadPagination());
+
+        // 非阻塞获取：十万条下载时构造需数秒，绝不能在主线程等待
+        mDownloadManager = EhApplication.peekDownloadManager(context);
+        if (mDownloadManager != null) {
+            initDownloadList(savedInstanceState);
+        } else {
+            // 未就绪：等后台预初始化完成后补挂监听并初始化列表
+            EhApplication.whenDownloadManagerReady(context, () -> {
+                Context ctx = getEHContext();
+                if (ctx == null || !isAdded()) {
+                    return;
+                }
+                mDownloadManager = EhApplication.peekDownloadManager(ctx);
+                if (mDownloadManager != null) {
+                    initDownloadList(savedInstanceState);
+                }
+            });
+        }
+    }
+
+    private void initDownloadList(@Nullable Bundle savedInstanceState) {
+        mDownloadManager.addDownloadInfoListener(this);
 
         // 保存分组搜索状态（onInit 中的 updateForLabel 会清除它们）
         Map<String, List<DownloadInfo>> savedGroupedResults = mSearchController.getGroupedSearchResults();

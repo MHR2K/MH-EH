@@ -363,7 +363,8 @@ public final class GalleryListScene extends BaseScene
         AssertUtils.assertNotNull(context);
         executorService = EhApplication.getExecutorService(context);
         mClient = EhApplication.getEhClient(context);
-        mDownloadManager = EhApplication.getDownloadManager(context);
+        // 非阻塞获取：十万条下载时构造要数秒，绝不能在主线程等待
+        mDownloadManager = EhApplication.peekDownloadManager(context);
         mFavouriteStatusRouter = EhApplication.getFavouriteStatusRouter(context);
 
         mDownloadInfoListener = new DownloadManager.DownloadInfoListener() {
@@ -417,7 +418,24 @@ public final class GalleryListScene extends BaseScene
             public void onUpdateLabels() {
             }
         };
-        mDownloadManager.addDownloadInfoListener(mDownloadInfoListener);
+        if (mDownloadManager != null) {
+            mDownloadManager.addDownloadInfoListener(mDownloadInfoListener);
+        } else {
+            // 未就绪：等后台预初始化完成后补挂监听并刷新徽标
+            EhApplication.whenDownloadManagerReady(context, () -> {
+                Context ctx = getEHContext();
+                if (ctx == null || !isAdded()) {
+                    return;
+                }
+                mDownloadManager = EhApplication.peekDownloadManager(ctx);
+                if (mDownloadManager != null) {
+                    mDownloadManager.addDownloadInfoListener(mDownloadInfoListener);
+                }
+                if (mAdapter != null) {
+                    mAdapter.notifyDataSetChanged();
+                }
+            });
+        }
 
         mFavouriteStatusRouterListener = (gid, slot) -> {
             if (mAdapter != null) {
@@ -470,7 +488,9 @@ public final class GalleryListScene extends BaseScene
         super.onDestroy();
         mClient = null;
         mUrlBuilder = null;
-        mDownloadManager.removeDownloadInfoListener(mDownloadInfoListener);
+        if (mDownloadManager != null) {
+            mDownloadManager.removeDownloadInfoListener(mDownloadInfoListener);
+        }
         mFavouriteStatusRouter.removeListener(mFavouriteStatusRouterListener);
         EventBus.getDefault().unregister(this);
     }
@@ -1343,7 +1363,9 @@ public final class GalleryListScene extends BaseScene
             return true;
         }
 
-        boolean downloaded = mDownloadManager.getDownloadState(gi.gid) != DownloadInfo.STATE_INVALID;
+        // DownloadManager 可能尚未就绪（十万条下载时构造需数秒），此时按未下载处理
+        boolean downloaded = mDownloadManager != null
+                && mDownloadManager.getDownloadState(gi.gid) != DownloadInfo.STATE_INVALID;
         boolean favourited = gi.favoriteSlot != -2;
 
     CharSequence[] items = new CharSequence[]{
@@ -1399,7 +1421,11 @@ public final class GalleryListScene extends BaseScene
                                 new AlertDialog.Builder(context)
                                         .setTitle(R.string.download_remove_dialog_title)
                                         .setMessage(getString(R.string.download_remove_dialog_message, gi.title))
-                                        .setPositiveButton(android.R.string.ok, (dialog1, which1) -> mDownloadManager.deleteDownload(gi.gid))
+                                        .setPositiveButton(android.R.string.ok, (dialog1, which1) -> {
+                                            if (mDownloadManager != null) {
+                                                mDownloadManager.deleteDownload(gi.gid);
+                                            }
+                                        })
                                         .show();
                             } else {
                                 CommonOperations.startDownload(activity, gi, false);
@@ -1411,6 +1437,10 @@ public final class GalleryListScene extends BaseScene
                                 break;
                             }
                             final DownloadManager dm = mDownloadManager;
+                            if (dm == null) {
+                                // DownloadManager 尚未就绪
+                                break;
+                            }
                             boolean justAdd = false;
                             String label = null;
                             if (Settings.getHasDefaultDownloadLabel()) {
@@ -2264,7 +2294,9 @@ public final class GalleryListScene extends BaseScene
                     if (Settings.getHasDefaultDownloadLabel()) {
                         label = Settings.getDefaultDownloadLabel();
                     }
-                    mDownloadManager.addDownload(gi, label);
+                    if (mDownloadManager != null) {
+                        mDownloadManager.addDownload(gi, label);
+                    }
                     showTip(R.string.added_to_download_list, LENGTH_SHORT);
                     mHelper.removeAt(mPosition);
                     mAdapter.notifyItemRemoved(mPosition);

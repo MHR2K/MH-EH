@@ -24,6 +24,7 @@ import com.hippo.scene.Announcer;
 import com.hippo.lib.yorozuya.AssertUtils;
 import com.hippo.lib.yorozuya.ViewUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class BookmarksDraw {
@@ -61,40 +62,57 @@ public class BookmarksDraw {
 
         AssertUtils.assertNotNull(context);
 
-        List<QuickSearch> quickSearchList = EhDB.getAllQuickSearch();
-        //汉化标签
-        final boolean judge = Settings.getShowTagTranslations();
-        if (judge && !quickSearchList.isEmpty()) {
-            for (int i = 0; i < quickSearchList.size(); i++) {
-                String name = quickSearchList.get(i).getName();
-                //重设标签名称,并跳过已翻译的标签
-                if (name != null && 2 == name.split(":").length) {
-                    quickSearchList.get(i).setName(TagTranslationUtil.getTagCN(name.split(":"), ehTags));
-                    EhDB.updateQuickSearch(quickSearchList.get(i));
-                }
-            }
-        } else if (!judge && !quickSearchList.isEmpty()) {
-            for (int i = 0; i < quickSearchList.size(); i++) {
-                String name = quickSearchList.get(i).getName();
-                //重设标签名称,并跳过未翻译的标签
-                if (null != name && 1 == name.split(":").length) {
-                    quickSearchList.get(i).setName(quickSearchList.get(i).getKeyword());
-                    EhDB.updateQuickSearch(quickSearchList.get(i));
-                }
-            }
-        }
-
-
-        final List<QuickSearch> list = quickSearchList;
-
+        // 先用空列表，避免主线程阻塞
+        final List<QuickSearch> list = new ArrayList<>();
         final ArrayAdapter<QuickSearch> adapter = new ArrayAdapter<>(context, R.layout.item_simple_list, list);
         listView.setAdapter(adapter);
+
+        // 后台加载数据
+        EhApplication.getExecutorService(context).execute(() -> {
+            List<QuickSearch> quickSearchList = EhDB.getAllQuickSearch();
+            //汉化标签
+            final boolean judge = Settings.getShowTagTranslations();
+            if (judge && !quickSearchList.isEmpty()) {
+                for (int i = 0; i < quickSearchList.size(); i++) {
+                    String name = quickSearchList.get(i).getName();
+                    if (name != null && 2 == name.split(":").length) {
+                        quickSearchList.get(i).setName(TagTranslationUtil.getTagCN(name.split(":"), ehTags));
+                        EhDB.updateQuickSearch(quickSearchList.get(i));
+                    }
+                }
+            } else if (!judge && !quickSearchList.isEmpty()) {
+                for (int i = 0; i < quickSearchList.size(); i++) {
+                    String name = quickSearchList.get(i).getName();
+                    if (null != name && 1 == name.split(":").length) {
+                        quickSearchList.get(i).setName(quickSearchList.get(i).getKeyword());
+                        EhDB.updateQuickSearch(quickSearchList.get(i));
+                    }
+                }
+            }
+
+            listView.post(() -> {
+                list.clear();
+                list.addAll(quickSearchList);
+                adapter.notifyDataSetChanged();
+                if (list.isEmpty()) {
+                    tip.setVisibility(View.VISIBLE);
+                    listView.setVisibility(View.GONE);
+                } else {
+                    tip.setVisibility(View.GONE);
+                    listView.setVisibility(View.VISIBLE);
+                    resume();
+                }
+            });
+        });
+
         //快速搜索点击tag事件监听
         listView.setOnItemClickListener((parent, view1, position, id) -> {
             if (null == scene.mHelper || null == scene.mUrlBuilder) {
                 return;
             }
-
+            if (position < 0 || position >= list.size()) {
+                return;
+            }
             scene.mUrlBuilder.set(list.get(position));
             scene.mUrlBuilder.setPageIndex(0);
             scene.onUpdateUrlBuilder();
@@ -105,10 +123,13 @@ public class BookmarksDraw {
         listView.setOnScrollListener(new ScrollListener());
 
         tip.setText(R.string.quick_search_tip);
+        tip.setVisibility(View.VISIBLE);
+        listView.setVisibility(View.GONE);
+
         toolbar.setLogo(R.drawable.ic_baseline_bookmarks_24);
         toolbar.setTitle(R.string.quick_search);
         toolbar.inflateMenu(R.menu.drawer_gallery_list);
-        toolbar.setOnMenuItemClickListener(item -> {  //点击增加快速搜索按钮触发
+        toolbar.setOnMenuItemClickListener(item -> {
             int id = item.getItemId();
             switch (id) {
                 case R.id.action_add:
@@ -125,19 +146,9 @@ public class BookmarksDraw {
             return true;
         });
 
-        if (list.isEmpty()) {
-            tip.setVisibility(View.VISIBLE);
-            listView.setVisibility(View.GONE);
-        } else {
-            tip.setVisibility(View.GONE);
-            listView.setVisibility(View.VISIBLE);
-            resume();
-        }
-
         toolbar.setOnClickListener(l -> {
             scene.drawPager.setCurrentItem(1);
         });
-
 
         return bookmarksView;
     }

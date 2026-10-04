@@ -17,6 +17,7 @@
 package com.hippo.ehviewer.ui.scene.history;
 
 import android.content.Context;
+import android.util.Log;
 import android.content.DialogInterface;
 import android.content.res.Resources;
 import android.graphics.Color;
@@ -24,6 +25,8 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
 import android.view.View;
@@ -49,6 +52,7 @@ import com.hippo.easyrecyclerview.EasyRecyclerView;
 import com.hippo.easyrecyclerview.FastScroller;
 import com.hippo.easyrecyclerview.HandlerDrawable;
 import com.hippo.easyrecyclerview.MarginItemDecoration;
+import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
@@ -80,6 +84,8 @@ import org.greenrobot.greendao.query.LazyList;
 public class HistoryScene extends ToolbarScene
         implements EasyRecyclerView.OnItemClickListener,
         EasyRecyclerView.OnItemLongClickListener{
+
+    private static final String TAG = "HistoryScene";
 
     /*---------------
      View life cycle
@@ -152,7 +158,7 @@ public class HistoryScene extends ToolbarScene
         handlerDrawable.setColor(AttrResources.getAttrColor(context, R.attr.widgetColorThemeAccent));
         fastScroller.setHandlerDrawable(handlerDrawable);
 
-        updateLazyList();
+        updateLazyList(false);
         updateView(false);
 
         return view;
@@ -185,13 +191,42 @@ public class HistoryScene extends ToolbarScene
         mAdapter = null;
     }
 
-    // Remember to notify
-    private void updateLazyList() {
-        LazyList<HistoryInfo> lazyList = EhDB.getHistoryLazyList();
-        if (mLazyList != null) {
-            mLazyList.close();
+    /**
+     * 异步加载历史列表。
+     * {@code EhDB.getHistoryLazyList()} 需要对整表做 ORDER BY（TIME 无索引），
+     * 数据量大时在主线程会卡死数秒，因此放到后台线程执行，再切回主线程刷新。
+     * LazyList 本身线程安全（内部 ReentrantLock），后台构造、主线程读取是安全的。
+     */
+    private void updateLazyList(boolean animation) {
+        Context context = getEHContext();
+        if (context == null) {
+            return;
         }
-        mLazyList = lazyList;
+        // 注意：本方法会在 onCreateView3 里被调用，此时 Fragment.getView() 仍为 null
+        // （view 是该方法局部 inflate 的，要等 onCreateView 返回后框架才赋值），
+        // 因此这里不能依赖 getView()，改为 post 回主线程时再检查。
+        EhApplication.getExecutorService(context).execute(() -> {
+            final LazyList<HistoryInfo> lazyList;
+            try {
+                lazyList = EhDB.getHistoryLazyList();
+            } catch (Throwable t) {
+                Log.e(TAG, "Failed to load history list", t);
+                return;
+            }
+            new Handler(Looper.getMainLooper()).post(() -> {
+                // 视图已销毁：丢弃刚加载的结果，避免泄漏 cursor
+                if (getView() == null || mAdapter == null || mViewTransition == null) {
+                    lazyList.close();
+                    return;
+                }
+                if (mLazyList != null) {
+                    mLazyList.close();
+                }
+                mLazyList = lazyList;
+                mAdapter.notifyDataSetChanged();
+                updateView(animation);
+            });
+        });
     }
 
     private void updateView(boolean animation) {
@@ -227,9 +262,7 @@ public class HistoryScene extends ToolbarScene
                         }
 
                         EhDB.clearHistoryInfo();
-                        updateLazyList();
-                        mAdapter.notifyDataSetChanged();
-                        updateView(true);
+                        updateLazyList(true);
                     }
                 }).show();
     }
@@ -439,9 +472,7 @@ public class HistoryScene extends ToolbarScene
 
             HistoryInfo info = mLazyList.get(mPosition);
             EhDB.deleteHistoryInfo(info);
-            updateLazyList();
-            mAdapter.notifyDataSetChanged();
-            updateView(true);
+            updateLazyList(true);
         }
     }
 
