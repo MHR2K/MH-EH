@@ -37,6 +37,7 @@ SMB漫画文件夹压缩工具
 """
 
 import argparse
+import csv
 import html
 import os
 import re
@@ -244,10 +245,12 @@ def export_scan_result(scan_data: List[Dict], output_path: str) -> bool:
         ]
         
         with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
+            writer = csv.writer(f)
+
             # 写入表头
-            f.write(','.join(headers) + '\n')
-            
-            # 写入数据
+            writer.writerow(headers)
+
+            # 写入数据（csv.writer 会自动为含逗号/引号/换行的字段加引号并转义）
             for item in scan_data:
                 row = [
                     str(item.get('gid', '')),
@@ -260,7 +263,7 @@ def export_scan_result(scan_data: List[Dict], output_path: str) -> bool:
                     '1' if item.get('created_ehviewer') else '0',
                     '1' if item.get('created_thumb') else '0'
                 ]
-                f.write(','.join(row) + '\n')
+                writer.writerow(row)
         
         print(f"扫描结果已导出到: {output_path}")
         return True
