@@ -58,6 +58,10 @@ public class BackupManager {
 
         try {
             tempDir = new File(context.getCacheDir(), "backup_temp");
+            // 清理残留的旧临时目录：上次备份中断时会留下，mkdirs() 因目录已存在返回 false
+            if (tempDir.exists()) {
+                deleteDirectory(tempDir);
+            }
             if (!tempDir.mkdirs()) {
                 Log.e(TAG, "Failed to create temp directory");
                 return false;
@@ -146,6 +150,10 @@ public class BackupManager {
 
         try {
             tempDir = new File(context.getCacheDir(), "restore_temp");
+            // 清理残留的旧临时目录：上次恢复中断时会留下，mkdirs() 因目录已存在返回 false
+            if (tempDir.exists()) {
+                deleteDirectory(tempDir);
+            }
             if (!tempDir.mkdirs()) {
                 Log.e(TAG, "Failed to create temp directory");
                 return false;
@@ -160,7 +168,9 @@ public class BackupManager {
             if (ehDbFile.exists()) {
                 String error = EhDB.importDB(context, ehDbFile, null);
                 if (error != null) {
+                    // 之前这里只打印日志却仍然返回成功，用户会看到“恢复成功”但数据并未恢复
                     Log.e(TAG, "Failed to import eh.db: " + error);
+                    return false;
                 }
             }
 

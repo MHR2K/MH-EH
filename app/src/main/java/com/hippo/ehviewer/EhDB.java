@@ -1199,6 +1199,12 @@ public class EhDB {
     }
 
     private static void sendImportProgress(Handler handler, int progress) {
+        // handler 可能为 null（例如“完整恢复”不关心进度回调），
+        // 之前直接调用 handler.sendMessage() 会抛 NPE 并被吞掉，
+        // 导致 importDB 在导入任何数据之前就失败返回。
+        if (handler == null) {
+            return;
+        }
         Message message = new Message();
         Bundle bundle = new Bundle();
         bundle.putInt(LOADING_PROGRESS, progress);
