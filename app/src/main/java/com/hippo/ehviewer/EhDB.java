@@ -1103,8 +1103,9 @@ public class EhDB {
      * @return error string, null for no error
      */
     public static synchronized String importDB(Context context, File file, Handler handler) {
+        SQLiteDatabase db = null;
         try {
-            SQLiteDatabase db = SQLiteDatabase.openDatabase(
+            db = SQLiteDatabase.openDatabase(
                     file.getPath(), null, SQLiteDatabase.NO_LOCALIZED_COLLATORS);
             int newVersion = DaoMaster.SCHEMA_VERSION;
             int oldVersion = db.getVersion();
@@ -1195,6 +1196,13 @@ public class EhDB {
             ExceptionUtils.throwIfFatal(e);
             // Ignore
             return context.getString(R.string.cant_read_the_file);
+        } finally {
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Throwable ignored) {
+                }
+            }
         }
     }
 

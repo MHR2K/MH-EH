@@ -28,7 +28,6 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.util.ReadableTime;
 
 import java.io.File;
-import java.util.Arrays;
 import java.util.Calendar;
 
 /**
@@ -37,6 +36,9 @@ import java.util.Calendar;
  */
 public class AutoBackupWorker extends Worker {
     private static final String TAG = AutoBackupWorker.class.getSimpleName();
+
+    // 自动备份文件名前缀（与手动导出的 backup_<时间>.zip 区分开，便于清理）
+    private static final String BACKUP_FILE_PREFIX = "auto_backup_";
 
     public AutoBackupWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -67,19 +69,15 @@ public class AutoBackupWorker extends Worker {
         }
 
         try {
-            File backupDir = AppConfig.getDirInExternalAppDir("backup");
+            // 直接写入外部数据目录：与手动「完整备份」同一位置，
+            // 这样「完整恢复」的文件列表里就能看到并直接恢复自动备份。
+            File backupDir = AppConfig.getExternalDataDir();
             if (backupDir == null) {
                 Log.e(TAG, "Backup directory creation failed");
                 return Result.retry();
             }
 
-            // 确保备份目录存在
-            if (!backupDir.exists() && !backupDir.mkdirs()) {
-                Log.e(TAG, "Failed to create backup directory: " + backupDir.getAbsolutePath());
-                return Result.retry();
-            }
-
-            String filename = "backup_" + ReadableTime.getFilenamableTime(now) + ".zip";
+            String filename = BACKUP_FILE_PREFIX + ReadableTime.getFilenamableTime(now) + ".zip";
             File backupFile = new File(backupDir, filename);
 
             if (BackupManager.createFullBackup(getApplicationContext(), backupFile)) {
@@ -126,24 +124,37 @@ public class AutoBackupWorker extends Worker {
             int retentionDays = Settings.getBackupRetentionDays();
             long cutoffTime = System.currentTimeMillis() - (long) retentionDays * 24 * 60 * 60 * 1000;
 
-            File[] backupFiles = backupDir.listFiles((dir, name) ->
-                    (name.startsWith("backup_") && name.endsWith(".db"))
-                    || (name.startsWith("backup_") && name.endsWith(".zip")));
-            if (backupFiles == null || backupFiles.length == 0) {
-                return;
-            }
+            cleanupDirectory(backupDir, cutoffTime);
 
-            for (File file : backupFiles) {
-                if (file.lastModified() < cutoffTime) {
-                    if (!file.delete()) {
-                        Log.w(TAG, "Failed to delete old backup: " + file.getAbsolutePath());
-                    } else {
-                        Log.i(TAG, "Deleted old backup: " + file.getName());
-                    }
-                }
+            // 同时检查清理旧版本可能残留的历史自动备份目录 (EhViewer/backup/)
+            File legacyDir = AppConfig.getDirInExternalAppDir("backup");
+            if (legacyDir != null && legacyDir.exists()) {
+                cleanupDirectory(legacyDir, cutoffTime);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error cleaning up old backups", e);
+        }
+    }
+
+    private void cleanupDirectory(File dir, long cutoffTime) {
+        if (dir == null || !dir.exists()) {
+            return;
+        }
+        File[] backupFiles = dir.listFiles((d, name) ->
+                (name.startsWith(BACKUP_FILE_PREFIX) || name.startsWith("backup_"))
+                && (name.endsWith(".zip") || name.endsWith(".db") || name.endsWith(".ehbak")));
+        if (backupFiles == null || backupFiles.length == 0) {
+            return;
+        }
+
+        for (File file : backupFiles) {
+            if (file.lastModified() < cutoffTime) {
+                if (!file.delete()) {
+                    Log.w(TAG, "Failed to delete old backup: " + file.getAbsolutePath());
+                } else {
+                    Log.i(TAG, "Deleted old backup: " + file.getName());
+                }
+            }
         }
     }
 }

@@ -86,28 +86,31 @@ public class FullRestorePreference extends Preference {
             return;
         }
 
-        // 筛选 zip 文件
-        java.util.List<UniFile> zipFiles = new java.util.ArrayList<>();
+        // 筛选完整备份文件：支持 .zip / .ehbak 归档包，并向下兼容 .db 备份
+        java.util.List<UniFile> backupFiles = new java.util.ArrayList<>();
         for (UniFile f : files) {
-            if (f != null && f.getName() != null && f.getName().endsWith(".zip")) {
-                zipFiles.add(f);
+            if (f != null && f.getName() != null) {
+                String name = f.getName();
+                if (name.endsWith(".zip") || name.endsWith(".ehbak") || name.endsWith(".db")) {
+                    backupFiles.add(f);
+                }
             }
         }
 
-        if (zipFiles.isEmpty()) {
+        if (backupFiles.isEmpty()) {
             Toast.makeText(context, R.string.cant_find_any_data, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        String[] items = new String[zipFiles.size()];
-        for (int i = 0; i < zipFiles.size(); i++) {
-            items[i] = zipFiles.get(i).getName();
+        String[] items = new String[backupFiles.size()];
+        for (int i = 0; i < backupFiles.size(); i++) {
+            items[i] = backupFiles.get(i).getName();
         }
 
         new AlertDialog.Builder(context)
             .setTitle(R.string.settings_advanced_full_backup_restore)
             .setItems(items, (dialog, which) -> {
-                UniFile selectedFile = zipFiles.get(which);
+                UniFile selectedFile = backupFiles.get(which);
                 // 获取真实文件路径
                 performRestore(getFileFromUniFile(selectedFile));
             })
