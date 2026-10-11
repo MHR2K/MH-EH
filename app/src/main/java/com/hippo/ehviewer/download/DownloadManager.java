@@ -23,14 +23,18 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.client.EhEngine;
+import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.dao.DownloadLabel;
@@ -40,6 +44,7 @@ import com.hippo.ehviewer.spider.SpiderQueen;
 import com.hippo.lib.image.Image;
 //import com.hippo.lib.image.Image1;
 import com.hippo.unifile.UniFile;
+import com.hippo.util.ExceptionUtils;
 import com.hippo.util.IoThreadPoolExecutor;
 import com.hippo.lib.yorozuya.ConcurrentPool;
 import com.hippo.lib.yorozuya.MathUtils;
@@ -650,6 +655,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // 统计：添加下载
             com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+
+            // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
+            if (TextUtils.isEmpty(info.titleJpn)) {
+                fetchTitleJpnAsync(info);
+            }
         }
     }
 
@@ -904,6 +914,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // 统计：添加下载
         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+
+        // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
+        if (TextUtils.isEmpty(info.titleJpn)) {
+            fetchTitleJpnAsync(info);
+        }
     }
 
     public void addDownload(GalleryInfo galleryInfo, @Nullable String label) {
@@ -938,6 +953,51 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // 统计：添加下载
         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+
+        // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
+        if (TextUtils.isEmpty(info.titleJpn)) {
+            fetchTitleJpnAsync(info);
+        }
+    }
+
+    /**
+     * 异步通过 gdata API 获取画廊的真实日文标题并更新下载信息
+     */
+    private void fetchTitleJpnAsync(@NonNull DownloadInfo info) {
+        if (info.gid <= 0 || TextUtils.isEmpty(info.token) || info.archiveUri != null) {
+            return;
+        }
+        final long targetGid = info.gid;
+        final String targetToken = info.token;
+        IoThreadPoolExecutor.getInstance().execute(() -> {
+            try {
+                GalleryInfo reqGi = new GalleryInfo();
+                reqGi.gid = targetGid;
+                reqGi.token = targetToken;
+                EhEngine.fillGalleryListByApi(null, EhApplication.getOkHttpClient(mContext),
+                        Collections.singletonList(reqGi), EhUrl.getReferer());
+                String titleJpn = reqGi.titleJpn;
+                if (!TextUtils.isEmpty(titleJpn)) {
+                    SimpleHandler.getInstance().post(() -> {
+                        DownloadInfo current = mAllInfoMap.get(targetGid);
+                        if (current != null && current == info && TextUtils.isEmpty(current.titleJpn)) {
+                            current.titleJpn = titleJpn;
+                            EhDB.putDownloadInfo(current);
+                            EhDB.putHistoryInfo(current);
+                            List<DownloadInfo> list = getInfoListForLabel(current.label);
+                            if (list != null) {
+                                for (DownloadInfoListener l : mDownloadInfoListeners) {
+                                    l.onUpdate(current, list, mWaitList);
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (Throwable t) {
+                ExceptionUtils.throwIfFatal(t);
+                Log.w(TAG, "Failed to fetch titleJpn for gid=" + targetGid, t);
+            }
+        });
     }
 
 

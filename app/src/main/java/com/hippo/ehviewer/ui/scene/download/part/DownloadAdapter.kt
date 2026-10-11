@@ -1063,6 +1063,7 @@ class DownloadAdapter(
                             val gi = GalleryInfo()
                             gi.gid = newInfo.gid
                             gi.title = newInfo.title
+                            gi.titleJpn = newInfo.titleJpn
                             var newDirName = FileUtils.sanitizeFilename("${newInfo.gid}-${EhUtils.getSuitableTitle(gi)}")
                             val conflict = root.subFile(newDirName)
                             if (conflict != null && conflict.exists() && conflict.name != oldDirName) {
