@@ -72,6 +72,12 @@ public abstract class EhActivity extends AppCompatActivity {
     }
 
     @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        ((EhApplication) getApplication()).onUserInteraction();
+    }
+
+    @Override
     protected void attachBaseContext(Context newBase) {
         Locale locale = null;
         String language = Settings.getAppLanguage();

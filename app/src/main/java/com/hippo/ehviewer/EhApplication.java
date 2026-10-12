@@ -294,32 +294,74 @@ public class EhApplication extends RecordingApplication {
 
     // ========== 前台时间追踪 ==========
 
-    private static final long IDLE_TIMEOUT_MS = 30_000; // 30秒无操作算空闲
+    private static final long IDLE_TIMEOUT_MS = 180_000; // 180秒（3分钟）无操作算空闲
+    private static final long FOREGROUND_HEARTBEAT_INTERVAL_MS = 60_000; // 每60秒心跳落盘一次
 
     private int mActivityRefCount = 0;
     private long mForegroundStartTime = 0;
+    private long mForegroundAccumulatedMs = 0;
     private boolean mAppIdle = false;
     private final Handler mIdleHandler = new Handler(Looper.getMainLooper());
+
+    private final Runnable mHeartbeatRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mAppIdle && mForegroundStartTime > 0 && mActivityRefCount > 0) {
+                flushForegroundTime(false);
+            }
+            mIdleHandler.postDelayed(this, FOREGROUND_HEARTBEAT_INTERVAL_MS);
+        }
+    };
+
+    private void startHeartbeat() {
+        mIdleHandler.removeCallbacks(mHeartbeatRunnable);
+        mIdleHandler.postDelayed(mHeartbeatRunnable, FOREGROUND_HEARTBEAT_INTERVAL_MS);
+    }
+
+    private void stopHeartbeat() {
+        mIdleHandler.removeCallbacks(mHeartbeatRunnable);
+    }
+
     private final Runnable mIdleRunnable = () -> {
-        // 60秒无操作，记录已累积的前台时间，进入空闲状态
+        // 3分钟无操作，记录已累积的前台时间，进入空闲状态
+        stopHeartbeat();
         flushForegroundTime();
         mAppIdle = true;
     };
 
     private void flushForegroundTime() {
+        flushForegroundTime(true);
+    }
+
+    private void flushForegroundTime(boolean stopTiming) {
         if (mForegroundStartTime > 0) {
-            long elapsed = System.currentTimeMillis() - mForegroundStartTime;
-            long seconds = elapsed / 1000;
-            if (seconds > 0) {
-                com.hippo.ehviewer.stats.StatsManager.getInstance(this).addTotalTime(seconds);
-            }
-            mForegroundStartTime = 0;
+            long now = System.currentTimeMillis();
+            mForegroundAccumulatedMs += (now - mForegroundStartTime);
+            mForegroundStartTime = stopTiming ? 0 : now;
+        }
+        long seconds = mForegroundAccumulatedMs / 1000;
+        if (seconds > 0) {
+            com.hippo.ehviewer.stats.StatsManager.getInstance(this).addTotalTime(seconds);
+            mForegroundAccumulatedMs %= 1000;
         }
     }
 
     private void resetIdleTimer() {
         mIdleHandler.removeCallbacks(mIdleRunnable);
         mIdleHandler.postDelayed(mIdleRunnable, IDLE_TIMEOUT_MS);
+    }
+
+    public void onUserInteraction() {
+        if (mAppIdle) {
+            // 空闲后恢复操作，重新开始计时
+            mForegroundStartTime = System.currentTimeMillis();
+            mAppIdle = false;
+            startHeartbeat();
+        } else if (mForegroundStartTime == 0 && mActivityRefCount > 0) {
+            mForegroundStartTime = System.currentTimeMillis();
+            startHeartbeat();
+        }
+        resetIdleTimer();
     }
 
     private void setupForegroundTimeTracking() {
@@ -331,25 +373,15 @@ public class EhApplication extends RecordingApplication {
                     mForegroundStartTime = System.currentTimeMillis();
                     mAppIdle = false;
                     resetIdleTimer();
+                    startHeartbeat();
                 } else if (mAppIdle) {
                     // 空闲后恢复操作，重新开始计时
                     mForegroundStartTime = System.currentTimeMillis();
                     mAppIdle = false;
                     resetIdleTimer();
+                    startHeartbeat();
                 }
                 mActivityRefCount++;
-
-                // 在 DecorView 上监听触摸，重置空闲计时器
-                View decorView = activity.getWindow().getDecorView();
-                decorView.setOnTouchListener((v, event) -> {
-                    if (mAppIdle) {
-                        // 空闲后首次触摸，重新开始计时
-                        mForegroundStartTime = System.currentTimeMillis();
-                        mAppIdle = false;
-                    }
-                    resetIdleTimer();
-                    return false;
-                });
             }
 
             @Override
@@ -357,8 +389,9 @@ public class EhApplication extends RecordingApplication {
                 mActivityRefCount--;
                 if (mActivityRefCount <= 0) {
                     mActivityRefCount = 0;
-                    // App 进入后台，取消空闲计时器，记录已累积的时间
+                    // App 进入后台，取消空闲与心跳计时器，记录已累积的时间
                     mIdleHandler.removeCallbacks(mIdleRunnable);
+                    stopHeartbeat();
                     flushForegroundTime();
                     mAppIdle = false;
                 }

@@ -185,22 +185,42 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     private int mCurrentIndex;
     private boolean mReadCompleted = false;
     private long mReadStartTime = 0;
+    private long mReadAccumulatedMs = 0;
     private boolean mReadIdle = false;
     private final Handler mReadIdleHandler = new Handler(Looper.getMainLooper());
-    private static final long READ_IDLE_TIMEOUT_MS = 30_000; // 30秒无操作算空闲
+    private static final long READ_IDLE_TIMEOUT_MS = 180_000; // 180秒（3分钟）无操作算空闲
+    private static final long READ_HEARTBEAT_INTERVAL_MS = 60_000; // 每60秒心跳落盘一次
+
+    private final Runnable mReadHeartbeatRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!mReadIdle && mReadStartTime > 0) {
+                flushReadTime(false);
+            }
+            mReadIdleHandler.postDelayed(this, READ_HEARTBEAT_INTERVAL_MS);
+        }
+    };
+
     private final Runnable mReadIdleRunnable = () -> {
+        mReadIdleHandler.removeCallbacks(mReadHeartbeatRunnable);
         flushReadTime();
         mReadIdle = true;
     };
 
     private void flushReadTime() {
+        flushReadTime(true);
+    }
+
+    private void flushReadTime(boolean stopTiming) {
         if (mReadStartTime > 0) {
-            long elapsed = System.currentTimeMillis() - mReadStartTime;
-            long seconds = elapsed / 1000;
-            if (seconds > 0) {
-                com.hippo.ehviewer.stats.StatsManager.getInstance(this).addReadTime(seconds);
-            }
-            mReadStartTime = 0;
+            long now = System.currentTimeMillis();
+            mReadAccumulatedMs += (now - mReadStartTime);
+            mReadStartTime = stopTiming ? 0 : now;
+        }
+        long seconds = mReadAccumulatedMs / 1000;
+        if (seconds > 0) {
+            com.hippo.ehviewer.stats.StatsManager.getInstance(this).addReadTime(seconds);
+            mReadAccumulatedMs %= 1000;
         }
     }
 
@@ -639,8 +659,9 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     protected void onPause() {
         super.onPause();
 
-        // 取消空闲计时器，记录已累积的阅读时间
+        // 取消空闲与心跳计时器，记录已累积的阅读时间
         mReadIdleHandler.removeCallbacks(mReadIdleRunnable);
+        mReadIdleHandler.removeCallbacks(mReadHeartbeatRunnable);
         flushReadTime();
         mReadIdle = false;
 
@@ -653,25 +674,29 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     protected void onResume() {
         super.onResume();
 
-        // 开始计时阅读时间
+        // 开始计时阅读时间与定期心跳落盘
         mReadStartTime = System.currentTimeMillis();
         mReadIdle = false;
         resetReadIdleTimer();
-
-        // 监听触摸事件，重置空闲计时器
-        getWindow().getDecorView().setOnTouchListener((v, event) -> {
-            if (mReadIdle) {
-                mReadStartTime = System.currentTimeMillis();
-                mReadIdle = false;
-            }
-            resetReadIdleTimer();
-            return false;
-        });
+        mReadIdleHandler.removeCallbacks(mReadHeartbeatRunnable);
+        mReadIdleHandler.postDelayed(mReadHeartbeatRunnable, READ_HEARTBEAT_INTERVAL_MS);
 
         applyReadingRefreshRate();
         if (mGLRootView != null) {
             mGLRootView.onResume();
         }
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        if (mReadIdle || mReadStartTime == 0) {
+            mReadStartTime = System.currentTimeMillis();
+            mReadIdle = false;
+            mReadIdleHandler.removeCallbacks(mReadHeartbeatRunnable);
+            mReadIdleHandler.postDelayed(mReadHeartbeatRunnable, READ_HEARTBEAT_INTERVAL_MS);
+        }
+        resetReadIdleTimer();
     }
 
     @Override
@@ -795,6 +820,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
                     if (mGalleryView == null) {
                         return;
                     }
+                    onUserInteraction();
                     if (mLayoutMode == GalleryView.LAYOUT_RIGHT_TO_LEFT) {
                         mGalleryView.pageLeft();
                     } else {
@@ -816,6 +842,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
             if (motionEvent.getAction() == MotionEvent.ACTION_SCROLL) {
                 float scrollY = motionEvent.getAxisValue(MotionEvent.AXIS_VSCROLL);
                 if (scrollY == 0) return false;  // wrong input
+                onUserInteraction();
                 if (mLayoutMode == GalleryView.LAYOUT_RIGHT_TO_LEFT) {
                     if (scrollY > 0) {
                         mGalleryView.pageLeft();
@@ -900,6 +927,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
 
     @Override
     public void onUpdateCurrentIndex(int index) {
+        onUserInteraction();
         if (null != mGalleryProvider) {
             mGalleryProvider.putStartPage(index);
         }

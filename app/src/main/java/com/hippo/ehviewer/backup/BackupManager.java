@@ -53,6 +53,7 @@ public class BackupManager {
     private static final String ENTRY_SPIDER_INFO = "spider_info.db";
     private static final String ENTRY_SEARCH_DATABASE = "search_database.db";
     private static final String ENTRY_HOSTS = "hosts.db";
+    private static final String ENTRY_STATS = "stats.db";
 
     // 兼容支持历史单文件 .db 备份中的附加表
     private static final String TABLE_EXTRA_FILES = "_extra_files";
@@ -77,6 +78,7 @@ public class BackupManager {
      * 4. SpiderInfo 阅读进度数据库（{@code spider_info.db}）
      * 5. 搜索历史数据库（{@code search_database.db}）
      * 6. 自定义与内置 Hosts 数据库（{@code hosts.db}）
+     * 7. 阅读与使用统计数据库（{@code stats.db}）
      *
      * 在复制处于 WAL 模式的附加数据库前，会自动执行 checkpoint 刷盘，保证主文件包含最新数据。
      */
@@ -140,6 +142,14 @@ public class BackupManager {
                 copyFile(hostsDb, new File(tempDir, ENTRY_HOSTS));
             }
 
+            // 统计数据库先等待异步写入完成并执行 checkpoint 刷盘
+            com.hippo.ehviewer.stats.StatsManager.getInstance(context).flushSync();
+            File statsDb = context.getDatabasePath("stats.db");
+            if (statsDb.exists()) {
+                checkpointDatabase(statsDb);
+                copyFile(statsDb, new File(tempDir, ENTRY_STATS));
+            }
+
             // 4. 打包进 Zip 临时文件
             zos = new ZipOutputStream(new BufferedOutputStream(new FileOutputStream(tmpZipFile)));
             addFileToZip(zos, ehDbFile, ENTRY_EH_DB);
@@ -159,6 +169,11 @@ public class BackupManager {
             File hostsDest = new File(tempDir, ENTRY_HOSTS);
             if (hostsDest.exists()) {
                 addFileToZip(zos, hostsDest, ENTRY_HOSTS);
+            }
+
+            File statsDest = new File(tempDir, ENTRY_STATS);
+            if (statsDest.exists()) {
+                addFileToZip(zos, statsDest, ENTRY_STATS);
             }
 
             zos.close();
@@ -263,6 +278,7 @@ public class BackupManager {
             restoreDatabaseFile(tempDir, ENTRY_SPIDER_INFO, context.getDatabasePath("spider_info.db"));
             restoreDatabaseFile(tempDir, ENTRY_SEARCH_DATABASE, context.getDatabasePath("search_database.db"));
             restoreDatabaseFile(tempDir, ENTRY_HOSTS, context.getDatabasePath("hosts.db"));
+            restoreDatabaseFile(tempDir, ENTRY_STATS, context.getDatabasePath("stats.db"));
 
             Log.i(TAG, "Full backup restored successfully");
             return true;

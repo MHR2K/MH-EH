@@ -156,6 +156,11 @@ class SmbToolsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        (application as? com.hippo.ehviewer.EhApplication)?.onUserInteraction()
+    }
+
     private fun queryDisplayName(uri: Uri): String? {
         val projection = arrayOf(android.provider.OpenableColumns.DISPLAY_NAME)
         contentResolver.query(uri, projection, null, null, null)?.use { cursor ->

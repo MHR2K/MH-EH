@@ -4,18 +4,25 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.util.Log;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class StatsManager {
+
+    private static final String TAG = "StatsManager";
 
     private static volatile StatsManager sInstance;
     private final StatsDatabase mDb;
     private final SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+    private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
 
     private StatsManager(Context context) {
         mDb = new StatsDatabase(context.getApplicationContext());
@@ -60,19 +67,24 @@ public class StatsManager {
     }
 
     private void incrementField(String column) {
-        SQLiteDatabase db = mDb.getWritableDatabase();
         String date = getTodayDateString();
         long now = System.currentTimeMillis();
-
-        db.execSQL(
-                "INSERT INTO " + StatsDatabase.TABLE_DAILY_STATS +
-                        " (" + StatsDatabase.COL_DATE + ", " + column + ", " + StatsDatabase.COL_UPDATE_TIME + ") " +
-                        "VALUES (?, 1, ?) " +
-                        "ON CONFLICT(" + StatsDatabase.COL_DATE + ") DO UPDATE SET " +
-                        column + " = " + column + " + 1, " +
-                        StatsDatabase.COL_UPDATE_TIME + " = ?",
-                new Object[]{date, now, now}
-        );
+        mExecutor.execute(() -> {
+            try {
+                SQLiteDatabase db = mDb.getWritableDatabase();
+                db.execSQL(
+                        "INSERT INTO " + StatsDatabase.TABLE_DAILY_STATS +
+                                " (" + StatsDatabase.COL_DATE + ", " + column + ", " + StatsDatabase.COL_UPDATE_TIME + ") " +
+                                "VALUES (?, 1, ?) " +
+                                "ON CONFLICT(" + StatsDatabase.COL_DATE + ") DO UPDATE SET " +
+                                column + " = " + column + " + 1, " +
+                                StatsDatabase.COL_UPDATE_TIME + " = ?",
+                        new Object[]{date, now, now}
+                );
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to increment stats field: " + column, e);
+            }
+        });
     }
 
     /** 累加总使用时间（秒） */
@@ -88,19 +100,32 @@ public class StatsManager {
     }
 
     private void addTimeField(String column, long seconds) {
-        SQLiteDatabase db = mDb.getWritableDatabase();
         String date = getTodayDateString();
         long now = System.currentTimeMillis();
+        mExecutor.execute(() -> {
+            try {
+                SQLiteDatabase db = mDb.getWritableDatabase();
+                db.execSQL(
+                        "INSERT INTO " + StatsDatabase.TABLE_DAILY_STATS +
+                                " (" + StatsDatabase.COL_DATE + ", " + column + ", " + StatsDatabase.COL_UPDATE_TIME + ") " +
+                                "VALUES (?, ?, ?) " +
+                                "ON CONFLICT(" + StatsDatabase.COL_DATE + ") DO UPDATE SET " +
+                                column + " = " + column + " + ?, " +
+                                StatsDatabase.COL_UPDATE_TIME + " = ?",
+                        new Object[]{date, seconds, now, seconds, now}
+                );
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to add stats time: " + column, e);
+            }
+        });
+    }
 
-        db.execSQL(
-                "INSERT INTO " + StatsDatabase.TABLE_DAILY_STATS +
-                        " (" + StatsDatabase.COL_DATE + ", " + column + ", " + StatsDatabase.COL_UPDATE_TIME + ") " +
-                        "VALUES (?, ?, ?) " +
-                        "ON CONFLICT(" + StatsDatabase.COL_DATE + ") DO UPDATE SET " +
-                        column + " = " + column + " + ?, " +
-                        StatsDatabase.COL_UPDATE_TIME + " = ?",
-                new Object[]{date, seconds, now, seconds, now}
-        );
+    /** 等待所有后台异步写入操作完成 */
+    public void flushSync() {
+        try {
+            mExecutor.submit(() -> {}).get(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+        }
     }
 
     /** 获取今日统计 */
@@ -110,6 +135,7 @@ public class StatsManager {
 
     /** 按日期获取统计 */
     public DailyStats getStatsByDate(String date) {
+        flushSync();
         SQLiteDatabase db = mDb.getReadableDatabase();
         Cursor cursor = db.query(
                 StatsDatabase.TABLE_DAILY_STATS,
@@ -130,6 +156,7 @@ public class StatsManager {
 
     /** 获取所有统计，按日期降序 */
     public List<DailyStats> getAllStats() {
+        flushSync();
         SQLiteDatabase db = mDb.getReadableDatabase();
         Cursor cursor = db.query(
                 StatsDatabase.TABLE_DAILY_STATS,
@@ -150,6 +177,7 @@ public class StatsManager {
 
     /** 获取指定日期范围的统计 */
     public List<DailyStats> getStatsInRange(String startDate, String endDate) {
+        flushSync();
         SQLiteDatabase db = mDb.getReadableDatabase();
         Cursor cursor = db.query(
                 StatsDatabase.TABLE_DAILY_STATS,

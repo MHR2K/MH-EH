@@ -134,6 +134,12 @@ public class WiFiClientActivity extends AppCompatActivity {
         }
     }
 
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        ((com.hippo.ehviewer.EhApplication) getApplication()).onUserInteraction();
+    }
+
     private void connectSocket() {
         new Thread(() -> {
             try {

@@ -172,4 +172,9 @@ class SmbAddServerActivity : AppCompatActivity() {
                 .show()
         }
     }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        (application as? com.hippo.ehviewer.EhApplication)?.onUserInteraction()
+    }
 }
