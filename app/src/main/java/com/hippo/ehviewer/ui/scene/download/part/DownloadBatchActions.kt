@@ -349,8 +349,9 @@ class DownloadBatchActions(private val mHost: Host?) {
                         deleteReadingProgressCheckBox.isChecked = itemPosition == 0
                     }
 
+                    val count = selectedInfoList.size
                     AlertDialog.Builder(context)
-                        .setTitle(R.string.download_remove_dialog_title)
+                        .setTitle(mHost.getString(R.string.download_remove_dialog_title_2, count))
                         .setView(dialogView)
                         .setNegativeButton(android.R.string.cancel, null)
                         .setPositiveButton(android.R.string.ok) { _, _ ->
