@@ -479,10 +479,12 @@
     <string name="edit_download_save_changes">保存更改</string>
     <string name="edit_download_info_updated">成功更新下载信息</string>
 
-    <!-- Field update dialog -->
     <string name="field_update_dialog_title">更新下载信息</string>
     <string name="field_update_dialog_message">以下字段在下载记录和网络数据之间存在差异，请选择要更新的字段：</string>
     <string name="field_update_selected">更新所选</string>
+    <string name="field_update_local">本地：%s</string>
+    <string name="field_update_online">线上：%s</string>
+    <string name="field_update_empty">（空）</string>
     <string name="field_update_label_title">标题</string>
     <string name="field_update_label_title_jpn">日文标题</string>
     <string name="field_update_label_uploader">上传者</string>

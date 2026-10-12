@@ -152,6 +152,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 
@@ -2019,29 +2020,39 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mGalleryDetail = result;
         updateDownloadState();
         if (mContext == null) mContext = getEHContext();
-        if (mDownloadState != DownloadInfo.STATE_INVALID && mDownloadInfo != null && mDownloadInfo.gid == result.gid && mContext != null) {
-            // Auto-sync pages, rating, and empty titleJpn silently
-            boolean dirty = false;
-            if (mDownloadInfo.pages != result.pages) {
-                mDownloadInfo.pages = result.pages;
-                dirty = true;
+        if (mDownloadState != DownloadInfo.STATE_INVALID && mContext != null) {
+            DownloadInfo dmInfo = EhApplication.getDownloadManager(mContext).getDownloadInfo(result.gid);
+            if (dmInfo != null) {
+                mDownloadInfo = dmInfo;
             }
-            if (Float.compare(mDownloadInfo.rating, result.rating) != 0) {
-                mDownloadInfo.rating = result.rating;
-                dirty = true;
-            }
-            if (isEmpty(mDownloadInfo.titleJpn) && !isEmpty(result.titleJpn)) {
-                mDownloadInfo.titleJpn = result.titleJpn;
-                dirty = true;
-            }
-            if (dirty) {
-                EhDB.putDownloadInfo(mDownloadInfo);
-            }
+            if (mDownloadInfo != null && mDownloadInfo.gid == result.gid) {
+                // Auto-sync rating, thumb, and empty titleJpn silently (pages reflects local download, not updated here)
+                boolean dirty = false;
+                if (Float.compare(mDownloadInfo.rating, result.rating) != 0) {
+                    mDownloadInfo.rating = result.rating;
+                    dirty = true;
+                }
+                if (isEmpty(mDownloadInfo.titleJpn) && !isEmpty(result.titleJpn)) {
+                    mDownloadInfo.titleJpn = result.titleJpn;
+                    dirty = true;
+                }
+                if (!isEmpty(result.thumb) && !Objects.equals(mDownloadInfo.thumb, result.thumb)) {
+                    mDownloadInfo.thumb = result.thumb;
+                    if (mGalleryInfo != null) {
+                        mGalleryInfo.thumb = result.thumb;
+                    }
+                    useNetWorkLoadThumb = true;
+                    dirty = true;
+                }
+                if (dirty) {
+                    EhDB.putDownloadInfo(mDownloadInfo);
+                }
 
-            // Show dialog for remaining differences
-            List<FieldDifference> diffs = FieldDifference.detect(mDownloadInfo, result, mContext);
-            if (!diffs.isEmpty()) {
-                showFieldUpdateDialog(diffs, result);
+                // Show dialog for remaining differences
+                List<FieldDifference> diffs = FieldDifference.detect(mDownloadInfo, result, mContext);
+                if (!diffs.isEmpty()) {
+                    showFieldUpdateDialog(diffs, result);
+                }
             }
         }
         adjustViewVisibility(STATE_NORMAL, true);

@@ -32,8 +32,8 @@ public class FieldDifference {
 
         check(diffs, "title", context.getString(R.string.field_update_label_title),
                 truncate(db.title), truncate(net.title));
-        // Skip titleJpn when DB is empty — auto-updated silently elsewhere
-        if (!isEmpty(db.titleJpn)) {
+        // Skip titleJpn when DB is empty (silently auto-updated) or when net is empty (keep local without prompting)
+        if (!isEmpty(db.titleJpn) && !isEmpty(net.titleJpn)) {
             check(diffs, "titleJpn", context.getString(R.string.field_update_label_title_jpn),
                     truncate(db.titleJpn), truncate(net.titleJpn));
         }
@@ -43,10 +43,8 @@ public class FieldDifference {
                 EhUtils.getCategory(db.category), EhUtils.getCategory(net.category));
         check(diffs, "posted", context.getString(R.string.field_update_label_posted),
                 db.posted, net.posted);
-        check(diffs, "thumb", context.getString(R.string.field_update_label_thumb),
-                truncate(db.thumb), truncate(net.thumb));
 
-        // pages and rating are auto-synced silently, not shown in dialog
+        // rating and thumb are auto-synced silently; pages reflects local download
 
         return diffs;
     }

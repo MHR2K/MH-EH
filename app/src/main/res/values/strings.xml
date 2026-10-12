@@ -592,10 +592,12 @@
     <string name="edit_download_save_changes">Save Changes</string>
     <string name="edit_download_info_updated">Download info updated successfully</string>
 
-    <!-- Field update dialog -->
     <string name="field_update_dialog_title">Update Download Info</string>
     <string name="field_update_dialog_message">The following fields differ between the download record and the network data. Select which to update:</string>
     <string name="field_update_selected">Update Selected</string>
+    <string name="field_update_local">Local: %s</string>
+    <string name="field_update_online">Online: %s</string>
+    <string name="field_update_empty">(Empty)</string>
     <string name="field_update_label_title">Title</string>
     <string name="field_update_label_title_jpn">Japanese Title</string>
     <string name="field_update_label_uploader">Uploader</string>

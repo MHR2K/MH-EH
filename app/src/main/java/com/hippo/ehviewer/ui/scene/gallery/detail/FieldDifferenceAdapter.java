@@ -1,5 +1,6 @@
 package com.hippo.ehviewer.ui.scene.gallery.detail;
 
+import android.content.Context;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -35,11 +36,25 @@ public class FieldDifferenceAdapter extends RecyclerView.Adapter<FieldDifference
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         FieldDifference item = items.get(position);
+        Context context = holder.itemView.getContext();
         holder.fieldLabel.setText(item.displayLabel);
-        holder.dbValue.setText(item.dbValue);
-        holder.netValue.setText(item.netValue);
+
+        String emptyStr = context.getString(R.string.field_update_empty);
+        String dbText = isEmpty(item.dbValue) ? emptyStr : item.dbValue;
+        String netText = isEmpty(item.netValue) ? emptyStr : item.netValue;
+
+        holder.dbValue.setText(context.getString(R.string.field_update_local, dbText));
+        holder.netValue.setText(context.getString(R.string.field_update_online, netText));
+
+        holder.checkBox.setOnCheckedChangeListener(null);
         holder.checkBox.setChecked(item.selected);
         holder.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> item.selected = isChecked);
+
+        holder.itemView.setOnClickListener(v -> holder.checkBox.toggle());
+    }
+
+    private static boolean isEmpty(String s) {
+        return s == null || s.trim().isEmpty();
     }
 
     @Override
