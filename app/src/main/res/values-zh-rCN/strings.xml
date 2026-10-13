@@ -1131,6 +1131,13 @@
     <string name="download_convert_storage">转换</string>
     <string name="download_refresh_fav_count">刷新收藏数</string>
     <string name="download_refresh_fav_count_message">将获取 %1$d 个漫画的收藏数，是否继续？</string>
+    <string name="download_refresh_fav_count_summary">共 %1$d 个画廊，待刷新 %2$d 个（已有 %3$d 个，7天内新作 %4$d 个）</string>
+    <string name="download_refresh_fav_count_force">强制重新获取（覆盖已有数据）</string>
+    <string name="download_refresh_fav_count_skip_new">跳过7天内新作（收藏数不稳定）</string>
+    <string name="download_refresh_fav_count_none">没有需要刷新的画廊</string>
+    <string name="download_refresh_fav_count_abort_509">已停止：检测到 E 站 509 配额超限，为保护 IP 已自动中止</string>
+    <string name="download_refresh_fav_count_abort_sad_panda">已停止：检测到 Sad Panda，请检查账号登录状态</string>
+    <string name="download_refresh_fav_count_abort_failed">已停止：连续多次网络请求失败</string>
     <string name="download_refresh_fav_count_progress">获取收藏数：%1$d / %2$d</string>
     <string name="download_refresh_fav_count_done">已获取 %1$d 个漫画的收藏数</string>
     <string name="sort_by_fav_count_asc">收藏数 ↑</string>

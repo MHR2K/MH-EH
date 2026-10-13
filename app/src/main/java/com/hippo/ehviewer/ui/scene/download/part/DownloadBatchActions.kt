@@ -31,7 +31,9 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.res.ResourcesCompat
@@ -48,6 +50,7 @@ import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.dao.DownloadLabel
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.download.DownloadService
+import com.hippo.ehviewer.util.FavCountStore
 import com.hippo.ehviewer.smb.Client
 import com.hippo.ehviewer.smb.SmbPathResolver
 import com.hippo.ehviewer.spider.SpiderDen.getExistingGalleryDownloadDir
@@ -100,70 +103,132 @@ class DownloadBatchActions(private val mHost: Host?) {
         fun updateAdapter()
         fun launchGalleryActivity(intent: Intent)
         fun onClickPrimaryFab(view: FabLayout, fab: FloatingActionButton?)
+        fun onFavCountRefreshFinished()
     }
 
-    fun showRefreshFavCountDialog() {
+    fun showRefreshFavCountDialog(targets: List<DownloadInfo>? = null) {
         val ctx = mHost?.getEHContext() ?: return
-        val backList = mHost.backList ?: return
-        val count = backList.size
+        val candidateList = targets ?: mHost.backList ?: return
+        val totalCount = candidateList.size
+        if (totalCount == 0) {
+            Toast.makeText(ctx, R.string.download_refresh_fav_count_none, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sevenDaysAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+
+        fun isNew(posted: String?): Boolean {
+            if (posted.isNullOrEmpty()) return false
+            return try {
+                val t = df.parse(posted)?.time ?: 0L
+                t > sevenDaysAgo
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        var alreadyHave = 0
+        var newItems = 0
+        for (di in candidateList) {
+            if (di.favoriteCount > 0) alreadyHave++
+            if (isNew(di.posted)) newItems++
+        }
+
+        fun getItemsToFetch(force: Boolean, skipNew: Boolean): List<DownloadInfo> {
+            val items = mutableListOf<DownloadInfo>()
+            for (di in candidateList) {
+                if (!force && di.favoriteCount > 0) continue
+                if (skipNew && isNew(di.posted)) continue
+                items.add(di)
+            }
+            return items
+        }
+
+        val dialogView = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = (18 * resources.displayMetrics.density).toInt()
+            val padTop = (12 * resources.displayMetrics.density).toInt()
+            setPadding(pad, padTop, pad, 0)
+        }
+
+        val summaryTv = TextView(ctx).apply {
+            textSize = 14f
+            val initial = getItemsToFetch(false, true)
+            text = mHost.getString(
+                R.string.download_refresh_fav_count_summary,
+                totalCount,
+                initial.size,
+                alreadyHave,
+                newItems
+            )
+        }
+        dialogView.addView(summaryTv)
+
+        val forceCheckBox = CheckBox(ctx).apply {
+            setText(R.string.download_refresh_fav_count_force)
+            isChecked = false
+        }
+        dialogView.addView(forceCheckBox)
+
+        val skipNewCheckBox = CheckBox(ctx).apply {
+            setText(R.string.download_refresh_fav_count_skip_new)
+            isChecked = true
+        }
+        dialogView.addView(skipNewCheckBox)
+
+        val updateSummary = {
+            val pending = getItemsToFetch(forceCheckBox.isChecked, skipNewCheckBox.isChecked)
+            summaryTv.text = mHost.getString(
+                R.string.download_refresh_fav_count_summary,
+                totalCount,
+                pending.size,
+                alreadyHave,
+                newItems
+            )
+        }
+
+        forceCheckBox.setOnCheckedChangeListener { _, _ -> updateSummary() }
+        skipNewCheckBox.setOnCheckedChangeListener { _, _ -> updateSummary() }
+
         AlertDialog.Builder(ctx)
             .setTitle(R.string.download_refresh_fav_count)
-            .setMessage(mHost.getString(R.string.download_refresh_fav_count_message, count))
-            .setPositiveButton(android.R.string.ok) { _, _ -> startBatchGetFavCount() }
+            .setView(dialogView)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val itemsToFetch = getItemsToFetch(forceCheckBox.isChecked, skipNewCheckBox.isChecked)
+                if (itemsToFetch.isEmpty()) {
+                    Toast.makeText(ctx, R.string.download_refresh_fav_count_none, Toast.LENGTH_SHORT).show()
+                } else {
+                    startBatchGetFavCount(itemsToFetch)
+                }
+            }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
-    private fun startBatchGetFavCount() {
+    private fun startBatchGetFavCount(items: List<DownloadInfo>) {
         val ctx = mHost?.getEHContext() ?: return
-        val backList = mHost.backList ?: return
-        // 跳过已有收藏数的项目，跳过7天内的新本子（收藏数还不稳定）
-        val sevenDaysAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
-        val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
-        val items = mutableListOf<DownloadInfo>()
-        var skippedNew = 0
-        for (di in backList) {
-            if (di.favoriteCount > 0) continue // 已有收藏数，跳过
-            // 检查是否是7天内的新本子
-            if (di.posted != null && di.posted.isNotEmpty()) {
-                try {
-                    val postedTime = df.parse(di.posted!!)?.time ?: 0L
-                    if (postedTime > sevenDaysAgo) {
-                        skippedNew++
-                        continue // 新本子，跳过
-                    }
-                } catch (ignored: ParseException) {
-                    // 解析失败则不跳过，继续获取
-                }
-            }
-            items.add(di)
-        }
-        Log.e("FavCount", "待获取: ${items.size}, 已有收藏数跳过: ${backList.size - items.size - skippedNew}, 新本子跳过: $skippedNew, 总计: ${backList.size}")
+        val act = mHost.activity2 ?: return
         if (items.isEmpty()) {
-            val msg = if (skippedNew > 0) {
-                mHost.getString(R.string.download_refresh_fav_count_done, 0) + "（跳过${skippedNew}个7天内新本子）"
-            } else {
-                mHost.getString(R.string.download_refresh_fav_count_done, 0)
-            }
-            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, R.string.download_refresh_fav_count_none, Toast.LENGTH_SHORT).show()
             return
         }
 
-        // 显示进度对话框（可取消）
         val cancelled = AtomicBoolean(false)
         val galleryInfoList = ArrayList<GalleryInfo>(items)
 
-        val progressDialog = ProgressDialog(ctx)
-        progressDialog.setTitle(R.string.download_refresh_fav_count)
-        progressDialog.setMessage(mHost.getString(R.string.download_refresh_fav_count_progress, 0, items.size))
-        progressDialog.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-        progressDialog.setMax(items.size)
-        progressDialog.setCancelable(true)
-        progressDialog.setOnCancelListener { cancelled.set(true) }
-        progressDialog.setButton(
-            DialogInterface.BUTTON_NEGATIVE,
-            ctx.getString(android.R.string.cancel)
-        ) { dialog, _ -> dialog.cancel() }
+        val progressDialog = ProgressDialog(ctx).apply {
+            setTitle(R.string.download_refresh_fav_count)
+            setMessage(mHost.getString(R.string.download_refresh_fav_count_progress, 0, items.size))
+            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
+            max = items.size
+            setCancelable(true)
+            setOnCancelListener { cancelled.set(true) }
+            setButton(
+                DialogInterface.BUTTON_NEGATIVE,
+                ctx.getString(android.R.string.cancel)
+            ) { dialog, _ -> dialog.cancel() }
+        }
         progressDialog.show()
 
         object : AsyncTask<Void, Int, IntArray>() {
@@ -171,36 +236,62 @@ class DownloadBatchActions(private val mHost: Host?) {
                 return EhEngine.batchGetFavoriteCounts(
                     EhApplication.getOkHttpClient(ctx),
                     galleryInfoList,
-                    3,    // 3并发
-                    1000, // 每批间隔1秒
+                    2,    // 2并发（更平稳，降低风控封禁风险）
+                    1000, // 批间间隔约1秒（带随机微扰抖动）
                     cancelled
                 ) { current, total -> publishProgress(current, total) }
             }
 
             override fun onProgressUpdate(values: Array<out Int>) {
                 if (values.size >= 2) {
-                    progressDialog.setProgress(values[0])
-                    progressDialog.setMessage(mHost.getString(R.string.download_refresh_fav_count_progress, values[0], values[1]))
+                    val a = mHost.activity2
+                    if (a != null && !a.isFinishing && !a.isDestroyed) {
+                        progressDialog.progress = values[0]
+                        progressDialog.setMessage(
+                            mHost.getString(R.string.download_refresh_fav_count_progress, values[0], values[1])
+                        )
+                    }
                 }
             }
 
             override fun onPostExecute(result: IntArray?) {
-                progressDialog.dismiss()
-                // 持久化到磁盘（包括中途中止时已获取的）
+                val a = mHost.activity2
+                if (a != null && !a.isFinishing && !a.isDestroyed) {
+                    try {
+                        progressDialog.dismiss()
+                    } catch (ignored: Throwable) {
+                    }
+                }
+
+                // 持久化到磁盘（即便单项获取时已写入内存/临时存储，此处执行全局对齐）
                 if (mHost.backList != null) {
-                    com.hippo.ehviewer.util.FavCountStore.saveFrom(mHost.backList)
+                    FavCountStore.saveFrom(mHost.backList)
                 }
-                // 刷新列表显示
-                if (mHost.list != null) {
-                    mHost.updateAdapter()
-                }
-                if (result != null) {
+
+                // 通知完成，若当前处于收藏数排序则自动重排
+                mHost.onFavCountRefreshFinished()
+
+                if (result != null && result.isNotEmpty()) {
                     val success = result[0]
                     val total = result[1]
-                    if (cancelled.get()) {
-                        Toast.makeText(ctx, "已中止，获取了 $success/$total 个", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(ctx, mHost.getString(R.string.download_refresh_fav_count_done, success), Toast.LENGTH_SHORT).show()
+                    val stopReason = if (result.size >= 3) result[2] else EhEngine.STOP_REASON_COMPLETED
+
+                    when (stopReason) {
+                        EhEngine.STOP_REASON_RATE_LIMIT -> {
+                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_509, Toast.LENGTH_LONG).show()
+                        }
+                        EhEngine.STOP_REASON_SAD_PANDA -> {
+                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_sad_panda, Toast.LENGTH_LONG).show()
+                        }
+                        EhEngine.STOP_REASON_CONSECUTIVE_FAILURES -> {
+                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_failed, Toast.LENGTH_LONG).show()
+                        }
+                        EhEngine.STOP_REASON_CANCELLED -> {
+                            Toast.makeText(ctx, "已中止，获取了 $success/$total 个", Toast.LENGTH_SHORT).show()
+                        }
+                        else -> {
+                            Toast.makeText(ctx, mHost.getString(R.string.download_refresh_fav_count_done, success), Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }

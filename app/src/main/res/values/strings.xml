@@ -543,6 +543,13 @@
     <string name="download_convert_storage">Convert…</string>
     <string name="download_refresh_fav_count">Refresh favorites count</string>
     <string name="download_refresh_fav_count_message">This will fetch favorites count for %1$d items. Continue?</string>
+    <string name="download_refresh_fav_count_summary">%1$d galleries in total, %2$d to fetch (%3$d existing, %4$d new within 7 days)</string>
+    <string name="download_refresh_fav_count_force">Force re-fetch (overwrite existing)</string>
+    <string name="download_refresh_fav_count_skip_new">Skip new within 7 days (unstable count)</string>
+    <string name="download_refresh_fav_count_none">No galleries need to be refreshed</string>
+    <string name="download_refresh_fav_count_abort_509">Stopped: E-Hentai 509 Bandwidth Exceeded detected, aborted to protect IP</string>
+    <string name="download_refresh_fav_count_abort_sad_panda">Stopped: Sad Panda detected, please check sign-in status</string>
+    <string name="download_refresh_fav_count_abort_failed">Stopped: Multiple consecutive network failures</string>
     <string name="download_refresh_fav_count_progress">Fetching favorites count: %1$d / %2$d</string>
     <string name="download_refresh_fav_count_done">Fetched favorites count for %1$d items</string>
     <string name="sort_by_fav_count_asc">Favorites ↑</string>

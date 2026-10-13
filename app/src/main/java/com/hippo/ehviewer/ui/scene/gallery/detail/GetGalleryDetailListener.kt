@@ -24,6 +24,19 @@ class GetGalleryDetailListener(
         // Put gallery detail to cache
         EhApplication.getGalleryDetailCache(application).put(result.gid, result)
 
+        // 7天内的新作收藏数极不稳定，不自动沉淀到本地存储，避免将极低的初始值“锁死”导致后续增量刷新被跳过
+        val sevenDaysAgo = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+        val isNew = try {
+            val postedTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.US).parse(result.posted ?: "")?.time ?: 0L
+            postedTime > sevenDaysAgo
+        } catch (e: Exception) {
+            false
+        }
+        if (result.favoriteCount >= 0 && !isNew) {
+            com.hippo.ehviewer.util.FavCountStore.put(result.gid, result.favoriteCount)
+            EhApplication.getDownloadManager(application)?.getDownloadInfo(result.gid)?.favoriteCount = result.favoriteCount
+        }
+
         // Add history
         EhDB.putHistoryInfo(result)
 

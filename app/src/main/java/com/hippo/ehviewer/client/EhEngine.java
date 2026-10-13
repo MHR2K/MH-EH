@@ -26,9 +26,11 @@ import androidx.annotation.Nullable;
 
 import com.hippo.ehviewer.AppConfig;
 import com.hippo.ehviewer.EhApplication;
+import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.GetText;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.client.data.ArchiverData;
 import com.hippo.ehviewer.client.data.EhNewsDetail;
 import com.hippo.ehviewer.client.data.EhTopListDetail;
@@ -360,12 +362,113 @@ public class EhEngine {
         }
     }
 
+    public static final int STOP_REASON_COMPLETED = 0;
+    public static final int STOP_REASON_CANCELLED = 1;
+    public static final int STOP_REASON_RATE_LIMIT = 2;
+    public static final int STOP_REASON_SAD_PANDA = 3;
+    public static final int STOP_REASON_CONSECUTIVE_FAILURES = 4;
+
+    private static final Pattern PATTERN_FAV_COUNT = Pattern.compile("id=\"favcount\"[^>]*>([^<]+)</td>");
+    private static final Pattern PATTERN_FAV_COUNT_FALLBACK = Pattern.compile("Favorited:</td>\\s*<td[^>]*>([^<]+)</td>");
+    private static final Pattern PATTERN_TITLE_JPN = Pattern.compile("<h1[^>]*\\bid=[\"']gj[\"'][^>]*>(.*?)</h1>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
     /**
-     * 并发批量获取收藏数（gdata API 不返回 favcount，需逐个请求详情页）
-     * @param concurrency 并发数（建议 3-5）
+     * 从画廊详情页 HTML 中轻量级提取日文标题，避免全量 DOM 构建
+     */
+    @Nullable
+    public static String parseTitleJpnFromHtml(@Nullable String body) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        Matcher m = PATTERN_TITLE_JPN.matcher(body);
+        if (m.find()) {
+            String raw = m.group(1);
+            if (raw != null) {
+                if (raw.indexOf('<') != -1) {
+                    raw = raw.replaceAll("<[^>]+>", "");
+                }
+                String unescaped = org.jsoup.parser.Parser.unescapeEntities(raw, false).trim();
+                return unescaped.isEmpty() ? null : unescaped;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从画廊详情页 HTML 中轻量级提取收藏数，微秒级解析且避免全量 DOM 构建
+     */
+    public static int parseFavoriteCountFromHtml(@Nullable String body) {
+        if (body == null) {
+            return -1;
+        }
+        Matcher m = PATTERN_FAV_COUNT.matcher(body);
+        if (!m.find()) {
+            m = PATTERN_FAV_COUNT_FALLBACK.matcher(body);
+            if (!m.find()) {
+                return -1;
+            }
+        }
+        String value = m.group(1).trim();
+        if ("Never".equalsIgnoreCase(value)) {
+            return 0;
+        } else if ("Once".equalsIgnoreCase(value)) {
+            return 1;
+        } else {
+            int index = value.indexOf(' ');
+            String numStr = index >= 0 ? value.substring(0, index) : value;
+            numStr = numStr.replace(",", "");
+            return com.hippo.lib.yorozuya.NumberUtils.parseIntSafely(numStr, 0);
+        }
+    }
+
+    /**
+     * 单个画廊轻量级获取收藏数（避免全量详情解析与事件弹窗副作用）
+     */
+    public static int getGalleryFavoriteCount(@Nullable EhClient.Task task, OkHttpClient okHttpClient,
+                                              String url) throws Throwable {
+        String referer = EhUrl.getReferer();
+        Log.d(TAG, url);
+        Request request = new EhRequestBuilder(url, referer).build();
+        Call call = okHttpClient.newCall(request);
+
+        if (null != task) {
+            task.setCall(call);
+        }
+
+        String body = null;
+        Headers headers = null;
+        int code = -1;
+        try {
+            Response response = call.execute();
+            code = response.code();
+            headers = response.headers();
+            if (response.body() != null) {
+                body = response.body().string();
+            }
+            throwException(call, code, headers, body, null);
+
+            int favCount = parseFavoriteCountFromHtml(body);
+            if (favCount >= 0) {
+                return favCount;
+            }
+            if (body != null && (body.contains("This gallery has been removed") || body.contains("Gallery Not Available"))) {
+                return -1;
+            }
+            GalleryDetail detail = GalleryDetailParser.parse(body);
+            return detail != null ? detail.favoriteCount : -1;
+        } catch (Throwable e) {
+            ExceptionUtils.throwIfFatal(e);
+            throwException(call, code, headers, body, e);
+            throw e;
+        }
+    }
+
+    /**
+     * 并发批量获取收藏数（轻量解析、实时落盘、熔断防封与即时中断）
+     * @param concurrency 并发数（建议 2-3）
      * @param delayBetweenBatchesMs 每批间隔毫秒
      * @param cancelled 取消标志，设为 true 后尽快退出
-     * @return int[]{成功数, 总数}
+     * @return int[]{成功数, 总数, 停止原因}，停止原因参考 STOP_REASON_* 常量
      */
     public static int[] batchGetFavoriteCounts(OkHttpClient okHttpClient, List<GalleryInfo> items,
                                               int concurrency, int delayBetweenBatchesMs,
@@ -374,12 +477,20 @@ public class EhEngine {
         int total = items.size();
         AtomicInteger success = new AtomicInteger(0);
         AtomicInteger completed = new AtomicInteger(0);
+        AtomicInteger consecutiveFailures = new AtomicInteger(0);
+        AtomicInteger stopReason = new AtomicInteger(STOP_REASON_COMPLETED);
+
         java.util.concurrent.ExecutorService executor =
                 java.util.concurrent.Executors.newFixedThreadPool(concurrency);
+        java.util.Set<Call> activeCalls = java.util.Collections.newSetFromMap(
+                new java.util.concurrent.ConcurrentHashMap<>());
 
         for (int i = 0; i < total; i += concurrency) {
-            // 检查取消标志
+            // 检查取消或熔断标志
             if (cancelled != null && cancelled.get()) {
+                if (stopReason.get() == STOP_REASON_COMPLETED) {
+                    stopReason.set(STOP_REASON_CANCELLED);
+                }
                 break;
             }
 
@@ -389,20 +500,80 @@ public class EhEngine {
 
             for (GalleryInfo gi : batch) {
                 executor.submit(() -> {
+                    Call call = null;
                     try {
-                        // 检查取消标志
                         if (cancelled != null && cancelled.get()) {
                             return;
                         }
                         String url = EhUrl.getGalleryDetailUrl(gi.gid, gi.token);
-                        GalleryDetail detail = getGalleryDetail(null, okHttpClient, url);
-                        if (detail != null) {
-                            gi.favoriteCount = detail.favoriteCount;
+                        String referer = EhUrl.getReferer();
+                        Request request = new EhRequestBuilder(url, referer).build();
+                        call = okHttpClient.newCall(request);
+                        activeCalls.add(call);
+
+                        String body = null;
+                        Headers headers = null;
+                        int code = -1;
+                        Response response = call.execute();
+                        code = response.code();
+                        headers = response.headers();
+                        if (response.body() != null) {
+                            body = response.body().string();
+                        }
+                        throwException(call, code, headers, body, null);
+
+                        int favCount = parseFavoriteCountFromHtml(body);
+                        GalleryDetail detail = null;
+                        if (favCount < 0 && body != null) {
+                            if (!body.contains("This gallery has been removed") && !body.contains("Gallery Not Available")) {
+                                detail = GalleryDetailParser.parse(body);
+                                favCount = detail != null ? detail.favoriteCount : -1;
+                            }
+                        }
+
+                        if (favCount >= 0) {
+                            gi.favoriteCount = favCount;
+                            com.hippo.ehviewer.util.FavCountStore.put(gi.gid, favCount);
                             success.incrementAndGet();
+                            consecutiveFailures.set(0);
+                        }
+
+                        // 补充空日文标题：仅当本地日文标题为空时补充，不为空时不更新
+                        if ((gi.titleJpn == null || gi.titleJpn.trim().isEmpty()) && body != null) {
+                            String titleJpn = parseTitleJpnFromHtml(body);
+                            if ((titleJpn == null || titleJpn.trim().isEmpty()) && detail != null) {
+                                titleJpn = detail.titleJpn;
+                            }
+                            if (titleJpn != null && !titleJpn.trim().isEmpty()) {
+                                gi.titleJpn = titleJpn;
+                                if (gi instanceof DownloadInfo) {
+                                    EhDB.putDownloadInfo((DownloadInfo) gi);
+                                    EhDB.putHistoryInfo((DownloadInfo) gi);
+                                }
+                            }
                         }
                     } catch (Throwable e) {
                         Log.e(TAG, "Fav: failed gid=" + gi.gid, e);
+                        // 熔断检测
+                        if (e instanceof StatusCodeException) {
+                            int statusCode = ((StatusCodeException) e).getResponseCode();
+                            if (statusCode == 509 || statusCode == 429) {
+                                stopReason.set(STOP_REASON_RATE_LIMIT);
+                                if (cancelled != null) cancelled.set(true);
+                            }
+                        } else if (e instanceof EhException && "Sad Panda".equals(e.getMessage())) {
+                            stopReason.set(STOP_REASON_SAD_PANDA);
+                            if (cancelled != null) cancelled.set(true);
+                        } else if (call == null || !call.isCanceled()) {
+                            if (consecutiveFailures.incrementAndGet() >= 5) {
+                                stopReason.set(STOP_REASON_CONSECUTIVE_FAILURES);
+                                if (cancelled != null) cancelled.set(true);
+                            }
+                        }
                     } finally {
+                        if (call != null) {
+                            activeCalls.remove(call);
+                        }
                         int done = completed.incrementAndGet();
                         if (listener != null) {
                             listener.onProgress(done, total);
@@ -416,24 +587,50 @@ public class EhEngine {
                 latch.await();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                if (cancelled != null) cancelled.set(true);
+                stopReason.set(STOP_REASON_CANCELLED);
+                cancelAllCalls(activeCalls);
                 executor.shutdownNow();
-                return new int[]{success.get(), total};
+                return new int[]{success.get(), total, stopReason.get()};
             }
 
-            // 批间等待，避免触发限流
+            if (cancelled != null && cancelled.get()) {
+                if (stopReason.get() == STOP_REASON_COMPLETED) {
+                    stopReason.set(STOP_REASON_CANCELLED);
+                }
+                cancelAllCalls(activeCalls);
+                break;
+            }
+
+            // 批间随机微扰延时，降低爬虫特征
             if (batchEnd < total && delayBetweenBatchesMs > 0) {
                 try {
-                    Thread.sleep(delayBetweenBatchesMs);
+                    long jitter = (long) (Math.random() * 400 - 200);
+                    long actualDelay = Math.max(200, delayBetweenBatchesMs + jitter);
+                    Thread.sleep(actualDelay);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    if (cancelled != null) cancelled.set(true);
+                    stopReason.set(STOP_REASON_CANCELLED);
+                    cancelAllCalls(activeCalls);
                     executor.shutdownNow();
-                    return new int[]{success.get(), total};
+                    return new int[]{success.get(), total, stopReason.get()};
                 }
             }
         }
 
+        cancelAllCalls(activeCalls);
         executor.shutdown();
-        return new int[]{success.get(), total};
+        return new int[]{success.get(), total, stopReason.get()};
+    }
+
+    private static void cancelAllCalls(java.util.Set<Call> calls) {
+        for (Call c : calls) {
+            try {
+                c.cancel();
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     public interface OnBatchProgressListener {

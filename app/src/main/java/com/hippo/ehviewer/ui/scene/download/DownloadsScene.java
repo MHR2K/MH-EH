@@ -501,6 +501,11 @@ public class DownloadsScene extends ToolbarScene
                 }
 
                 @Override
+                public void onFavCountRefreshFinished() {
+                    DownloadsScene.this.onFavCountRefreshFinished();
+                }
+
+                @Override
                 public void launchGalleryActivity(Intent intent) {
                     galleryActivityLauncher.launch(intent);
                 }
@@ -1184,8 +1189,10 @@ public class DownloadsScene extends ToolbarScene
     public boolean onMenuItemClick(MenuItem item) {
         Activity activity = getActivity2();
         if (activity == null || mRecyclerView == null) return false;
-        // 选择模式下仅允许执行转换操作
-        if (mRecyclerView.isInCustomChoice() && item.getItemId() != R.id.action_convert_storage) {
+        // 选择模式下仅允许执行转换与刷新收藏数操作
+        if (mRecyclerView.isInCustomChoice()
+                && item.getItemId() != R.id.action_convert_storage
+                && item.getItemId() != R.id.action_refresh_fav_count) {
             return false;
         }
 
@@ -1438,6 +1445,20 @@ public class DownloadsScene extends ToolbarScene
             }
             case R.id.action_refresh_fav_count: {
                 if (mBackList == null || mBackList.isEmpty()) return false;
+                if (mRecyclerView != null && mRecyclerView.isInCustomChoice()) {
+                    SparseBooleanArray array = mRecyclerView.getCheckedItemPositions();
+                    List<DownloadInfo> targets = new ArrayList<>();
+                    for (int i = 0; i < array.size(); i++) {
+                        if (array.valueAt(i)) {
+                            DownloadInfo di = getDownloadInfoAtAdapterPosition(array.keyAt(i));
+                            if (di != null) targets.add(di);
+                        }
+                    }
+                    if (!targets.isEmpty()) {
+                        mBatchActions.showRefreshFavCountDialog(targets);
+                        return true;
+                    }
+                }
                 showRefreshFavCountDialog();
                 return true;
             }
@@ -1451,7 +1472,21 @@ public class DownloadsScene extends ToolbarScene
     }
 
     public void showRefreshFavCountDialog() {
-        mBatchActions.showRefreshFavCountDialog();
+        mBatchActions.showRefreshFavCountDialog(null);
+    }
+
+    public void onFavCountRefreshFinished() {
+        if (mRecyclerView != null && mRecyclerView.isInCustomChoice()) {
+            mRecyclerView.outOfCustomChoiceMode();
+        }
+        if (mFilterState != null) {
+            int filterId = mFilterState.getCurrentFilterId();
+            if (filterId == R.id.sort_by_fav_count_asc || filterId == R.id.sort_by_fav_count_desc) {
+                mFilterState.gotoFilterAndSortWithScroll(filterId, false);
+                return;
+            }
+        }
+        updateAdapter();
     }
 
     public void convertBatchAsync(List<DownloadInfo> infos, boolean toCbz) {
@@ -1746,6 +1781,9 @@ public class DownloadsScene extends ToolbarScene
                                 mAdapter.notifyDataSetChanged();
                             }
                         }).show();
+                return true;
+            } else if (itemId == R.id.menu_refresh_fav_count) {
+                mBatchActions.showRefreshFavCountDialog(Collections.singletonList(info));
                 return true;
             }
             return false;

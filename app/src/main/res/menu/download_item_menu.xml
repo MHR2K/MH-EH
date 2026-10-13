@@ -6,4 +6,6 @@
           android:title="@string/menu_move_to_position" />
     <item android:id="@+id/menu_reset_reading_progress"
           android:title="@string/download_reset_reading_progress" />
+    <item android:id="@+id/menu_refresh_fav_count"
+          android:title="@string/download_refresh_fav_count" />
 </menu>
