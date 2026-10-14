@@ -23,6 +23,13 @@
         app:allowDividerAbove="true"
         app:iconSpaceReserved="false" />
 
+    <Preference
+        android:key="download_storage_stats"
+        android:title="@string/settings_download_storage_stats"
+        android:summary="@string/settings_download_storage_stats_calculating"
+        app:allowDividerAbove="true"
+        app:iconSpaceReserved="false" />
+
     <com.hippo.preference.SwitchPreference
         android:defaultValue="false"
         android:key="media_scan"

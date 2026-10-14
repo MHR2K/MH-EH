@@ -793,6 +793,21 @@
 
     <string name="settings_download">Download</string>
     <string name="settings_download_download_location">Download location</string>
+    <string name="settings_download_storage_stats">Storage Space</string>
+    <string name="settings_download_storage_stats_calculating">Calculating storage usage…</string>
+    <string name="settings_download_storage_stats_summary">Downloads: %1$s (%2$d items)\nAvailable: %3$s</string>
+    <string name="settings_download_storage_stats_failed">Failed to read storage space</string>
+    <string name="settings_download_storage_stats_dialog_title">Storage Space Details</string>
+    <string name="settings_download_storage_stats_device_title">Device Storage</string>
+    <string name="settings_download_storage_stats_device_info">Available: %1$s / Total: %2$s</string>
+    <string name="settings_download_storage_stats_download_title">Local Downloads</string>
+    <string name="settings_download_storage_stats_download_path">Path: %1$s</string>
+    <string name="settings_download_storage_stats_download_info">Galleries: %1$d | Size: %2$s</string>
+    <string name="settings_download_storage_stats_cache_title">App Thumbnail Cache</string>
+    <string name="settings_download_storage_stats_cache_info">Cache Size: %1$s</string>
+    <string name="settings_download_storage_stats_refresh">Recalculate</string>
+    <string name="settings_download_storage_stats_clear_cache">Clear Cache</string>
+    <string name="settings_download_storage_stats_cache_cleared">Thumbnail cache cleared</string>
     <string name="settings_download_invalid_download_location">Invalid download location</string>
     <string name="settings_download_cant_get_download_location">Can\'t get download location</string>
     <string name="settings_download_pick_dir_kk">On Android 4.4+, apps can\'t write any data on your external SD card, unless you root the system and apply a patch. But &lt;SD card&gt;/Android/data/com.hippo.ehviewer is an exception. It is writable for this app.</string>

@@ -676,6 +676,21 @@
 
     <string name="settings_download">下载</string>
     <string name="settings_download_download_location">下载路径</string>
+    <string name="settings_download_storage_stats">存储空间占用</string>
+    <string name="settings_download_storage_stats_calculating">正在计算存储空间…</string>
+    <string name="settings_download_storage_stats_summary">下载占用：%1$s (%2$d 本漫画)\n手机剩余：%3$s 可用</string>
+    <string name="settings_download_storage_stats_failed">无法读取存储空间</string>
+    <string name="settings_download_storage_stats_dialog_title">存储空间详情</string>
+    <string name="settings_download_storage_stats_device_title">手机存储概况</string>
+    <string name="settings_download_storage_stats_device_info">剩余可用：%1$s / 总共：%2$s</string>
+    <string name="settings_download_storage_stats_download_title">本地漫画下载</string>
+    <string name="settings_download_storage_stats_download_path">路径：%1$s</string>
+    <string name="settings_download_storage_stats_download_info">已下载漫画：%1$d 本 | 占用空间：%2$s</string>
+    <string name="settings_download_storage_stats_cache_title">图片缩略图缓存</string>
+    <string name="settings_download_storage_stats_cache_info">缓存体积：%1$s</string>
+    <string name="settings_download_storage_stats_refresh">重新计算</string>
+    <string name="settings_download_storage_stats_clear_cache">清理缓存</string>
+    <string name="settings_download_storage_stats_cache_cleared">缩略图缓存已清理</string>
     <string name="settings_download_invalid_download_location">无效的下载路径</string>
     <string name="settings_download_cant_get_download_location">无法获取下载路径</string>
     <string name="settings_download_pick_dir_kk">在 KitKat 中您无法把数据写入外置 SD 卡，除非您做了奇怪的事情。不过 &lt;SD card&gt;/Android/data/com.hippo.ehviewer 这个路径比较特殊，是可以写入的。</string>

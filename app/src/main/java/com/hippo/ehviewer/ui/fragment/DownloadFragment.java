@@ -38,6 +38,8 @@ import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.DirPickerActivity;
+import com.hippo.ehviewer.util.StorageStatsHelper;
+import com.hippo.lib.yorozuya.FileUtils;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
 import com.hippo.yorozuya.IOUtils;
@@ -63,12 +65,19 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
     private static final int REQUEST_CODE_PICK_DOWNLOAD_IMPORT_FILE = 2;
 
     public static final String KEY_DOWNLOAD_LOCATION = "download_location";
+    public static final String KEY_DOWNLOAD_STORAGE_STATS = "download_storage_stats";
     public static final String KEY_EXPORT_DOWNLOAD_ITEMS = "export_download_items";
     public static final String KEY_IMPORT_DOWNLOAD_ITEMS = "import_download_items";
     public static final String KEY_CLEAN_INVALID_DOWNLOAD = "clean_invalid_download";
 
     @Nullable
     private Preference mDownloadLocation;
+    @Nullable
+    private Preference mStorageStats;
+    @Nullable
+    private java.util.concurrent.atomic.AtomicBoolean mStorageStatsCancel;
+    @Nullable
+    private StorageStatsHelper.StorageStats mLastStats;
 
     @Override
     public void onCreatePreferences(@Nullable Bundle savedInstanceState, @Nullable String rootKey) {
@@ -79,6 +88,7 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         Preference imageResolution = findPreference(Settings.KEY_IMAGE_RESOLUTION);
         Preference downloadTimeout = findPreference(Settings.KEY_DOWNLOAD_TIMEOUT);
         mDownloadLocation = findPreference(KEY_DOWNLOAD_LOCATION);
+        mStorageStats = findPreference(KEY_DOWNLOAD_STORAGE_STATS);
         Preference exportDownloadItems = findPreference(KEY_EXPORT_DOWNLOAD_ITEMS);
         Preference importDownloadItems = findPreference(KEY_IMPORT_DOWNLOAD_ITEMS);
         Preference cleanInvalidDownload = findPreference(KEY_CLEAN_INVALID_DOWNLOAD);
@@ -119,6 +129,9 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         if (mDownloadLocation != null) {
             mDownloadLocation.setOnPreferenceClickListener(this);
         }
+        if (mStorageStats != null) {
+            mStorageStats.setOnPreferenceClickListener(this);
+        }
         if (exportDownloadItems != null) {
             exportDownloadItems.setOnPreferenceClickListener(this);
         }
@@ -133,18 +146,105 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (mStorageStatsCancel != null) {
+            mStorageStatsCancel.set(true);
+            mStorageStatsCancel = null;
+        }
         mDownloadLocation = null;
+        mStorageStats = null;
     }
 
     public void onUpdateDownloadLocation() {
         UniFile file = Settings.getDownloadLocation();
         if (mDownloadLocation != null) {
             if (file != null) {
-                mDownloadLocation.setSummary(file.getUri().toString());
+                String readable = StorageStatsHelper.getReadablePath(file);
+                mDownloadLocation.setSummary(readable.isEmpty() ? file.getUri().toString() : readable);
             } else {
                 mDownloadLocation.setSummary(R.string.settings_download_invalid_download_location);
             }
         }
+        updateStorageStats();
+    }
+
+    public void updateStorageStats() {
+        if (mStorageStats == null || getContext() == null) {
+            return;
+        }
+        if (mStorageStatsCancel != null) {
+            mStorageStatsCancel.set(true);
+        }
+        mStorageStats.setSummary(R.string.settings_download_storage_stats_calculating);
+        mStorageStatsCancel = StorageStatsHelper.calculateStorageStatsAsync(requireContext(), stats -> {
+            mLastStats = stats;
+            if (mStorageStats != null && isAdded()) {
+                if (stats.success) {
+                    String downloadSizeStr = FileUtils.humanReadableByteCount(stats.downloadTotalBytes, false);
+                    String availSizeStr = stats.deviceAvailableBytes >= 0
+                            ? FileUtils.humanReadableByteCount(stats.deviceAvailableBytes, false)
+                            : "--";
+                    mStorageStats.setSummary(getString(R.string.settings_download_storage_stats_summary,
+                            downloadSizeStr, stats.downloadGalleryCount, availSizeStr));
+                } else {
+                    mStorageStats.setSummary(R.string.settings_download_storage_stats_failed);
+                }
+            }
+        });
+    }
+
+    private void showStorageStatsDialog() {
+        if (!isAdded()) return;
+        if (mLastStats == null || !mLastStats.success) {
+            updateStorageStats();
+            Toast.makeText(requireContext(), R.string.settings_download_storage_stats_calculating, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        // 1. Device Storage
+        sb.append(getString(R.string.settings_download_storage_stats_device_title)).append("\n");
+        if (mLastStats.deviceTotalBytes > 0 && mLastStats.deviceAvailableBytes >= 0) {
+            String avail = FileUtils.humanReadableByteCount(mLastStats.deviceAvailableBytes, false);
+            String total = FileUtils.humanReadableByteCount(mLastStats.deviceTotalBytes, false);
+            long used = Math.max(0, mLastStats.deviceTotalBytes - mLastStats.deviceAvailableBytes);
+            int percent = (int) Math.round((double) used / mLastStats.deviceTotalBytes * 100);
+            sb.append(getString(R.string.settings_download_storage_stats_device_info, avail, total))
+              .append(" (").append(percent).append("%)\n\n");
+        } else {
+            sb.append("--\n\n");
+        }
+
+        // 2. Local Downloads
+        sb.append(getString(R.string.settings_download_storage_stats_download_title)).append("\n");
+        if (!mLastStats.downloadPathDisplay.isEmpty()) {
+            sb.append(getString(R.string.settings_download_storage_stats_download_path, mLastStats.downloadPathDisplay)).append("\n");
+        }
+        String downloadSize = FileUtils.humanReadableByteCount(mLastStats.downloadTotalBytes, false);
+        sb.append(getString(R.string.settings_download_storage_stats_download_info, mLastStats.downloadGalleryCount, downloadSize))
+          .append("\n\n");
+
+        // 3. Thumbnail Cache
+        sb.append(getString(R.string.settings_download_storage_stats_cache_title)).append("\n");
+        String cacheSize = FileUtils.humanReadableByteCount(mLastStats.thumbnailCacheBytes, false);
+        sb.append(getString(R.string.settings_download_storage_stats_cache_info, cacheSize));
+
+        new AlertDialog.Builder(requireActivity())
+                .setTitle(R.string.settings_download_storage_stats_dialog_title)
+                .setMessage(sb.toString())
+                .setPositiveButton(android.R.string.ok, null)
+                .setNegativeButton(R.string.settings_download_storage_stats_refresh, (dialog, which) -> {
+                    updateStorageStats();
+                })
+                .setNeutralButton(R.string.settings_download_storage_stats_clear_cache, (dialog, which) -> {
+                    StorageStatsHelper.clearThumbnailCache(requireContext(), () -> {
+                        if (isAdded()) {
+                            Toast.makeText(requireContext(), R.string.settings_download_storage_stats_cache_cleared, Toast.LENGTH_SHORT).show();
+                            updateStorageStats();
+                        }
+                    });
+                })
+                .show();
     }
 
     @Override
@@ -159,6 +259,9 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
             } else {
                 showDirPickerDialogL();
             }
+            return true;
+        } else if (KEY_DOWNLOAD_STORAGE_STATS.equals(key)) {
+            showStorageStatsDialog();
             return true;
         } else if (KEY_EXPORT_DOWNLOAD_ITEMS.equals(key)) {
             exportDownloadItems();
