@@ -68,6 +68,9 @@ import com.hippo.lib.yorozuya.collect.LongList
 import com.hippo.unifile.UniFile
 import com.hippo.util.IoThreadPoolExecutor
 import com.hippo.widget.FabLayout
+import com.hierynomus.mserref.NtStatus
+import com.hierynomus.mssmb2.SMBApiException
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.text.ParseException
@@ -459,7 +462,8 @@ class DownloadBatchActions(private val mHost: Host?) {
                             if (option == 0 || option == 1) {
                                 // 删除整个文件夹（本地 + SMB）
                                 val fileList = mutableListOf<UniFile>()
-                                val smbInfoList = mutableListOf<DownloadInfo>()
+                                val smbTargets = mutableListOf<Pair<DownloadInfo, Client.Target>>()
+                                val smbGidSet = mutableSetOf<Long>()
 
                                 for (info in selectedInfoList) {
                                     // 处理本地文件
@@ -467,27 +471,44 @@ class DownloadBatchActions(private val mHost: Host?) {
                                     if (dir != null) {
                                         fileList.add(dir)
                                     }
-                                    // 清除路径映射
-                                    EhDB.removeDownloadDirname(info.gid)
 
-                                    // 检查是否在 SMB 上
-                                    val smbCheck = SmbPathResolver.resolve(info.gid)
-                                    if (smbCheck != null) {
-                                        smbInfoList.add(info)
-                                    }
+                                    // 检查是否在 SMB 上（必须在清除路径映射前推导 Target）
+                                    val smbTarget = SmbPathResolver.resolve(info.gid)
+                                    val isOnSmb = smbTarget != null && (SmbStorageTracker.isOnSmb(info.gid) || dir == null || !dir.exists())
+                                    if (isOnSmb) {
+                                        smbTargets.add(info to smbTarget)
+                                        smbGidSet.add(info.gid)
+                                    } else {
+                                        // 纯本地漫画：清除路径映射
+                                        EhDB.removeDownloadDirname(info.gid)
 
-                                    if (option == 1) {
-                                        // 仅删除文件夹（保留下载项）：重置状态以便重新下载
-                                        info.state = DownloadInfo.STATE_NONE
-                                        info.finished = 0
-                                        info.downloaded = 0
-                                        info.speed = 0
-                                        info.remaining = 0
-                                        if (info.total < 0) info.total = 0
-                                        EhDB.putDownloadInfo(info)
-                                        // 更新存储位置缓存：文件夹已删除
-                                        StorageDetector.updateCache(info.gid, StorageLocation.UNKNOWN)
+                                        if (option == 1) {
+                                            // 仅删除文件夹（保留下载项）：重置状态以便重新下载
+                                            info.state = DownloadInfo.STATE_NONE
+                                            info.finished = 0
+                                            info.downloaded = 0
+                                            info.speed = 0
+                                            info.remaining = 0
+                                            if (info.total < 0) info.total = 0
+                                            EhDB.putDownloadInfo(info)
+                                            StorageDetector.updateCache(info.gid, StorageLocation.UNKNOWN)
+                                        }
                                     }
+                                }
+
+                                // 纯本地漫画立即清理下载记录和阅读进度
+                                val localGidList = LongList()
+                                for (info in selectedInfoList) {
+                                    if (!smbGidSet.contains(info.gid)) {
+                                        localGidList.add(info.gid)
+                                        if (deleteReadingProgress) {
+                                            EhApplication.getSpiderInfoRepository(context).delete(info.gid, context)
+                                            mHost.spiderInfoMap.remove(info.gid)
+                                        }
+                                    }
+                                }
+                                if (option == 0 && !localGidList.isEmpty) {
+                                    mHost.downloadManager?.deleteRangeDownload(localGidList)
                                 }
 
                                 // 删除本地文件
@@ -496,18 +517,23 @@ class DownloadBatchActions(private val mHost: Host?) {
                                 }
 
                                 // 删除 SMB 文件（异步）
-                                if (smbInfoList.isNotEmpty()) {
-                                    object : AsyncTask<Void, Void, Int>() {
-                                        override fun doInBackground(vararg voids: Void): Int {
-                                            var count = 0
-                                            for (info in smbInfoList) {
-                                                val target = SmbPathResolver.resolve(info.gid) ?: continue
+                                if (smbTargets.isNotEmpty()) {
+                                    object : AsyncTask<Void, Void, Pair<List<DownloadInfo>, List<DownloadInfo>>>() {
+                                        override fun doInBackground(vararg voids: Void): Pair<List<DownloadInfo>, List<DownloadInfo>> {
+                                            val succeeded = mutableListOf<DownloadInfo>()
+                                            val failed = mutableListOf<DownloadInfo>()
 
+                                            for ((info, target) in smbTargets) {
                                                 try {
                                                     // 获取服务器密码
-                                                    val server = SmbServerStore.findByAuthority(target.authority) ?: continue
+                                                    val server = SmbServerStore.findByAuthority(target.authority)
+                                                    if (server == null) {
+                                                        Log.e("DownloadsScene", "未找到 SMB 服务器配置: authority=${target.authority}")
+                                                        failed.add(info)
+                                                        continue
+                                                    }
 
-                                                    Client.withTempPassword(
+                                                    val success = Client.withTempPassword(
                                                         target.authority,
                                                         server.password
                                                     ) {
@@ -520,29 +546,76 @@ class DownloadBatchActions(private val mHost: Host?) {
                                                         }
                                                     }
 
-                                                    // option 0 或 option 1：已删除远端目录
-                                                    SmbStorageTracker.markLocal(info.gid)
-
-                                                    count++
+                                                    if (success == true) {
+                                                        // 远端删除成功：清除远端标记和本地路径映射
+                                                        SmbStorageTracker.markLocal(info.gid)
+                                                        EhDB.removeDownloadDirname(info.gid)
+                                                        succeeded.add(info)
+                                                    } else {
+                                                        failed.add(info)
+                                                    }
                                                 } catch (e: Exception) {
                                                     Log.e("DownloadsScene", "删除 SMB 文件异常: gid=${info.gid}", e)
+                                                    failed.add(info)
                                                 }
                                             }
-                                            return count
+                                            return Pair(succeeded, failed)
                                         }
 
-                                        override fun onPostExecute(count: Int) {
-                                            if (count > 0) {
-                                                Toast.makeText(context, "已删除 $count 个 SMB 目录", Toast.LENGTH_SHORT).show()
+                                        override fun onPostExecute(result: Pair<List<DownloadInfo>, List<DownloadInfo>>) {
+                                            val (succeeded, failed) = result
+
+                                            if (succeeded.isNotEmpty()) {
+                                                if (option == 0) {
+                                                    val succeededGids = LongList(succeeded.size)
+                                                    for (info in succeeded) {
+                                                        succeededGids.add(info.gid)
+                                                    }
+                                                    mHost.downloadManager?.deleteRangeDownload(succeededGids)
+                                                } else if (option == 1) {
+                                                    for (info in succeeded) {
+                                                        info.state = DownloadInfo.STATE_NONE
+                                                        info.finished = 0
+                                                        info.downloaded = 0
+                                                        info.speed = 0
+                                                        info.remaining = 0
+                                                        if (info.total < 0) info.total = 0
+                                                        EhDB.putDownloadInfo(info)
+                                                        StorageDetector.updateCache(info.gid, StorageLocation.UNKNOWN)
+                                                    }
+                                                }
+
+                                                if (deleteReadingProgress) {
+                                                    for (info in succeeded) {
+                                                        EhApplication.getSpiderInfoRepository(context).delete(info.gid, context)
+                                                        mHost.spiderInfoMap.remove(info.gid)
+                                                    }
+                                                }
                                             }
+
+                                            // 失败的项保留在列表中（保持其 SMB 标记与下载记录）
+                                            val okCount = succeeded.size
+                                            val failCount = failed.size
+                                            if (okCount > 0 && failCount == 0) {
+                                                Toast.makeText(context, "已删除 $okCount 个 SMB 目录", Toast.LENGTH_SHORT).show()
+                                            } else if (okCount > 0 && failCount > 0) {
+                                                Toast.makeText(context, "已删除 $okCount 个 SMB 目录，${failCount} 个失败（已保留条目）", Toast.LENGTH_LONG).show()
+                                            } else if (failCount > 0) {
+                                                Toast.makeText(context, "删除 SMB 目录失败 (${failCount} 项，已保留条目)", Toast.LENGTH_LONG).show()
+                                            }
+
+                                            // 刷新界面
+                                            mHost.updateForLabel()
+                                            mHost.updateView()
                                         }
                                     }.executeOnExecutor(IoThreadPoolExecutor.instance)
                                 }
                             }
 
                             if (option == 2) {
-                                // 仅删除本地图片文件（保留 info.json 等其他文件）
-                                val smbInfoList = mutableListOf<DownloadInfo>()
+                                // 仅删除本地图片和归档文件（保留 info.json 等其他文件）
+                                val smbTargets = mutableListOf<Pair<DownloadInfo, Client.Target>>()
+                                val smbGidSet = mutableSetOf<Long>()
 
                                 for (info in selectedInfoList) {
                                     // 处理本地文件
@@ -552,13 +625,8 @@ class DownloadBatchActions(private val mHost: Host?) {
                                         if (files != null) {
                                             val imageFiles = mutableListOf<UniFile>()
                                             for (file in files) {
-                                                if (file.isFile) {
-                                                    val name = file.name
-                                                    if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") ||
-                                                            name.endsWith(".png") || name.endsWith(".gif") ||
-                                                            name.endsWith(".webp") || name.endsWith(".bmp"))) {
-                                                        imageFiles.add(file)
-                                                    }
+                                                if (file.isFile && isComicImageOrArchive(file.name)) {
+                                                    imageFiles.add(file)
                                                 }
                                             }
                                             if (imageFiles.isNotEmpty()) {
@@ -568,34 +636,44 @@ class DownloadBatchActions(private val mHost: Host?) {
                                     }
 
                                     // 检查是否在 SMB 上
-                                    val smbCheck = SmbPathResolver.resolve(info.gid)
-                                    if (smbCheck != null) {
-                                        smbInfoList.add(info)
+                                    val smbTarget = SmbPathResolver.resolve(info.gid)
+                                    val isOnSmb = smbTarget != null && (SmbStorageTracker.isOnSmb(info.gid) || dir == null || !dir.exists())
+                                    if (isOnSmb) {
+                                        smbTargets.add(info to smbTarget)
+                                        smbGidSet.add(info.gid)
+                                    } else {
+                                        // 纯本地漫画：重置下载状态
+                                        info.state = DownloadInfo.STATE_NONE
+                                        info.finished = 0
+                                        info.downloaded = 0
+                                        info.speed = 0
+                                        info.remaining = 0
+                                        if (info.total < 0) info.total = 0
+                                        EhDB.putDownloadInfo(info)
+                                        if (deleteReadingProgress) {
+                                            EhApplication.getSpiderInfoRepository(context).delete(info.gid, context)
+                                            mHost.spiderInfoMap.remove(info.gid)
+                                        }
                                     }
-
-                                    // 重置下载状态
-                                    info.state = DownloadInfo.STATE_NONE
-                                    info.finished = 0
-                                    info.downloaded = 0
-                                    info.speed = 0
-                                    info.remaining = 0
-                                    if (info.total < 0) info.total = 0
-                                    EhDB.putDownloadInfo(info)
                                 }
 
-                                // 删除 SMB 图片文件（异步）
-                                if (smbInfoList.isNotEmpty()) {
-                                    object : AsyncTask<Void, Void, Int>() {
-                                        override fun doInBackground(vararg voids: Void): Int {
-                                            var count = 0
-                                            for (info in smbInfoList) {
-                                                val target = SmbPathResolver.resolve(info.gid) ?: continue
+                                // 删除 SMB 图片和归档文件（异步）
+                                if (smbTargets.isNotEmpty()) {
+                                    object : AsyncTask<Void, Void, Pair<List<DownloadInfo>, List<DownloadInfo>>>() {
+                                        override fun doInBackground(vararg voids: Void): Pair<List<DownloadInfo>, List<DownloadInfo>> {
+                                            val succeeded = mutableListOf<DownloadInfo>()
+                                            val failed = mutableListOf<DownloadInfo>()
 
+                                            for ((info, target) in smbTargets) {
                                                 try {
                                                     // 获取服务器密码
-                                                    val server = SmbServerStore.findByAuthority(target.authority) ?: continue
+                                                    val server = SmbServerStore.findByAuthority(target.authority)
+                                                    if (server == null) {
+                                                        failed.add(info)
+                                                        continue
+                                                    }
 
-                                                    Client.withTempPassword(
+                                                    val success = Client.withTempPassword(
                                                         target.authority,
                                                         server.password
                                                     ) {
@@ -608,34 +686,50 @@ class DownloadBatchActions(private val mHost: Host?) {
                                                         }
                                                     }
 
-                                                    // 保留 SMB 映射（用户可能想重新下载）
-                                                    count++
+                                                    if (success == true) {
+                                                        succeeded.add(info)
+                                                    } else {
+                                                        failed.add(info)
+                                                    }
                                                 } catch (e: Exception) {
                                                     Log.e("DownloadsScene", "删除 SMB 图片异常: gid=${info.gid}", e)
+                                                    failed.add(info)
                                                 }
                                             }
-                                            return count
+                                            return Pair(succeeded, failed)
                                         }
 
-                                        override fun onPostExecute(count: Int) {
-                                            if (count > 0) {
-                                                Toast.makeText(context, "已删除 $count 个 SMB 目录的图片", Toast.LENGTH_SHORT).show()
+                                        override fun onPostExecute(result: Pair<List<DownloadInfo>, List<DownloadInfo>>) {
+                                            val (succeeded, failed) = result
+
+                                            for (info in succeeded) {
+                                                info.state = DownloadInfo.STATE_NONE
+                                                info.finished = 0
+                                                info.downloaded = 0
+                                                info.speed = 0
+                                                info.remaining = 0
+                                                if (info.total < 0) info.total = 0
+                                                EhDB.putDownloadInfo(info)
+                                                if (deleteReadingProgress) {
+                                                    EhApplication.getSpiderInfoRepository(context).delete(info.gid, context)
+                                                    mHost.spiderInfoMap.remove(info.gid)
+                                                }
                                             }
+
+                                            val okCount = succeeded.size
+                                            val failCount = failed.size
+                                            if (okCount > 0 && failCount == 0) {
+                                                Toast.makeText(context, "已删除 $okCount 个 SMB 目录的图片", Toast.LENGTH_SHORT).show()
+                                            } else if (okCount > 0 && failCount > 0) {
+                                                Toast.makeText(context, "已删除 $okCount 个 SMB 图片，${failCount} 个失败（已保留状态）", Toast.LENGTH_LONG).show()
+                                            } else if (failCount > 0) {
+                                                Toast.makeText(context, "删除 SMB 图片失败 (${failCount} 项，已保留状态)", Toast.LENGTH_LONG).show()
+                                            }
+
+                                            mHost.updateForLabel()
+                                            mHost.updateView()
                                         }
                                     }.executeOnExecutor(IoThreadPoolExecutor.instance)
-                                }
-                            }
-
-                            if (option == 0) {
-                                // 移除下载项
-                                mHost.downloadManager?.deleteRangeDownload(selectedGidList)
-                            }
-
-                            // 删除阅读进度（如果用户勾选了）
-                            if (deleteReadingProgress) {
-                                for (info in selectedInfoList) {
-                                    EhApplication.getSpiderInfoRepository(context).delete(info.gid, context)
-                                    mHost.spiderInfoMap.remove(info.gid)
                                 }
                             }
 
@@ -1204,7 +1298,22 @@ class DownloadBatchActions(private val mHost: Host?) {
         private fun deleteSmbDirectoryRecursively(target: Client.Target) {
             try {
                 // 列出目录内容
-                val entries = Client.listDirectory(target)
+                val entries = try {
+                    Client.listDirectory(target)
+                } catch (e: IOException) {
+                    val cause = e.cause
+                    if (cause is SMBApiException) {
+                        val status = cause.status
+                        if (status == NtStatus.STATUS_NO_SUCH_FILE ||
+                            status == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND ||
+                            status == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND
+                        ) {
+                            // 远端目录已不存在，视作已删除
+                            return
+                        }
+                    }
+                    throw e
+                }
 
                 if (!entries.isNullOrEmpty()) {
                     // 先删除所有文件和子目录
@@ -1245,27 +1354,49 @@ class DownloadBatchActions(private val mHost: Host?) {
         }
 
         /**
-         * 只删除 SMB 目录中的图片文件（保留其他文件如 info.json）
+         * 判定文件是否为漫画正文图片或打包归档（.cbz, .zip, .cbr）
+         */
+        private fun isComicImageOrArchive(name: String?): Boolean {
+            if (name == null) return false
+            val lower = name.lowercase(Locale.ROOT)
+            return lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+                    lower.endsWith(".png") || lower.endsWith(".gif") ||
+                    lower.endsWith(".webp") || lower.endsWith(".bmp") ||
+                    lower.endsWith(".cbz") || lower.endsWith(".zip") ||
+                    lower.endsWith(".cbr")
+        }
+
+        /**
+         * 只删除 SMB 目录中的图片与漫画归档文件（保留其他文件如 info.json, .thumb, .ehviewer）
          */
         @Throws(Exception::class)
         private fun deleteSmbImageFilesOnly(target: Client.Target) {
             try {
-                val entries = Client.listDirectory(target)
+                val entries = try {
+                    Client.listDirectory(target)
+                } catch (e: IOException) {
+                    val cause = e.cause
+                    if (cause is SMBApiException) {
+                        val status = cause.status
+                        if (status == NtStatus.STATUS_NO_SUCH_FILE ||
+                            status == NtStatus.STATUS_OBJECT_NAME_NOT_FOUND ||
+                            status == NtStatus.STATUS_OBJECT_PATH_NOT_FOUND
+                        ) {
+                            return
+                        }
+                    }
+                    throw e
+                }
 
                 if (!entries.isNullOrEmpty()) {
                     for (entry in entries) {
-                        if (!entry.isDirectory) {
-                            val name = entry.name
-                            if (name != null && (name.endsWith(".jpg") || name.endsWith(".jpeg") ||
-                                    name.endsWith(".png") || name.endsWith(".gif") ||
-                                    name.endsWith(".webp") || name.endsWith(".bmp"))) {
-                                val fileTarget = Client.Target(
-                                    target.authority,
-                                    target.share,
-                                    joinPath(target.pathInShare, name)
-                                )
-                                Client.delete(fileTarget)
-                            }
+                        if (!entry.isDirectory && isComicImageOrArchive(entry.name)) {
+                            val fileTarget = Client.Target(
+                                target.authority,
+                                target.share,
+                                joinPath(target.pathInShare, entry.name)
+                            )
+                            Client.delete(fileTarget)
                         }
                     }
                 }

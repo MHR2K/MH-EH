@@ -108,7 +108,11 @@ object Client {
         } catch (e: SMBRuntimeException) {
             throw IOException(e)
         }
-        val raw = dir.list()
+        val raw = try {
+            dir.list()
+        } finally {
+            try { dir.close() } catch (_: Throwable) {}
+        }
         if (BuildConfig.DEBUG) {
             try {
                 android.util.Log.d("Client", "SMB listDirectory: path=" + target.pathInShare + ", entries=" + raw.size)
