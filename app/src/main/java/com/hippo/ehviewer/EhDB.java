@@ -507,8 +507,8 @@ public class EhDB {
      * 
      * 删除流程：
      * 1. 删除 DOWNLOADS 表中的主记录
-     * 2. 删除关联的 SMB 映射（防止孤立）
-     * 3. 删除下载目录名映射
+     * 2. 删除下载目录名映射
+     * 3. 删除关联的画廊标签（防止孤立）
      * 
      * @param gid 要删除的画廊 ID
      */
@@ -530,6 +530,15 @@ public class EhDB {
             Log.d(TAG, "Removed download dirname for gid=" + gid);
         } catch (Exception e) {
             Log.w(TAG, "Failed to remove download dirname for gid=" + gid, e);
+            // 继续执行，不中断删除流程
+        }
+
+        // 步骤 3：删除画廊标签映射（防止孤立标签残留）
+        try {
+            sDaoSession.getGalleryTagsDao().deleteByKey(gid);
+            Log.d(TAG, "Removed gallery tags for gid=" + gid);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to remove gallery tags for gid=" + gid, e);
             // 继续执行，不中断删除流程
         }
     }
@@ -828,6 +837,106 @@ public class EhDB {
     public static synchronized void deleteGalleryTags(GalleryTags galleryTags) {
         GalleryTagsDao dao = sDaoSession.getGalleryTagsDao();
         dao.delete(galleryTags);
+    }
+
+    public static class CleanTagsResult {
+        public final int count;
+        public final long bytes;
+
+        public CleanTagsResult(int count, long bytes) {
+            this.count = count;
+            this.bytes = bytes;
+        }
+    }
+
+    /**
+     * 清理所有未在 DOWNLOADS 表中存在的孤立画廊标签缓存，并执行 VACUUM 整理数据库文件。
+     *
+     * @param context 上下文对象，用于获取数据库文件路径以测量实际释放体积
+     * @return 包含清理条数及总占用字节数的统计结果
+     */
+    public static synchronized CleanTagsResult cleanOrphanGalleryTags(Context context) {
+        if (sDaoSession == null) {
+            return new CleanTagsResult(0, 0);
+        }
+
+        org.greenrobot.greendao.database.Database db = sDaoSession.getDatabase();
+        int count = 0;
+        long totalBytes = 0;
+
+        boolean hasLocation = false;
+        try (Cursor c = db.rawQuery("PRAGMA table_info(\"Gallery_Tags\")", null)) {
+            while (c != null && c.moveToNext()) {
+                String name = c.getString(1);
+                if ("LOCATION".equalsIgnoreCase(name)) {
+                    hasLocation = true;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to check Gallery_Tags table info", e);
+        }
+
+        StringBuilder sqlBuilder = new StringBuilder();
+        sqlBuilder.append("SELECT COUNT(*), TOTAL(")
+                .append("coalesce(length(\"ROWS\"), 0) + ")
+                .append("coalesce(length(\"ARTIST\"), 0) + ")
+                .append("coalesce(length(\"COSPLAYER\"), 0) + ")
+                .append("coalesce(length(\"CHARACTER\"), 0) + ")
+                .append("coalesce(length(\"FEMALE\"), 0) + ")
+                .append("coalesce(length(\"GROUP\"), 0) + ")
+                .append("coalesce(length(\"LANGUAGE\"), 0) + ")
+                .append("coalesce(length(\"MALE\"), 0) + ")
+                .append("coalesce(length(\"MISC\"), 0) + ")
+                .append("coalesce(length(\"MIXED\"), 0) + ")
+                .append("coalesce(length(\"OTHER\"), 0) + ")
+                .append("coalesce(length(\"PARODY\"), 0) + ")
+                .append("coalesce(length(\"RECLASS\"), 0)");
+        if (hasLocation) {
+            sqlBuilder.append(" + coalesce(length(\"LOCATION\"), 0)");
+        }
+        sqlBuilder.append(") FROM \"Gallery_Tags\" WHERE \"GID\" NOT IN (SELECT \"GID\" FROM \"DOWNLOADS\")");
+
+        try (Cursor cursor = db.rawQuery(sqlBuilder.toString(), null)) {
+            if (cursor != null && cursor.moveToFirst()) {
+                count = cursor.getInt(0);
+                long payloadBytes = (long) cursor.getDouble(1);
+                // 估算行开销：每个记录在 SQLite 页面中的头信息、GID(8B)、时间戳(16B)、记录头与指针约 48 字节
+                totalBytes = payloadBytes + (count * 48L);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to query orphan gallery tags stats", e);
+        }
+
+        if (count > 0) {
+            File dbFile = context != null ? context.getDatabasePath("eh.db") : null;
+            long dbSizeBefore = (dbFile != null && dbFile.exists()) ? dbFile.length() : 0;
+
+            try {
+                db.execSQL("DELETE FROM \"Gallery_Tags\" WHERE \"GID\" NOT IN (SELECT \"GID\" FROM \"DOWNLOADS\")");
+                sDaoSession.getGalleryTagsDao().detachAll();
+                Log.d(TAG, "Deleted " + count + " orphan gallery tags");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to delete orphan gallery tags", e);
+                return new CleanTagsResult(0, 0);
+            }
+
+            try {
+                db.execSQL("VACUUM");
+            } catch (Exception e) {
+                Log.w(TAG, "VACUUM after cleaning orphan tags failed", e);
+            }
+
+            if (dbFile != null && dbFile.exists()) {
+                long dbSizeAfter = dbFile.length();
+                long freed = dbSizeBefore - dbSizeAfter;
+                if (freed > totalBytes) {
+                    totalBytes = freed;
+                }
+            }
+        }
+
+        return new CleanTagsResult(count, totalBytes);
     }
 
     public static synchronized List<QuickSearch> getAllQuickSearch() {

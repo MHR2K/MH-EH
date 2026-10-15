@@ -727,6 +727,12 @@
     <string name="settings_download_clean_redundancy_done">完成冗余清理，共清理 %d 项</string>
     <string name="settings_download_clean_invalid_download_summary">清空任何无效的下载项，尤其是下载未完整的下载项，不会清空已完成的下载项</string>
     <string name="settings_download_clean_invalid_download">清空无效的下载项</string>
+    <string name="settings_download_clean_orphan_tags">一键清理孤立标签</string>
+    <string name="settings_download_clean_orphan_tags_summary">清理未在下载列表中的画廊标签缓存数据</string>
+    <string name="settings_download_clean_orphan_tags_confirm">确定要清理孤立标签吗？\n将清理所有未在下载列表中的画廊标签缓存，不会影响下载内容和历史记录。</string>
+    <string name="settings_download_clean_orphan_tags_cleaning">正在清理孤立标签…</string>
+    <string name="settings_download_clean_orphan_tags_done">共清理 %1$d 条孤立标签数据，占用 %2$s</string>
+    <string name="settings_download_clean_orphan_tags_none">未发现孤立标签数据</string>
 
     <string name="settings_advanced">高级</string>
     <string name="settings_advanced_save_parse_error_body">解析失败时保存页面内容</string>

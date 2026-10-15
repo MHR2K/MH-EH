@@ -39,6 +39,7 @@ import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.DirPickerActivity;
 import com.hippo.ehviewer.util.StorageStatsHelper;
+import com.hippo.ehviewer.widget.ProgressHelper;
 import com.hippo.lib.yorozuya.FileUtils;
 import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
@@ -69,6 +70,7 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
     public static final String KEY_EXPORT_DOWNLOAD_ITEMS = "export_download_items";
     public static final String KEY_IMPORT_DOWNLOAD_ITEMS = "import_download_items";
     public static final String KEY_CLEAN_INVALID_DOWNLOAD = "clean_invalid_download";
+    public static final String KEY_CLEAN_ORPHAN_TAGS = "clean_orphan_tags";
 
     @Nullable
     private Preference mDownloadLocation;
@@ -92,6 +94,7 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         Preference exportDownloadItems = findPreference(KEY_EXPORT_DOWNLOAD_ITEMS);
         Preference importDownloadItems = findPreference(KEY_IMPORT_DOWNLOAD_ITEMS);
         Preference cleanInvalidDownload = findPreference(KEY_CLEAN_INVALID_DOWNLOAD);
+        Preference cleanOrphanTags = findPreference(KEY_CLEAN_ORPHAN_TAGS);
         Preference preloadImage = findPreference("preload_image");
         Preference imageResolutionPref = findPreference(Settings.KEY_IMAGE_RESOLUTION);
 
@@ -140,6 +143,9 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
         }
         if (cleanInvalidDownload != null) {
             cleanInvalidDownload.setOnPreferenceClickListener(this);
+        }
+        if (cleanOrphanTags != null) {
+            cleanOrphanTags.setOnPreferenceClickListener(this);
         }
     }
 
@@ -277,6 +283,14 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             return true;
+        } else if (KEY_CLEAN_ORPHAN_TAGS.equals(key)) {
+            new AlertDialog.Builder(requireActivity())
+                    .setTitle(R.string.settings_download_clean_orphan_tags)
+                    .setMessage(R.string.settings_download_clean_orphan_tags_confirm)
+                    .setPositiveButton(android.R.string.ok, (dialog, which) -> cleanOrphanTags())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            return true;
         }
         return false;
     }
@@ -284,6 +298,36 @@ public class DownloadFragment extends PreferenceFragmentCompat implements
     private void showDirPickerDialogKK() {
         new AlertDialog.Builder(requireActivity()).setMessage(R.string.settings_download_pick_dir_kk)
                 .setPositiveButton(R.string.settings_download_continue, (dialog, which) -> openDirPicker()).show();
+    }
+
+    private void cleanOrphanTags() {
+        Activity activity = getActivity();
+        if (activity == null) {
+            return;
+        }
+        ProgressHelper.showDialog(activity, getString(R.string.settings_download_clean_orphan_tags_cleaning));
+
+        new Thread(() -> {
+            EhDB.CleanTagsResult result = EhDB.cleanOrphanGalleryTags(activity.getApplicationContext());
+            activity.runOnUiThread(() -> {
+                ProgressHelper.dismissDialog();
+                if (!isAdded() || getActivity() == null) {
+                    return;
+                }
+                String message;
+                if (result.count > 0) {
+                    String sizeStr = FileUtils.humanReadableByteCount(result.bytes, false);
+                    message = getString(R.string.settings_download_clean_orphan_tags_done, result.count, sizeStr);
+                } else {
+                    message = getString(R.string.settings_download_clean_orphan_tags_none);
+                }
+                new AlertDialog.Builder(getActivity())
+                        .setTitle(R.string.settings_download_clean_orphan_tags)
+                        .setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+            });
+        }).start();
     }
 
     private void showDirPickerDialogL() {

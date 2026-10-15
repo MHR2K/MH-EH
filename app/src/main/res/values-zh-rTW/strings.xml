@@ -644,6 +644,12 @@
     <string name="settings_download_clean_redundancy_summary">清除已下載但不在下載列表中的圖檔</string>
     <string name="settings_download_clean_redundancy_no_redundancy">未發現冗餘檔案</string>
     <string name="settings_download_clean_redundancy_done">完成冗餘檔案清理，共清理了 %d 個檔案</string>
+    <string name="settings_download_clean_orphan_tags">一鍵清理孤立標籤</string>
+    <string name="settings_download_clean_orphan_tags_summary">清理未在下載列表中的畫廊標籤快取資料</string>
+    <string name="settings_download_clean_orphan_tags_confirm">確定要清理孤立標籤嗎？\n將清理所有未在下載列表中的畫廊標籤快取，不會影響下載內容和歷史紀錄。</string>
+    <string name="settings_download_clean_orphan_tags_cleaning">正在清理孤立標籤…</string>
+    <string name="settings_download_clean_orphan_tags_done">共清理 %1$d 條孤立標籤資料，占用 %2$s</string>
+    <string name="settings_download_clean_orphan_tags_none">未發現孤立標籤資料</string>
 
     <string name="settings_advanced">進階</string>
     <string name="settings_advanced_save_parse_error_body">解析失敗時儲存網頁的內容</string>

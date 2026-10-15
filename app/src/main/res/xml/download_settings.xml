@@ -126,4 +126,11 @@
         android:title="@string/settings_download_clean_invalid_download"
         app:allowDividerAbove="true"
         app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="clean_orphan_tags"
+        android:summary="@string/settings_download_clean_orphan_tags_summary"
+        android:title="@string/settings_download_clean_orphan_tags"
+        app:allowDividerAbove="true"
+        app:iconSpaceReserved="false" />
 </PreferenceScreen>
