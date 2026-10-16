@@ -242,6 +242,13 @@ public class DownloadFilterState {
         mHost.updatePaginationIndicator();
         mHost.updateView();
         mHost.queryUnreadSpiderInfo();
+
+        // 恢复之前记录的滚动/分页位置
+        if (mHost.getRestoreScrollGid() != -1) {
+            if (recyclerView != null) {
+                recyclerView.post(mHost::restoreScrollPositionIfNeeded);
+            }
+        }
     }
 
     /*---------------
