@@ -219,6 +219,9 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
 
     override fun onApplySearch(query: String?) {
         val host = mHost ?: return
+        if (host.restoreScrollGid == -1L) {
+            host.restoreScrollGid = host.captureFirstVisibleGid()
+        }
         host.searchKey = query
         mSearchBar?.hideKeyBoard()
         host.isSearching = true

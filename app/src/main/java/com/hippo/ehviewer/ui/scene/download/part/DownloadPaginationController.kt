@@ -190,10 +190,10 @@ class DownloadPaginationController(private val mHost: Host) {
             indexPage = position / pageSize + 1
         }
         doNotScroll = true
+        myPageChangeListener?.setDoNotScroll(true)
         paginationIndicator?.skip2Pos(indexPage)
         val scrollTo = listIndexInPage(position)
-        val scrollTarget = maxOf(0, scrollTo - 1)
-        mHost.recyclerView?.let { rv -> rv.post { rv.scrollToPosition(scrollTarget) } }
+        mHost.recyclerView?.let { rv -> rv.post { rv.scrollToPosition(scrollTo) } }
     }
 
     fun getPageSizePos(pageSize: Int): Int {
@@ -229,12 +229,10 @@ class DownloadPaginationController(private val mHost: Host) {
      */
     fun restoreScrollPositionIfNeeded() {
         val list = mHost.list ?: return
-        val recyclerView = mHost.recyclerView ?: return
         if (restoreScrollGid == -1L) return
         val targetIndex = list.indexOfFirst { it.gid == restoreScrollGid }
         if (targetIndex >= 0) {
-            val adapterPos = listIndexInPage(targetIndex)
-            recyclerView.scrollToPosition(adapterPos)
+            initPage(targetIndex)
         }
         restoreScrollGid = -1
     }

@@ -1069,9 +1069,8 @@ public class DownloadsScene extends ToolbarScene
             }
         }
 
-        if (mInitPosition >= 0 && mPaginationController.getIndexPage() != 1) {
+        if (mInitPosition >= 0) {
             mPaginationController.initPage(mInitPosition);
-            mRecyclerView.scrollToPosition(listIndexInPage(mInitPosition));
             mInitPosition = -1;
         }
 
@@ -1690,6 +1689,9 @@ public class DownloadsScene extends ToolbarScene
                 
                 if ((englishAuthor != null && !englishAuthor.isEmpty()) || 
                     (japaneseAuthor != null && !japaneseAuthor.isEmpty())) {
+                    // 保存当前漫画的 GID，用于退出作者搜索时精准恢复其位置
+                    mPaginationController.setRestoreScrollGid(info.gid);
+
                     // 设置搜索选项：非模糊搜索，不区分大小写
                     mSearchController.configureAuthorSearchOptions();
                     
@@ -1744,6 +1746,8 @@ public class DownloadsScene extends ToolbarScene
                         
                         // 更新适配器
                         updateAdapter();
+                        updateTitle();
+                        updatePaginationIndicator();
                         
                         // 显示搜索成功提示
                         android.widget.Toast.makeText(context, 
@@ -1755,8 +1759,11 @@ public class DownloadsScene extends ToolbarScene
                         
                         // 搜索结束
                         searching = false;
+                    } else {
+                        mPaginationController.setRestoreScrollGid(-1);
                     }
                 } else {
+                    mPaginationController.setRestoreScrollGid(-1);
                     android.widget.Toast.makeText(context, 
                         R.string.author_not_found, 
                         Toast.LENGTH_SHORT).show();
