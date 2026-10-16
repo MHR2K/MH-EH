@@ -1213,6 +1213,27 @@
     <string name="gallery_update_error_invalid_new_range">Invalid new version page range</string>
     <string name="gallery_update_error_page_mismatch">Page count mismatch: old version has %1$d pages, new version has %2$d pages. They must be equal.</string>
     <string name="gallery_update_error_old_exceeds">Old version page range end (%1$d) exceeds actual page count (%2$d)</string>
+
+    <!-- Gallery Update Comparison -->
+    <string name="gallery_update_btn_compare">Compare thumbnails</string>
+    <string name="gallery_update_compare_title">Page Thumbnail Comparison</string>
+    <string name="gallery_update_new_version_header">New version: %1$s (%2$d pages)</string>
+    <string name="gallery_update_old_version_header">Old version: %1$s (%2$d pages)</string>
+    <string name="gallery_update_new_version_label">New version (%1$d pages)</string>
+    <string name="gallery_update_old_version_label">Old version (%1$d pages)</string>
+    <string name="gallery_update_lock_sync">Locked (Sync scroll)</string>
+    <string name="gallery_update_unlock_sync">Unlocked (Free scroll)</string>
+    <string name="gallery_update_lock_hint">Unlock to align pages, lock to sync scroll</string>
+    <string name="gallery_update_align_status">Old P.%1$d ↔ New P.%2$d (New offset %+d)</string>
+    <string name="gallery_update_align_selected">Align selected</string>
+    <string name="gallery_update_jump_first">First</string>
+    <string name="gallery_update_jump_last">Last</string>
+    <string name="gallery_update_jump_page">Jump</string>
+    <string name="gallery_update_jump_dialog_title">Jump to page (1-%1$d)</string>
+    <string name="gallery_update_jump_invalid_page">Please enter a page number between 1 and %1$d</string>
+    <string name="gallery_update_apply_mapping">Apply this alignment</string>
+    <string name="gallery_update_loading_preview">Loading new version preview…</string>
+    <string name="gallery_update_loading_failed">Failed to load new version</string>
     <string name="loading_db_file">Data Loading …</string>
     <string name="settings_eh_history_size">Number of historical records</string>
     <string name="history_info_unlimited">Unlimited</string>

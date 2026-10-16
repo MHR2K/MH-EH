@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true"
+    android:scrollbars="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- 顶部标题栏 -->
+        <TextView
+            android:id="@+id/tv_dialog_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/gallery_update_compare_title"
+            android:textSize="17sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary"
+            android:layout_marginBottom="6dp" />
+
+        <!-- 加载指示器（获取新版本信息时展示） -->
+        <LinearLayout
+            android:id="@+id/layout_loading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:visibility="gone"
+            android:padding="6dp">
+
+            <ProgressBar
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_marginEnd="8dp" />
+
+            <TextView
+                android:id="@+id/tv_loading_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/gallery_update_loading_preview"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+        <!-- 新版本头部与跳转按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="2dp">
+
+            <TextView
+                android:id="@+id/tv_new_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/teal_500" />
+
+            <TextView
+                android:id="@+id/btn_new_first"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_first" />
+
+            <TextView
+                android:id="@+id/btn_new_last"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_last" />
+
+            <TextView
+                android:id="@+id/btn_new_jump"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_page" />
+
+        </LinearLayout>
+
+        <!-- 新版本标题（显示2-3行，点击可展开完整标题） -->
+        <TextView
+            android:id="@+id/tv_new_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground"
+            android:paddingTop="2dp"
+            android:paddingBottom="4dp"
+            android:layout_marginBottom="4dp" />
+
+        <!-- 新版本缩略图横向列表 -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_new_previews"
+            android:layout_width="match_parent"
+            android:layout_height="138dp"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+
+        <!-- 中间控制栏：锁定切换、对齐状态、对齐选中项 -->
+        <LinearLayout
+            android:id="@+id/layout_middle_control"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_compare_toolbar"
+            android:padding="8dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="6dp">
+
+            <!-- 当前对齐状态显示（独立一行） -->
+            <TextView
+                android:id="@+id/tv_align_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="?android:attr/textColorPrimary"
+                android:paddingTop="2dp"
+                android:paddingBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <!-- 锁定/解锁切换按钮（靠最左） -->
+                <TextView
+                    android:id="@+id/btn_lock_toggle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:gravity="center_vertical|start"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="8dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:text="@string/gallery_update_lock_sync"
+                    android:textColor="@color/teal_500" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1" />
+
+                <!-- 对齐选中项按钮（靠最右） -->
+                <TextView
+                    android:id="@+id/btn_align_selected"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minHeight="36dp"
+                    android:gravity="center_vertical|end"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="6dp"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:text="@string/gallery_update_align_selected"
+                    android:textColor="@color/teal_500" />
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_lock_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/gallery_update_lock_hint"
+                android:textSize="10.5sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:layout_marginTop="2dp" />
+
+        </LinearLayout>
+
+        <!-- 旧版本头部与跳转按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="2dp">
+
+            <TextView
+                android:id="@+id/tv_old_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:textColor="@color/teal_500" />
+
+            <TextView
+                android:id="@+id/btn_old_first"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_first" />
+
+            <TextView
+                android:id="@+id/btn_old_last"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_last" />
+
+            <TextView
+                android:id="@+id/btn_old_jump"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="32dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:textSize="12sp"
+                android:textColor="@color/teal_500"
+                android:singleLine="true"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground"
+                android:text="@string/gallery_update_jump_page" />
+
+        </LinearLayout>
+
+        <!-- 旧版本标题（显示2-3行，点击可展开完整标题） -->
+        <TextView
+            android:id="@+id/tv_old_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="?android:attr/textColorPrimary"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:clickable="true"
+            android:focusable="true"
+            android:background="?android:attr/selectableItemBackground"
+            android:paddingTop="2dp"
+            android:paddingBottom="4dp"
+            android:layout_marginBottom="4dp" />
+
+        <!-- 旧版本缩略图横向列表 -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_old_previews"
+            android:layout_width="match_parent"
+            android:layout_height="138dp"
+            android:clipToPadding="false"
+            android:overScrollMode="never" />
+
+        <!-- 底部操作按钮：取消靠最左，应用靠最右 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginTop="12dp">
+
+            <TextView
+                android:id="@+id/btn_compare_cancel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="36dp"
+                android:gravity="center_vertical|start"
+                android:paddingStart="4dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="@string/cancel"
+                android:textSize="14sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground" />
+
+            <View
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/btn_compare_apply"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="36dp"
+                android:gravity="center_vertical|end"
+                android:paddingStart="12dp"
+                android:paddingEnd="4dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:text="@string/gallery_update_apply_mapping"
+                android:textColor="@color/teal_500"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="?android:attr/selectableItemBackground" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

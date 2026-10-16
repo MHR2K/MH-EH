@@ -1173,7 +1173,27 @@
     <string name="settings_advanced_auto_cbz_title">下载完成后自动打包为 CBZ</string>
     <string name="settings_advanced_auto_cbz_summary">下载完成后将图片打包为 CBZ，并仅保留 .cbz、.thumb、.ehviewer</string>
 
-    <!-- 提示 -->
-    <string name="auto_cbz_failed">自动打包 CBZ 失败</string>
+
+
+    <!-- 漫画更新缩略图对照 -->
+    <string name="gallery_update_btn_compare">🔍 对比新旧版本缩略图</string>
+    <string name="gallery_update_compare_title">新旧版本缩略图对照</string>
+    <string name="gallery_update_new_version_header">新版本：%1$s（共 %2$d 页）</string>
+    <string name="gallery_update_old_version_header">旧版本：%1$s（共 %2$d 页）</string>
+    <string name="gallery_update_new_version_label">新版本（共 %1$d 页）</string>
+    <string name="gallery_update_old_version_label">旧版本（共 %1$d 页）</string>
+    <string name="gallery_update_lock_sync">🔒 已锁定同步滑动</string>
+    <string name="gallery_update_unlock_sync">🔓 已解锁独立调整</string>
+    <string name="gallery_update_lock_hint">提示：解锁后可滑动任意一行对齐相同内容，锁定后将同步滑动检查</string>
+    <string name="gallery_update_align_status">旧版 P.%1$d ↔ 新版 P.%2$d (新版偏移 %+d)</string>
+    <string name="gallery_update_align_selected">对齐选中页</string>
+    <string name="gallery_update_jump_first">首页</string>
+    <string name="gallery_update_jump_last">末页</string>
+    <string name="gallery_update_jump_page">跳转</string>
+    <string name="gallery_update_jump_dialog_title">跳转到页码 (1 ~ %1$d)</string>
+    <string name="gallery_update_jump_invalid_page">请输入有效的页码 (1 ~ %1$d)</string>
+    <string name="gallery_update_apply_mapping">应用当前对齐并填入</string>
+    <string name="gallery_update_loading_preview">正在加载新版本预览…</string>
+    <string name="gallery_update_loading_failed">加载新版本失败</string>
 
 </resources>

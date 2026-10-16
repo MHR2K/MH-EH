@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:auto="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/thumb_card"
+    android:layout_width="84dp"
+    android:layout_height="132dp"
+    android:layout_marginStart="4dp"
+    android:layout_marginEnd="4dp"
+    android:layout_marginTop="2dp"
+    android:layout_marginBottom="2dp"
+    android:background="@drawable/bg_compare_thumb_normal"
+    android:clickable="true"
+    android:focusable="true"
+    android:padding="3dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <com.hippo.ehviewer.widget.FixedThumb
+            android:id="@+id/thumb_image"
+            android:layout_width="match_parent"
+            android:layout_height="100dp"
+            auto:aspect="0.667"
+            auto:minAspect="0.5"
+            auto:maxAspect="0.8"
+            auto:retryType="longClick" />
+
+        <TextView
+            android:id="@+id/thumb_text"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:textColor="?android:attr/textColorPrimary" />
+
+    </LinearLayout>
+
+</FrameLayout>

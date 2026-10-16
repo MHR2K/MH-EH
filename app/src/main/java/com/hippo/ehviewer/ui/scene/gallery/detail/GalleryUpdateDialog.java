@@ -177,6 +177,21 @@ public class GalleryUpdateDialog {
         etOldEnd.addTextChangedListener(autoCalcWatcher);
         etNewStart.addTextChangedListener(autoCalcWatcher);
 
+        View btnComparePreviews = dialogView.findViewById(R.id.btn_compare_previews);
+        if (btnComparePreviews != null) {
+            btnComparePreviews.setOnClickListener(v -> {
+                if (galleryDetail == null) return;
+                GalleryUpdatePreviewCompareDialog compareDialog = new GalleryUpdatePreviewCompareDialog(
+                        context, galleryDetail, newVersion, (oldStart, oldEnd, newStart, newEnd) -> {
+                    etOldStart.setText(String.valueOf(oldStart));
+                    etOldEnd.setText(String.valueOf(oldEnd));
+                    etNewStart.setText(String.valueOf(newStart));
+                    etNewEnd.setText(String.valueOf(newEnd));
+                });
+                compareDialog.show();
+            });
+        }
+
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.gallery_update_mode_title)
                 .setView(dialogView)

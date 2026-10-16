@@ -140,6 +140,17 @@
 
         </LinearLayout>
 
+        <Button
+            android:id="@+id/btn_compare_previews"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/gallery_update_btn_compare"
+            android:textColor="@color/teal_500"
+            android:textStyle="bold"
+            android:background="@drawable/bg_compare_toolbar" />
+
     </LinearLayout>
 
 </LinearLayout>
