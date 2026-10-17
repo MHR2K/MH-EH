@@ -930,6 +930,7 @@ public final class SpiderDen {
                 fileSize = Client.INSTANCE.getFileSize(cbzTarget);
             } catch (Throwable e) {
                 android.util.Log.w("SpiderDen", "tryOpenSmbStreamArchive: getFileSize failed", e);
+                mLastSmbError = "SMB: \\\\" + resolved.getAuthority().getHost() + "\\" + resolved.getShare() + "\\" + cbzPath + " — " + getShortError(e);
             }
             android.util.Log.i("SpiderDen", "tryOpenSmbStreamArchive: fileSize=" + fileSize);
             if (fileSize <= 0) return null;
@@ -1058,6 +1059,9 @@ public final class SpiderDen {
         if (streamPipe != null) {
             return streamPipe;
         }
+        if (mLastSmbError != null && isConnectionError(mLastSmbError)) {
+            return null;
+        }
 
         // 尝试所有支持的扩展名（base 为目录场景）
         android.util.Log.i("SpiderDen", "falling back to individual SMB files: gid=" + mGid + ", normBase=" + normBase);
@@ -1088,8 +1092,15 @@ public final class SpiderDen {
                     android.util.Log.d("SpiderDen", "SMB open failed: auth=" + resolved.getAuthority() + ", share=" + resolved.getShare() + ", rel=" + rel + ", err=" + e);
                 }
                 mLastSmbError = "SMB: " + smbFullPath + "\\" + filename + " — " + getShortError(e);
-                // 尝试下一个扩展名
+                // 尝试下一个扩展名；如果是网络连接故障则快速终止循环
+                if (isConnectionError(e)) {
+                    break;
+                }
             }
+        }
+        // 若已确定为连接错误，不再做列目录兜底
+        if (mLastSmbError != null && isConnectionError(mLastSmbError)) {
+            return null;
         }
         // 兜底：列目录查找（处理远端大小写差异或不一致扩展名）
         try {
@@ -1235,5 +1246,47 @@ public final class SpiderDen {
         if (e instanceof java.net.UnknownHostException) return "无法解析主机名";
         String msg = e.getMessage();
         return msg != null ? msg : e.getClass().getSimpleName();
+    }
+
+    public static boolean isConnectionError(Throwable e) {
+        if (e == null) return false;
+        if (e instanceof java.net.ConnectException
+                || e instanceof java.net.SocketTimeoutException
+                || e instanceof java.net.UnknownHostException
+                || e instanceof java.net.NoRouteToHostException) {
+            return true;
+        }
+        Throwable cause = e.getCause();
+        if (cause != null && cause != e && isConnectionError(cause)) {
+            return true;
+        }
+        String msg = e.getMessage();
+        if (msg != null) {
+            String lower = msg.toLowerCase(java.util.Locale.US);
+            if (lower.contains("failed to connect")
+                    || lower.contains("connectexception")
+                    || lower.contains("timed out")
+                    || lower.contains("timeout")
+                    || lower.contains("refused")
+                    || lower.contains("unreachable")
+                    || lower.contains("no route to host")
+                    || lower.contains("unknownhost")
+                    || lower.contains("no password for")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean isConnectionError(String errorMsg) {
+        if (errorMsg == null) return false;
+        return errorMsg.contains("连接超时")
+                || errorMsg.contains("连接被拒绝")
+                || errorMsg.contains("无法解析主机名")
+                || errorMsg.contains("主机不可达")
+                || errorMsg.contains("timed out")
+                || errorMsg.contains("refused")
+                || errorMsg.contains("unreachable")
+                || errorMsg.contains("No password");
     }
 }

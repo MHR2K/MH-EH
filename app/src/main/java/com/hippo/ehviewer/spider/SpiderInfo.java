@@ -74,6 +74,7 @@ public class SpiderInfo {
     private static final int MAX_STORED_PTOKEN_CHARS = 1024;
 
     static final String TOKEN_FAILED = "failed";
+    public static final String LOCAL_TOKEN = "local";
 
     public int startPage = 0;
     public long gid = -1;

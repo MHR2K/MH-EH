@@ -191,6 +191,9 @@ public class EhGalleryProvider extends GalleryProvider2 implements SpiderQueen.O
 
     @Override
     public void onFinish(int finished, int downloaded, int total) {
+        if (mSpiderQueen != null && (mSpiderQueen.size() == GalleryProvider.STATE_ERROR || total == -1)) {
+            notifyDataChanged();
+        }
     }
 
     @Override

@@ -474,7 +474,7 @@ class DownloadBatchActions(private val mHost: Host?) {
 
                                     // 检查是否在 SMB 上（必须在清除路径映射前推导 Target）
                                     val smbTarget = SmbPathResolver.resolve(info.gid)
-                                    val isOnSmb = smbTarget != null && (SmbStorageTracker.isOnSmb(info.gid) || dir == null || !dir.exists())
+                                    val isOnSmb = smbTarget != null && SmbStorageTracker.isOnSmb(info.gid)
                                     if (isOnSmb) {
                                         smbTargets.add(info to smbTarget)
                                         smbGidSet.add(info.gid)
@@ -637,7 +637,7 @@ class DownloadBatchActions(private val mHost: Host?) {
 
                                     // 检查是否在 SMB 上
                                     val smbTarget = SmbPathResolver.resolve(info.gid)
-                                    val isOnSmb = smbTarget != null && (SmbStorageTracker.isOnSmb(info.gid) || dir == null || !dir.exists())
+                                    val isOnSmb = smbTarget != null && SmbStorageTracker.isOnSmb(info.gid)
                                     if (isOnSmb) {
                                         smbTargets.add(info to smbTarget)
                                         smbGidSet.add(info.gid)
@@ -810,7 +810,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                                 val smbInfos = mutableListOf<DownloadInfo>()
                                 for (info in infosFinal) {
                                     val smbCheck = SmbPathResolver.resolve(info.gid)
-                                    if (smbCheck != null) {
+                                    if (smbCheck != null && SmbStorageTracker.isOnSmb(info.gid)) {
                                         smbInfos.add(info)
                                     }
                                 }

@@ -20,6 +20,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.BitmapFactory;
 import android.os.AsyncTask;
+import android.os.Looper;
 import android.os.Process;
 import android.text.TextUtils;
 import android.util.Log;
@@ -891,8 +892,9 @@ public final class SpiderQueen implements Runnable {
         }
 
         // Read from SMB (.ehviewer file in the SMB-mapped directory)
+        // 关键防护：绝不能在 Android 主线程执行 SMB 网络请求，否则触发 NetworkOnMainThreadException 或导致 ANR
         SpiderInfo fromSmb = null;
-        if (SmbStorageTracker.INSTANCE.isOnSmb(mGalleryInfo.gid)) {
+        if (Looper.myLooper() != Looper.getMainLooper() && SmbStorageTracker.INSTANCE.isOnSmb(mGalleryInfo.gid)) {
             fromSmb = readSpiderInfoFromSmb();
             if (!isValidSpiderInfo(fromSmb, mGalleryInfo)) {
                 fromSmb = null;
@@ -1028,7 +1030,7 @@ public final class SpiderQueen implements Runnable {
 
         // Check previewIndex
         int previewIndex;
-        if (spiderInfo.previewPerPage >= 0) {
+        if (spiderInfo.previewPerPage > 0) {
             previewIndex = index / spiderInfo.previewPerPage;
         } else {
             previewIndex = 0;
@@ -1258,8 +1260,10 @@ public final class SpiderQueen implements Runnable {
 
         // Interrupt all workers
         synchronized (mWorkerLock) {
-            mWorkerPoolExecutor.shutdownNow();
-            mWorkerPoolExecutor = null;
+            if (mWorkerPoolExecutor != null) {
+                mWorkerPoolExecutor.shutdownNow();
+                mWorkerPoolExecutor = null;
+            }
         }
         notifyFinish();
 
@@ -1279,6 +1283,9 @@ public final class SpiderQueen implements Runnable {
     private void updatePageState(int index, @State int state, String error) {
         int oldState;
         synchronized (mPageStateLock) {
+            if (mPageStateArray == null || index < 0 || index >= mPageStateArray.length) {
+                return;
+            }
             oldState = mPageStateArray[index];
             mPageStateArray[index] = state;
 
@@ -1791,7 +1798,11 @@ public final class SpiderQueen implements Runnable {
                 return false;
             }
 
-            int size = mPageStateArray.length;
+            int[] pageStateArray = mPageStateArray;
+            if (pageStateArray == null) {
+                return false;
+            }
+            int size = pageStateArray.length;
 
             // Get request index
             int index;
@@ -1822,6 +1833,9 @@ public final class SpiderQueen implements Runnable {
             }
 
             synchronized (mPageStateLock) {
+                if (mPageStateArray == null || index < 0 || index >= mPageStateArray.length) {
+                    return true;
+                }
                 // Check the page state
                 int state = mPageStateArray[index];
                 if (state == STATE_DOWNLOADING || (!force && (state == STATE_FINISHED || state == STATE_FAILED))) {
@@ -1835,6 +1849,14 @@ public final class SpiderQueen implements Runnable {
             // Check exist for not force request
             if (!force && mSpiderDen.contain(index)) {
                 updatePageState(index, STATE_FINISHED);
+                return true;
+            }
+
+            // 对于 SMB 漫画：若为本地/导入漫画（或无合法 token），文件读取失败后无法也不应向网络请求图片
+            if (SmbStorageTracker.INSTANCE.isOnSmb(mGalleryInfo.gid)
+                    && (SpiderInfo.LOCAL_TOKEN.equals(spiderInfo.token) || mGalleryInfo.token == null)) {
+                String smbErr = mSpiderDen.getLastSmbError();
+                updatePageState(index, STATE_FAILED, smbErr != null ? smbErr : GetText.getString(R.string.error_reading_failed));
                 return true;
             }
 
@@ -2020,7 +2042,8 @@ public final class SpiderQueen implements Runnable {
                 }
 
                 // Check index valid
-                if (index < 0 || index >= mPageStateArray.length) {
+                int[] pageStateArray = mPageStateArray;
+                if (pageStateArray == null || index < 0 || index >= pageStateArray.length) {
                     resetDecodeIndex();
                     notifyGetImageFailure(index, GetText.getString(R.string.error_out_of_range));
                     continue;
@@ -2029,6 +2052,8 @@ public final class SpiderQueen implements Runnable {
                 InputStreamPipe pipe = mSpiderDen.openInputStreamPipe(index);
                 if (pipe == null) {
                     resetDecodeIndex();
+                    String smbErr = mSpiderDen.getLastSmbError();
+                    boolean isSmbConnErr = SpiderDen.isConnectionError(smbErr);
                     // Track consecutive failures to detect silent loops
                     if (index == mLastNullPipeIndex) {
                         mConsecutiveNullPipeFailures++;
@@ -2036,13 +2061,13 @@ public final class SpiderQueen implements Runnable {
                         mConsecutiveNullPipeFailures = 1;
                         mLastNullPipeIndex = index;
                     }
-                    if (mConsecutiveNullPipeFailures >= 3) {
-                        // After 3 consecutive failures, report error instead of silent loop
+                    if (isSmbConnErr || mConsecutiveNullPipeFailures >= 3) {
+                        // After 3 consecutive failures or connection error, report error instead of silent loop
                         Log.e(TAG, "SMB pipe null after " + mConsecutiveNullPipeFailures
                                 + " retries for index=" + index + ", reporting failure");
                         mConsecutiveNullPipeFailures = 0;
                         mLastNullPipeIndex = -1;
-                        notifyGetImageFailure(index, GetText.getString(R.string.error_reading_failed));
+                        notifyGetImageFailure(index, smbErr != null ? smbErr : GetText.getString(R.string.error_reading_failed));
                     } else {
                         // Can't find the file, it might be removed from cache,
                         // Reset it state and request it

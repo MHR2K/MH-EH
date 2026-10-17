@@ -610,7 +610,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
 
     @Override
     protected void onDestroy() {
-        if (!transferService.isShutdown()) {
+        if (transferService != null && !transferService.isShutdown()) {
             transferService.shutdown();
             transferService = null;
         }
@@ -807,10 +807,12 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
 
         if (!autoTransferring) {
             mAutoTransferPanel.setImageResource(R.drawable.ic_start_play_24);
-            transferService.shutdown();
+            if (transferService != null) {
+                transferService.shutdown();
+            }
         } else {
             mAutoTransferPanel.setImageResource(R.drawable.ic_pause_circle);
-            if (transferService.isShutdown()) {
+            if (transferService == null || transferService.isShutdown()) {
                 transferService = Executors.newSingleThreadScheduledExecutor();
             }
             long initialDelay = Settings.getStartTransferTime();

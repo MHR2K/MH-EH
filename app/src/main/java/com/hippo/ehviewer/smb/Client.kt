@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit
  */
 object Client {
     @Volatile
-    lateinit var authenticator: Authenticator
+    var authenticator: Authenticator = SmbServerAuthenticator
 
     // 配置 SMB 客户端超时：增加超时时间以提高稳定性
     private val smbConfig = SmbConfig.builder()
@@ -242,6 +242,10 @@ object Client {
                 lastException = e
                 if (BuildConfig.DEBUG) {
                     android.util.Log.w("Client", "openInputStream attempt $attempt failed: ${e.message}")
+                }
+                // 主机不可达、无法解析或连接直接被拒绝时，不进行重试，快速失败
+                if (e is java.net.UnknownHostException || e is java.net.NoRouteToHostException || e is java.net.ConnectException) {
+                    throw e
                 }
             }
             if (attempt < MAX_RETRY_COUNT) {
