@@ -471,6 +471,9 @@
     <string name="remember_download_label">記住下載標籤</string>
     <string name="default_download_label">預設下載標籤</string>
     <string name="added_to_download_list">已新增至下載列表</string>
+    <string name="download_already_in_list">該漫畫已在下載列表中</string>
+    <string name="download_manager_not_ready">下載管理器未就緒，請稍後重試</string>
+    <string name="download_add_failed">新增至下載列表失敗</string>
     <string name="download_searching">搜尋中，請稍候</string>
     <string name="download_searching_failed">搜尋失敗</string>
 

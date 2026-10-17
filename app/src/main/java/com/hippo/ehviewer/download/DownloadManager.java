@@ -629,8 +629,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             // Add to label download list
             LinkedList<DownloadInfo> list = getInfoListForLabel(info.label);
             if (list == null) {
-                Log.e(TAG, "Can't find download info list with label: " + label);
-                return;
+                info.label = null;
+                label = null;
+                list = mDefaultInfoList;
             }
             list.addFirst(info);
 
@@ -646,7 +647,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // Notify
             for (DownloadInfoListener l : mDownloadInfoListeners) {
-                l.onAdd(info, list, list.size() - 1);
+                l.onAdd(info, list, 0);
             }
             // Make sure download is running
             ensureDownload();
@@ -865,10 +866,10 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         }
     }
 
-    public void addDownload(GalleryInfo galleryInfo, @Nullable String label, int state) {
+    public boolean addDownload(GalleryInfo galleryInfo, @Nullable String label, int state) {
         if (containDownloadInfo(galleryInfo.gid)) {
             // Contain
-            return;
+            return false;
         }
 
         // It is new download info
@@ -889,15 +890,17 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // Add to label download list
         LinkedList<DownloadInfo> list = getInfoListForLabel(info.label);
+        if (list == null) {
+            // 指定标签不存在时，安全回退至默认列表
+            info.label = null;
+            label = null;
+            list = mDefaultInfoList;
+        }
         if (!mLabelCountMap.containsKey(label)) {
             mLabelCountMap.put(label, 1L);
         } else {
             long value = mLabelCountMap.get(label) + 1L;
             mLabelCountMap.put(label, value);
-        }
-        if (list == null) {
-            Log.e(TAG, "Can't find download info list with label: " + label);
-            return;
         }
         list.addFirst(info);
 
@@ -910,7 +913,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // Notify
         for (DownloadInfoListener l : mDownloadInfoListeners) {
-            l.onAdd(info, list, list.size() - 1);
+            l.onAdd(info, list, 0);
         }
 
         // 统计：添加下载
@@ -920,10 +923,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         if (TextUtils.isEmpty(info.titleJpn)) {
             fetchTitleJpnAsync(info);
         }
+        return true;
     }
 
-    public void addDownload(GalleryInfo galleryInfo, @Nullable String label) {
-        addDownload(galleryInfo, label, DownloadInfo.STATE_NONE);
+    public boolean addDownload(GalleryInfo galleryInfo, @Nullable String label) {
+        return addDownload(galleryInfo, label, DownloadInfo.STATE_NONE);
     }
 
     public void addDownloadInfo(GalleryInfo galleryInfo, @Nullable String label) {

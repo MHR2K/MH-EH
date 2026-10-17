@@ -575,6 +575,9 @@
     <string name="remember_download_label">Remember download label</string>
     <string name="default_download_label">Default download label</string>
     <string name="added_to_download_list">Added to download list</string>
+    <string name="download_already_in_list">Gallery is already in download list</string>
+    <string name="download_manager_not_ready">Download manager is not ready, please try again later</string>
+    <string name="download_add_failed">Failed to add to download list</string>
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
     <string name="find_same_author">Find same author</string>

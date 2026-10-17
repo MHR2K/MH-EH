@@ -1433,12 +1433,13 @@ public final class GalleryListScene extends BaseScene
                             break;
                         case 2: // Add download entry only
                             if (downloaded) {
-                                Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                Toast.makeText(context, R.string.download_already_in_list, Toast.LENGTH_SHORT).show();
                                 break;
                             }
-                            final DownloadManager dm = mDownloadManager;
+                            final DownloadManager dm = mDownloadManager != null ? mDownloadManager : EhApplication.getDownloadManager(context);
+                            mDownloadManager = dm;
                             if (dm == null) {
-                                // DownloadManager 尚未就绪
+                                Toast.makeText(context, R.string.download_manager_not_ready, Toast.LENGTH_SHORT).show();
                                 break;
                             }
                             boolean justAdd = false;
@@ -1452,8 +1453,12 @@ public final class GalleryListScene extends BaseScene
                                 label = null;
                             }
                             if (justAdd) {
-                                dm.addDownload(gi, label);
-                                Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                boolean added = dm.addDownload(gi, label);
+                                if (added) {
+                                    Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                } else {
+                                    Toast.makeText(context, R.string.download_already_in_list, Toast.LENGTH_SHORT).show();
+                                }
                             } else {
                                 List<DownloadLabel> list = dm.getLabelList();
                                 final String[] labelItems = new String[list.size() + 1];
@@ -1472,14 +1477,18 @@ public final class GalleryListScene extends BaseScene
                                                     label1 = null;
                                                 }
                                             }
-                                            dm.addDownload(gi, label1);
+                                            boolean added = dm.addDownload(gi, label1);
                                             if (builder.isChecked()) {
                                                 Settings.putHasDefaultDownloadLabel(true);
                                                 Settings.putDefaultDownloadLabel(label1);
                                             } else {
                                                 Settings.putHasDefaultDownloadLabel(false);
                                             }
-                                            Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                            if (added) {
+                                                Toast.makeText(context, R.string.added_to_download_list, Toast.LENGTH_SHORT).show();
+                                            } else {
+                                                Toast.makeText(context, R.string.download_already_in_list, Toast.LENGTH_SHORT).show();
+                                            }
                                         }, context.getString(R.string.remember_download_label), false)
                                         .setTitle(R.string.add_download_entry_only)
                                         .show();
@@ -2265,10 +2274,49 @@ public final class GalleryListScene extends BaseScene
         @Override
         public SwipeResultAction onSwipeItem(GalleryHolder holder, final int position, int result) {
             switch (result) {
-                case SwipeableItemConstants.RESULT_SWIPED_LEFT:
+                case SwipeableItemConstants.RESULT_SWIPED_LEFT: {
+                    GalleryInfo gi = getDataAt(position);
+                    MainActivity activity = getActivity2();
+                    if (gi == null || activity == null) {
+                        return new SwipeResultActionDefault();
+                    }
+
+                    final DownloadManager dm = mDownloadManager != null ? mDownloadManager : EhApplication.getDownloadManager(activity);
+                    mDownloadManager = dm;
+                    if (dm == null) {
+                        showTip(R.string.download_manager_not_ready, LENGTH_SHORT);
+                        return new SwipeResultActionDefault();
+                    }
+
+                    if (dm.containDownloadInfo(gi.gid)) {
+                        showTip(R.string.download_already_in_list, LENGTH_SHORT);
+                        return new SwipeResultActionDefault();
+                    }
+
+                    String label = null;
+                    if (Settings.getHasDefaultDownloadLabel()) {
+                        String defaultLabel = Settings.getDefaultDownloadLabel();
+                        if (defaultLabel == null || dm.containLabel(defaultLabel)) {
+                            label = defaultLabel;
+                        }
+                    }
+
+                    boolean added = dm.addDownload(gi, label);
+                    if (!added) {
+                        showTip(R.string.download_add_failed, LENGTH_SHORT);
+                        return new SwipeResultActionDefault();
+                    }
+
                     return new SwipeResultActionAddDownload(position);
-                case SwipeableItemConstants.RESULT_SWIPED_RIGHT:
+                }
+                case SwipeableItemConstants.RESULT_SWIPED_RIGHT: {
+                    GalleryInfo gi = getDataAt(position);
+                    MainActivity activity = getActivity2();
+                    if (gi == null || activity == null) {
+                        return new SwipeResultActionDefault();
+                    }
                     return new SwipeResultActionStartDownload(position);
+                }
                 case SwipeableItemConstants.RESULT_CANCELED:
                 default:
                     return new SwipeResultActionDefault();
@@ -2286,21 +2334,9 @@ public final class GalleryListScene extends BaseScene
         @Override
         protected void onPerformAction() {
             super.onPerformAction();
-            GalleryInfo gi = mAdapter.getDataAt(mPosition);
-            if (gi != null) {
-                MainActivity activity = getActivity2();
-                if (activity != null) {
-                    String label = null;
-                    if (Settings.getHasDefaultDownloadLabel()) {
-                        label = Settings.getDefaultDownloadLabel();
-                    }
-                    if (mDownloadManager != null) {
-                        mDownloadManager.addDownload(gi, label);
-                    }
-                    showTip(R.string.added_to_download_list, LENGTH_SHORT);
-                    mHelper.removeAt(mPosition);
-                    mAdapter.notifyItemRemoved(mPosition);
-                }
+            showTip(R.string.added_to_download_list, LENGTH_SHORT);
+            if (mHelper != null && mPosition >= 0 && mPosition < mHelper.size()) {
+                mHelper.removeAt(mPosition);
             }
         }
     }
@@ -2320,8 +2356,9 @@ public final class GalleryListScene extends BaseScene
                 MainActivity activity = getActivity2();
                 if (activity != null) {
                     CommonOperations.startDownload(activity, gi, false);
-                    mHelper.removeAt(mPosition);
-                    mAdapter.notifyItemRemoved(mPosition);
+                    if (mHelper != null && mPosition >= 0 && mPosition < mHelper.size()) {
+                        mHelper.removeAt(mPosition);
+                    }
                 }
             }
         }
