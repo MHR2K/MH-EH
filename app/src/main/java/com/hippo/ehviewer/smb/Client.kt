@@ -19,6 +19,7 @@ import com.rapid7.client.dcerpc.transport.SMBTransportFactories
 import com.hippo.ehviewer.BuildConfig
 import jcifs.context.SingletonContext
 import java.io.IOException
+import java.net.InetAddress
 import java.net.Inet4Address
 import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
@@ -52,9 +53,11 @@ object Client {
     private val shares = mutableMapOf<Pair<Authority, String>, DiskShare>()
     private val sharesLock = Any()
     
-    // DNS 缓存：避免重复解析
-    private val dnsCache = mutableMapOf<String, String>()
+    // DNS 缓存：避免重复解析（附带 60 秒 TTL）
+    private data class DnsCacheEntry(val ip: String, val timestamp: Long)
+    private val dnsCache = mutableMapOf<String, DnsCacheEntry>()
     private val dnsCacheLock = Any()
+    private const val DNS_CACHE_TTL = 60 * 1000L
     
     // 会话超时：5分钟无活动则清理
     private val SESSION_TIMEOUT = 5 * 60 * 1000L
@@ -421,6 +424,8 @@ object Client {
             val connection = try {
                 client.connect(hostAddress, authority.port)
             } catch (e: IOException) {
+                // 连接失败时清除该主机的 DNS 缓存，防止残留不可达的旧 IP
+                clearDnsCache(authority.host)
                 throw e
             }
             val auth = AuthenticationContext(authority.username, password.toCharArray(), authority.domain)
@@ -460,6 +465,10 @@ object Client {
                 }
             }
         }
+        // 清理超时的 DNS 缓存
+        synchronized(dnsCacheLock) {
+            dnsCache.entries.removeAll { now - it.value.timestamp > DNS_CACHE_TTL }
+        }
     }
 
     /**
@@ -475,27 +484,79 @@ object Client {
         }
     }
 
+    private fun isIpAddress(host: String): Boolean {
+        if (host.contains(':')) return true
+        val parts = host.split('.')
+        if (parts.size != 4) return false
+        return parts.all { p ->
+            val num = p.toIntOrNull()
+            num != null && num in 0..255
+        }
+    }
+
     @Throws(IOException::class)
-    private fun resolveHostName(hostName: String): String {
+    fun resolveHostName(hostName: String): String {
+        val trimmed = hostName.trim()
+        if (trimmed.isEmpty() || isIpAddress(trimmed)) {
+            return trimmed
+        }
+
+        val now = System.currentTimeMillis()
         // 检查缓存
         synchronized(dnsCacheLock) {
-            dnsCache[hostName]?.let { return it }
+            val entry = dnsCache[trimmed]
+            if (entry != null && now - entry.timestamp < DNS_CACHE_TTL) {
+                return entry.ip
+            }
         }
-        
+
+        // 1. 优先使用系统 DNS（支持路由器 DHCP 主机名、mDNS .local 等，避免受限于有线与无线的 NetBIOS 广播隔离）
+        try {
+            val addresses = InetAddress.getAllByName(trimmed)
+            val best = addresses.firstOrNull { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
+                ?: addresses.firstOrNull { it is Inet4Address }
+                ?: addresses.firstOrNull()
+            val result = best?.hostAddress
+            if (!result.isNullOrBlank()) {
+                synchronized(dnsCacheLock) {
+                    dnsCache[trimmed] = DnsCacheEntry(result, now)
+                }
+                return result
+            }
+        } catch (_: Throwable) {
+            // 系统 DNS 未解析到，尝试回退到 NetBIOS
+        }
+
+        // 2. 回退到 JCIFS NetBIOS 广播解析
         try {
             val nameServiceClient = SingletonContext.getInstance().nameServiceClient
-            val addresses = nameServiceClient.getAllByName(hostName, false).mapNotNull { it.toInetAddress() }
-            val address = addresses.firstOrNull { it is Inet4Address } ?: addresses.first()
-            val result = address.hostAddress ?: hostName
-            
+            val addresses = nameServiceClient.getAllByName(trimmed, false).mapNotNull { it.toInetAddress() }
+            val best = addresses.firstOrNull { it is Inet4Address && !it.isLoopbackAddress && !it.isLinkLocalAddress }
+                ?: addresses.firstOrNull { it is Inet4Address }
+                ?: addresses.firstOrNull()
+            val result = best?.hostAddress ?: trimmed
+
             // 存入缓存
             synchronized(dnsCacheLock) {
-                dnsCache[hostName] = result
+                dnsCache[trimmed] = DnsCacheEntry(result, now)
             }
             return result
         } catch (e: UnknownHostException) {
             // 回退到原始主机名
-            return hostName
+            return trimmed
+        }
+    }
+
+    /**
+     * 清理 DNS 缓存。当指定 host 时仅移除该条目，未指定时清空全部。
+     */
+    fun clearDnsCache(hostName: String? = null) {
+        synchronized(dnsCacheLock) {
+            if (hostName != null) {
+                dnsCache.remove(hostName.trim())
+            } else {
+                dnsCache.clear()
+            }
         }
     }
 
