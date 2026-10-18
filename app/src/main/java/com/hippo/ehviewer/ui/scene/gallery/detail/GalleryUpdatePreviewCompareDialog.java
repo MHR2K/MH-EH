@@ -58,6 +58,25 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Log;
+import android.util.LruCache;
+
+import com.hippo.ehviewer.client.data.GalleryInfo;
+import com.hippo.ehviewer.dao.DownloadInfo;
+import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.util.CbzUtils;
+import com.hippo.io.UniFileInputStreamPipe;
+import com.hippo.lib.yorozuya.IOUtils;
+import com.hippo.streampipe.InputStreamPipe;
+import com.hippo.unifile.UniFile;
+import com.hippo.util.BitmapUtils;
+
+import java.io.InputStream;
+import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import okhttp3.OkHttpClient;
 
 /**
@@ -119,14 +138,47 @@ public class GalleryUpdatePreviewCompareDialog {
     private int newItemsPerPage = 20;
     private PreviewCompareAdapter newAdapter;
 
+    @Nullable
+    private final DownloadInfo oldDownloadInfo;
+    @Nullable
+    private final SpiderDen spiderDen;
+    @Nullable
+    private UniFile oldDownloadDir;
+    private final LruCache<Integer, Bitmap> localThumbCache = new LruCache<>(80);
+
     public GalleryUpdatePreviewCompareDialog(@NonNull Context context,
                                              @NonNull GalleryDetail oldDetail,
                                              @NonNull NewVersion newVersion,
                                              @Nullable OnMappingSelectedListener listener) {
+        this(context, oldDetail, newVersion, null, null, listener);
+    }
+
+    public GalleryUpdatePreviewCompareDialog(@NonNull Context context,
+                                             @NonNull GalleryDetail oldDetail,
+                                             @NonNull NewVersion newVersion,
+                                             @Nullable GalleryDetail newDetail,
+                                             @Nullable OnMappingSelectedListener listener) {
+        this(context, oldDetail, newVersion, newDetail, null, listener);
+    }
+
+    public GalleryUpdatePreviewCompareDialog(@NonNull Context context,
+                                             @NonNull GalleryDetail oldDetail,
+                                             @NonNull NewVersion newVersion,
+                                             @Nullable GalleryDetail newDetail,
+                                             @Nullable DownloadInfo oldDownloadInfo,
+                                             @Nullable OnMappingSelectedListener listener) {
         this.context = context;
         this.oldDetail = oldDetail;
         this.newVersion = newVersion;
+        this.newDetail = newDetail;
+        this.oldDownloadInfo = oldDownloadInfo;
         this.listener = listener;
+        GalleryInfo infoForDen = oldDownloadInfo != null ? oldDownloadInfo : oldDetail;
+        this.spiderDen = new SpiderDen(infoForDen);
+        this.oldDownloadDir = SpiderDen.getGalleryDownloadDir(infoForDen);
+        if (oldDownloadInfo != null && oldDetail.pages <= 0 && oldDownloadInfo.pages > 0) {
+            oldDetail.pages = oldDownloadInfo.pages;
+        }
     }
 
     public void show() {
@@ -145,7 +197,11 @@ public class GalleryUpdatePreviewCompareDialog {
         }
 
         initOldVersionData();
-        fetchNewVersionData();
+        if (newDetail != null) {
+            onNewDetailLoaded(newDetail);
+        } else {
+            fetchNewVersionData();
+        }
     }
 
     private void initViews(View view) {
@@ -350,7 +406,7 @@ public class GalleryUpdatePreviewCompareDialog {
     }
 
     /**
-     * 初始化旧版本数据（内存中已存在）
+     * 初始化旧版本数据
      */
     private void initOldVersionData() {
         tvOldLabel.setText(context.getString(R.string.gallery_update_old_version_label, oldDetail.pages));
@@ -369,10 +425,64 @@ public class GalleryUpdatePreviewCompareDialog {
                     oldPreviews.put(preview.getPosition(), preview);
                 }
             }
+        } else {
+            // 旧版本没有 previewSet 时（例如传入的是 mock GalleryDetail），异步拉取完整详情
+            fetchOldVersionData();
         }
 
         oldAdapter = new PreviewCompareAdapter(false, oldDetail.gid, oldDetail.token, oldDetail.pages, oldPreviews);
         rvOld.setAdapter(oldAdapter);
+    }
+
+    private void fetchOldVersionData() {
+        if (oldDetail.gid <= 0 || oldDetail.token == null) return;
+        layoutLoading.setVisibility(View.VISIBLE);
+        executor.execute(() -> {
+            try {
+                String url = EhUrl.getGalleryDetailUrl(oldDetail.gid, oldDetail.token);
+                OkHttpClient client = EhApplication.getOkHttpClient(context);
+                GalleryDetail detail = EhEngine.getGalleryDetail(null, client, url);
+                mainHandler.post(() -> {
+                    if (dialog == null || !dialog.isShowing()) return;
+                    layoutLoading.setVisibility(View.GONE);
+                    if (detail != null) {
+                        onOldDetailLoaded(detail);
+                    }
+                });
+            } catch (Throwable e) {
+                Log.w("CompareDialog", "Failed to fetch old gallery detail: " + e.getMessage());
+                mainHandler.post(() -> {
+                    if (dialog == null || !dialog.isShowing()) return;
+                    layoutLoading.setVisibility(View.GONE);
+                });
+            }
+        });
+    }
+
+    private void onOldDetailLoaded(@NonNull GalleryDetail detail) {
+        if (detail.pages > 0) {
+            oldDetail.pages = detail.pages;
+        }
+        tvOldLabel.setText(context.getString(R.string.gallery_update_old_version_label, oldDetail.pages));
+        String oldTitle = EhUtils.getSuitableTitle(detail);
+        if (oldTitle != null && !oldTitle.isEmpty()) {
+            tvOldTitle.setText(oldTitle);
+        }
+        if (detail.previewSet != null) {
+            int size = detail.previewSet.size();
+            if (size > 0) {
+                oldItemsPerPage = size;
+            }
+            for (int i = 0; i < size; i++) {
+                GalleryPreview preview = detail.previewSet.getGalleryPreview(detail.gid, i);
+                if (preview != null) {
+                    oldPreviews.put(preview.getPosition(), preview);
+                }
+            }
+        }
+        if (oldAdapter != null) {
+            oldAdapter.setTotalCount(oldDetail.pages);
+        }
     }
 
     /**
@@ -509,6 +619,13 @@ public class GalleryUpdatePreviewCompareDialog {
                 Pair<PreviewSet, Integer> pair = EhEngine.getPreviewSet(null, client, url);
                 if (pair != null && pair.first != null) {
                     PreviewSet pSet = pair.first;
+                    if (pSet.size() > 0) {
+                        if (isNewVersion) {
+                            newItemsPerPage = pSet.size();
+                        } else {
+                            oldItemsPerPage = pSet.size();
+                        }
+                    }
                     SparseArray<GalleryPreview> previews = isNewVersion ? newPreviews : oldPreviews;
                     for (int i = 0; i < pSet.size(); i++) {
                         GalleryPreview gp = pSet.getGalleryPreview(gid, i);
@@ -538,7 +655,7 @@ public class GalleryUpdatePreviewCompareDialog {
         private final boolean isNew;
         private final long gid;
         private final String token;
-        private final int totalCount;
+        private int totalCount;
         private final SparseArray<GalleryPreview> previewMap;
 
         public PreviewCompareAdapter(boolean isNew, long gid, String token, int totalCount,
@@ -548,6 +665,11 @@ public class GalleryUpdatePreviewCompareDialog {
             this.token = token;
             this.totalCount = totalCount;
             this.previewMap = previewMap;
+        }
+
+        public void setTotalCount(int totalCount) {
+            this.totalCount = totalCount;
+            notifyDataSetChanged();
         }
 
         @NonNull
@@ -585,13 +707,134 @@ public class GalleryUpdatePreviewCompareDialog {
             // 载入缩略图
             GalleryPreview preview = previewMap.get(position);
             if (preview != null) {
+                holder.image.resetClip();
                 preview.load(holder.image);
+            } else if (!isNew) {
+                loadLocalThumbnail(holder, position);
             } else {
                 holder.image.load(null, null);
                 int itemsPerPage = isNew ? newItemsPerPage : oldItemsPerPage;
                 int previewPage = position / Math.max(1, itemsPerPage);
                 requestPreviewPage(isNew, gid, token, previewPage);
             }
+        }
+
+        private void loadLocalThumbnail(PreviewCompareHolder holder, int position) {
+            Bitmap cached = localThumbCache.get(position);
+            if (cached != null && !cached.isRecycled()) {
+                holder.image.unload();
+                holder.image.resetClip();
+                holder.image.setImageBitmap(cached);
+                return;
+            }
+
+            holder.image.load(null, null);
+            final int targetPosition = position;
+
+            executor.execute(() -> {
+                Bitmap bmp = decodeLocalPageThumbnail(targetPosition);
+                if (bmp != null) {
+                    localThumbCache.put(targetPosition, bmp);
+                    mainHandler.post(() -> {
+                        if (dialog != null && dialog.isShowing() && holder.getBindingAdapterPosition() == targetPosition) {
+                            holder.image.unload();
+                            holder.image.resetClip();
+                            holder.image.setImageBitmap(bmp);
+                        }
+                    });
+                } else {
+                    // 本地没有该页，回退到在线画廊预览
+                    mainHandler.post(() -> {
+                        if (dialog != null && dialog.isShowing()) {
+                            GalleryPreview preview = oldPreviews.get(targetPosition);
+                            if (preview != null) {
+                                if (holder.getBindingAdapterPosition() == targetPosition) {
+                                    holder.image.resetClip();
+                                    preview.load(holder.image);
+                                }
+                            } else {
+                                int previewPage = targetPosition / Math.max(1, oldItemsPerPage);
+                                requestPreviewPage(false, gid, token, previewPage);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        @Nullable
+        private Bitmap decodeLocalPageThumbnail(int position) {
+            if (spiderDen != null) {
+                InputStreamPipe pipe = spiderDen.openDownloadInputStreamPipe(position);
+                if (pipe != null) {
+                    try {
+                        Bitmap bmp = BitmapUtils.decodeStream(pipe, 250, 250);
+                        if (bmp != null) {
+                            return bmp;
+                        }
+                    } catch (Throwable t) {
+                        Log.w("CompareDialog", "Failed to decode thumbnail from pipe for pos " + position, t);
+                    }
+                }
+            }
+
+            // 兜底：直接扫描物理目录
+            final UniFile dir = oldDownloadDir;
+            if (dir != null && dir.isDirectory()) {
+                String name = String.format(Locale.US, "%08d", position + 1);
+                String[] extensions = {".jpg", ".png", ".webp", ".gif", ".jpeg", ".bmp"};
+                UniFile file = null;
+                for (String ext : extensions) {
+                    UniFile f = dir.findFile(name + ext);
+                    if (f != null && f.isFile()) {
+                        file = f;
+                        break;
+                    }
+                }
+                if (file == null) {
+                    try {
+                        UniFile[] children = dir.listFiles();
+                        if (children != null) {
+                            for (UniFile f : children) {
+                                if (f.isFile() && f.getName() != null && f.getName().startsWith(name)) {
+                                    file = f;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                }
+                if (file != null) {
+                    try {
+                        Bitmap bmp = BitmapUtils.decodeStream(new UniFileInputStreamPipe(file), 250, 250);
+                        if (bmp != null) {
+                            return bmp;
+                        }
+                    } catch (Throwable ignored) {}
+                }
+
+                // CBZ 兜底
+                if (CbzUtils.isCbzMode(dir)) {
+                    UniFile cbzFile = CbzUtils.findCbzFile(dir);
+                    if (cbzFile != null) {
+                        try (ZipInputStream zis = new ZipInputStream(cbzFile.openInputStream())) {
+                            ZipEntry entry;
+                            while ((entry = zis.getNextEntry()) != null) {
+                                String entryName = entry.getName();
+                                if (entryName != null && entryName.startsWith(name)) {
+                                    byte[] data = IOUtils.getAllByte(zis);
+                                    if (data != null && data.length > 0) {
+                                        BitmapFactory.Options opts = new BitmapFactory.Options();
+                                        opts.inSampleSize = 2;
+                                        return BitmapFactory.decodeByteArray(data, 0, data.length, opts);
+                                    }
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                }
+            }
+            return null;
         }
 
         @Override

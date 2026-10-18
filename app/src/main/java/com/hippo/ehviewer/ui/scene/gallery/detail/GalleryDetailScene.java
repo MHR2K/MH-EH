@@ -29,6 +29,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.util.Log;
 import android.util.Pair;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -73,6 +74,7 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.UrlOpener;
 import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhClient;
+import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhFilter;
 import com.hippo.ehviewer.client.EhRequest;
 import com.hippo.ehviewer.client.EhTagDatabase;
@@ -87,6 +89,7 @@ import com.hippo.ehviewer.client.data.ListUrlBuilder;
 import com.hippo.ehviewer.client.data.PreviewSet;
 import com.hippo.ehviewer.client.data.userTag.UserTagList;
 import com.hippo.ehviewer.client.exception.NoHAtHClientException;
+import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser;
 import com.hippo.ehviewer.client.parser.RateGalleryParser;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.dao.Filter;
@@ -137,6 +140,7 @@ import com.hippo.widget.SimpleGridAutoSpanLayout;
 
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.util.CbzUtils;
+import okhttp3.OkHttpClient;
 import com.hippo.unifile.UniFile;
 
 import java.io.File;
@@ -147,6 +151,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -218,6 +223,22 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     private TextView mDownload;
     @Nullable
     private TextView mHaveNewVersion;
+    @Nullable
+    private TextView mHaveOldVersion;
+    public static class OldVersion {
+        public long gid;
+        public String token;
+        public String title;
+        public String versionUrl;
+        public boolean isDownloaded;
+        public String posted;
+        public int downloadState = DownloadInfo.STATE_INVALID;
+        @Nullable
+        public DownloadInfo downloadInfo;
+        @Nullable
+        public GalleryDetail galleryDetail;
+    }
+    private final List<OldVersion> mOldVersions = new ArrayList<>();
     @Nullable
     private View mRead;
     // Below header
@@ -333,6 +354,9 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private void handleArgs(Bundle args) {
+        synchronized (mOldVersions) {
+            mOldVersions.clear();
+        }
         if (args == null) {
             return;
         }
@@ -583,12 +607,17 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mActionGroup = (ViewGroup) ViewUtils.$$(mHeader, R.id.action_card);
         mDownload = (TextView) ViewUtils.$$(mActionGroup, R.id.download);
         mHaveNewVersion = (TextView) ViewUtils.$$(mHeader, R.id.new_version);
+        mHaveOldVersion = (TextView) ViewUtils.$$(mHeader, R.id.old_version);
         mArchiverDownloadProgress = (ArchiverDownloadProgress) ViewUtils.$$(mHeader, R.id.archiver_download_progress);
         mRead = ViewUtils.$$(mActionGroup, R.id.read);
         Ripple.addRipple(mThumb, isDarkTheme);
         Ripple.addRipple(mOtherActions, isDarkTheme);
         Ripple.addRipple(mDownload, isDarkTheme);
         Ripple.addRipple(mRead, isDarkTheme);
+        if (mHaveOldVersion != null) {
+            Ripple.addRipple(mHaveOldVersion, isDarkTheme);
+            mHaveOldVersion.setOnClickListener(this);
+        }
         mThumb.setOnClickListener(this);
         mUploader.setOnClickListener(this);
         mCategory.setOnClickListener(this);
@@ -1020,6 +1049,52 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         } else {
             if (mHaveNewVersion != null) {
                 mHaveNewVersion.setVisibility(View.GONE);
+            }
+        }
+        synchronized (mOldVersions) {
+            mOldVersions.clear();
+        }
+        if (!TextUtils.isEmpty(gd.parent) && !"None".equalsIgnoreCase(gd.parent)) {
+            GalleryDetailUrlParser.Result parseResult = GalleryDetailUrlParser.parse(gd.parent, false);
+            if (parseResult != null && parseResult.gid > 0) {
+                OldVersion directParent = new OldVersion();
+                directParent.gid = parseResult.gid;
+                directParent.token = parseResult.token;
+                directParent.versionUrl = gd.parent;
+
+                Context context = mContext != null ? mContext : getEHContext();
+                DownloadManager dm = context != null ? EhApplication.getDownloadManager(context) : null;
+                int state = dm != null ? dm.getDownloadState(directParent.gid) : DownloadInfo.STATE_INVALID;
+                directParent.downloadState = state;
+                boolean isOldDownloaded = (state == DownloadInfo.STATE_FINISH);
+                directParent.isDownloaded = isOldDownloaded;
+                if (dm != null) {
+                    DownloadInfo di = dm.getDownloadInfo(directParent.gid);
+                    if (di != null) {
+                        directParent.downloadInfo = di;
+                        directParent.title = EhUtils.getSuitableTitle(di);
+                        directParent.posted = di.posted;
+                    }
+                }
+
+                synchronized (mOldVersions) {
+                    mOldVersions.add(directParent);
+                }
+
+                if (mHaveOldVersion != null && resources != null) {
+                    mHaveOldVersion.setBackground(ResourcesCompat.getDrawable(resources, R.drawable.old_version_style, null));
+                    updateOldVersionButtonUI();
+                }
+
+                traceOlderVersionsAsync(gd.gid, directParent);
+            } else {
+                if (mHaveOldVersion != null) {
+                    mHaveOldVersion.setVisibility(View.GONE);
+                }
+            }
+        } else {
+            if (mHaveOldVersion != null) {
+                mHaveOldVersion.setVisibility(View.GONE);
             }
         }
         if (null == mGalleryInfo) {
@@ -1489,6 +1564,15 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             GalleryListScene.startScene(this, lub);
         } else if (mDownload == v) {
             onDownload();
+        } else if (mHaveOldVersion == v) {
+            if (mGalleryDetail == null || mOldVersions.isEmpty()) {
+                return;
+            }
+            List<OldVersion> versionsCopy;
+            synchronized (mOldVersions) {
+                versionsCopy = new ArrayList<>(mOldVersions);
+            }
+            myUpdateDialog.showOldVersionDialog(mGalleryDetail, versionsCopy);
         } else if (mHaveNewVersion == v) {
             if (mGalleryDetail == null) {
                 return;
@@ -1823,7 +1907,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         if (context == null || mGalleryDetail == null) {
             return;
         }
-        DownloadInfo oldInfo = mDownloadInfo;
+        DownloadInfo oldInfo = request.targetOldInfo != null ? request.targetOldInfo : mDownloadInfo;
         if (oldInfo == null) {
             showTip(R.string.gallery_update_not_downloaded, LENGTH_SHORT);
             return;
@@ -1847,6 +1931,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                 showTip(R.string.gallery_update_queued, LENGTH_SHORT);
                 // 刷新 UI
                 updateDownloadState();
+                bindViewSecond();
             }
 
             @Override
@@ -1958,8 +2043,170 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         }
     }
 
+    private void updateOldVersionButtonUI() {
+        if (mHaveOldVersion == null) return;
+        boolean anyInDownloads = false;
+        boolean anyDownloaded = false;
+        synchronized (mOldVersions) {
+            for (OldVersion v : mOldVersions) {
+                if (v.downloadInfo != null || v.downloadState != DownloadInfo.STATE_INVALID) {
+                    anyInDownloads = true;
+                    if (v.isDownloaded) {
+                        anyDownloaded = true;
+                    }
+                }
+            }
+        }
+        if (anyInDownloads) {
+            mHaveOldVersion.setVisibility(View.VISIBLE);
+            mHaveOldVersion.setText(anyDownloaded ? R.string.have_old_version_downloaded : R.string.have_old_version);
+        } else {
+            mHaveOldVersion.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateOldVersionState() {
+        if (mHaveOldVersion != null) {
+            Context context = getEHContext();
+            DownloadManager dm = context != null ? EhApplication.getDownloadManager(context) : null;
+            synchronized (mOldVersions) {
+                for (OldVersion v : mOldVersions) {
+                    int state = dm != null ? dm.getDownloadState(v.gid) : DownloadInfo.STATE_INVALID;
+                    v.downloadState = state;
+                    v.isDownloaded = (state == DownloadInfo.STATE_FINISH);
+                    if (dm != null) {
+                        DownloadInfo di = dm.getDownloadInfo(v.gid);
+                        if (di != null) {
+                            v.downloadInfo = di;
+                            if (v.title == null || v.title.isEmpty() || v.title.startsWith("GID: ")) {
+                                v.title = EhUtils.getSuitableTitle(di);
+                            }
+                            if (v.posted == null || v.posted.isEmpty()) {
+                                v.posted = di.posted;
+                            }
+                        } else {
+                            v.downloadInfo = null;
+                        }
+                    }
+                }
+            }
+            updateOldVersionButtonUI();
+        }
+    }
+
+    private void traceOlderVersionsAsync(long currentGid, OldVersion immediateParent) {
+        if (executorService == null) {
+            executorService = EhApplication.getExecutorService(mContext != null ? mContext : getEHContext());
+        }
+        if (executorService == null) return;
+
+        executorService.submit(() -> {
+            try {
+                Context context = getEHContext();
+                if (context == null) return;
+                OkHttpClient client = EhApplication.getOkHttpClient(context);
+                DownloadManager dm = EhApplication.getDownloadManager(context);
+
+                OldVersion current = immediateParent;
+                int depth = 0;
+                while (current != null && depth < 10) {
+                    depth++;
+                    if (mGalleryDetail == null || mGalleryDetail.gid != currentGid) {
+                        return;
+                    }
+
+                    GalleryDetail detail = current.galleryDetail;
+                    if (detail == null && current.gid > 0 && current.token != null) {
+                        try {
+                            String url = EhUrl.getGalleryDetailUrl(current.gid, current.token);
+                            detail = EhEngine.getGalleryDetail(null, client, url);
+                            if (detail != null) {
+                                current.galleryDetail = detail;
+                                if (current.title == null || current.title.isEmpty() || current.title.startsWith("GID: ")) {
+                                    String title = EhUtils.getSuitableTitle(detail);
+                                    if (title != null && !title.isEmpty()) {
+                                        current.title = title;
+                                    }
+                                }
+                                if (current.posted == null || current.posted.isEmpty()) {
+                                    current.posted = detail.posted;
+                                }
+                                handler.post(() -> {
+                                    if (mGalleryDetail != null && mGalleryDetail.gid == currentGid) {
+                                        updateOldVersionButtonUI();
+                                    }
+                                });
+                            }
+                        } catch (Throwable t) {
+                            Log.w("GalleryDetailScene", "Failed to fetch ancestor detail: " + current.gid, t);
+                            break;
+                        }
+                    }
+
+                    if (detail == null || TextUtils.isEmpty(detail.parent) || "None".equalsIgnoreCase(detail.parent)) {
+                        break;
+                    }
+
+                    GalleryDetailUrlParser.Result nextResult = GalleryDetailUrlParser.parse(detail.parent, false);
+                    if (nextResult == null || nextResult.gid <= 0) {
+                        break;
+                    }
+
+                    final long nextGid = nextResult.gid;
+                    boolean alreadyExists = false;
+                    synchronized (mOldVersions) {
+                        if (nextGid == currentGid) {
+                            alreadyExists = true;
+                        } else {
+                            for (OldVersion v : mOldVersions) {
+                                if (v.gid == nextGid) {
+                                    alreadyExists = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (alreadyExists) {
+                        break;
+                    }
+
+                    OldVersion ancestor = new OldVersion();
+                    ancestor.gid = nextResult.gid;
+                    ancestor.token = nextResult.token;
+                    ancestor.versionUrl = detail.parent;
+                    int ancestorState = dm != null ? dm.getDownloadState(ancestor.gid) : DownloadInfo.STATE_INVALID;
+                    ancestor.downloadState = ancestorState;
+                    ancestor.isDownloaded = (ancestorState == DownloadInfo.STATE_FINISH);
+                    if (dm != null) {
+                        DownloadInfo di = dm.getDownloadInfo(ancestor.gid);
+                        if (di != null) {
+                            ancestor.downloadInfo = di;
+                            ancestor.title = EhUtils.getSuitableTitle(di);
+                            ancestor.posted = di.posted;
+                        }
+                    }
+
+                    synchronized (mOldVersions) {
+                        mOldVersions.add(ancestor);
+                    }
+
+                    handler.post(() -> {
+                        if (mGalleryDetail != null && mGalleryDetail.gid == currentGid) {
+                            updateOldVersionButtonUI();
+                        }
+                    });
+
+                    current = ancestor;
+                }
+            } catch (Throwable t) {
+                Log.w("GalleryDetailScene", "Error tracing older versions", t);
+            }
+        });
+    }
+
     private void updateDownloadState() {
         Context context = getEHContext();
+        updateOldVersionState();
         long gid = getGid();
         if (null == context || -1L == gid) {
             return;
