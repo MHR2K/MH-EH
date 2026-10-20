@@ -173,6 +173,8 @@ public final class SpiderQueen implements Runnable {
     // For partial downloads: stop downloading at this page index. -1 = download all.
     private int mEndPage = -1;
     private final AtomicReference<String> showKey = new AtomicReference<>();
+    private volatile boolean mGot509 = false;
+    private final AtomicInteger mRetryPassCount = new AtomicInteger(0);
 
     private final int downloadTimeout;
 
@@ -400,6 +402,7 @@ public final class SpiderQueen implements Runnable {
     }
 
     private void notifyGet509(int index) {
+        mGot509 = true;
         synchronized (mSpiderListeners) {
             for (OnSpiderListener listener : mSpiderListeners) {
                 listener.onGet509(index);
@@ -497,6 +500,8 @@ public final class SpiderQueen implements Runnable {
         }
 
         if (intoDownloadMode && mPageStateArray != null) {
+            mRetryPassCount.set(0);
+            mGot509 = false;
             // Clear download state
             synchronized (mPageStateLock) {
                 int[] temp = mPageStateArray;
@@ -1000,26 +1005,39 @@ public final class SpiderQueen implements Runnable {
     }
 
     private SpiderInfo readSpiderInfoFromInternet() {
-        try {
-            SpiderInfo spiderInfo = new SpiderInfo();
-            spiderInfo.gid = mGalleryInfo.gid;
-            spiderInfo.token = mGalleryInfo.token;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            if (Thread.currentThread().isInterrupted()) {
+                return null;
+            }
+            try {
+                SpiderInfo spiderInfo = new SpiderInfo();
+                spiderInfo.gid = mGalleryInfo.gid;
+                spiderInfo.token = mGalleryInfo.token;
 
-            Request request = new EhRequestBuilder(EhUrl.getGalleryDetailUrl(
-                    mGalleryInfo.gid, mGalleryInfo.token, 0, false), EhUrl.getReferer()).build();
-            Response response = mHttpClient.newCall(request).execute();
-            String body = response.body().string();
+                Request request = new EhRequestBuilder(EhUrl.getGalleryDetailUrl(
+                        mGalleryInfo.gid, mGalleryInfo.token, 0, false), EhUrl.getReferer()).build();
+                Response response = mHttpClient.newCall(request).execute();
+                String body = response.body().string();
 
-            spiderInfo.pages = GalleryDetailParser.parsePages(body);
-            spiderInfo.pTokenMap = new SparseArray<>(spiderInfo.pages);
-            readPreviews(body, 0, spiderInfo);
-            return spiderInfo;
-        } catch (Throwable e) {
-            ExceptionUtils.throwIfFatal(e);
-            Log.e(TAG, "readSpiderInfoFromInternet failed for gid=" + mGalleryInfo.gid, e);
-            Analytics.recordException(e);
-            return null;
+                spiderInfo.pages = GalleryDetailParser.parsePages(body);
+                spiderInfo.pTokenMap = new SparseArray<>(spiderInfo.pages);
+                readPreviews(body, 0, spiderInfo);
+                return spiderInfo;
+            } catch (Throwable e) {
+                ExceptionUtils.throwIfFatal(e);
+                Log.w(TAG, "readSpiderInfoFromInternet attempt " + (attempt + 1) + " failed for gid=" + mGalleryInfo.gid, e);
+                if (attempt < 2 && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        Thread.sleep(1500);
+                    } catch (InterruptedException ie) {
+                        return null;
+                    }
+                } else {
+                    Analytics.recordException(e);
+                }
+            }
         }
+        return null;
     }
 
     private String getPTokenFromInternet(int index) {
@@ -1301,7 +1319,7 @@ public final class SpiderQueen implements Runnable {
             }
 
             // Clear
-            if (state == STATE_DOWNLOADING) {
+            if (state == STATE_DOWNLOADING || state == STATE_NONE) {
                 mPageErrorMap.remove(index);
             } else if (state == STATE_FINISHED || state == STATE_FAILED) {
                 mPagePercentMap.remove(index);
@@ -1490,6 +1508,16 @@ public final class SpiderQueen implements Runnable {
                         } catch (Throwable e) {
                             ExceptionUtils.throwIfFatal(e);
                             error = ExceptionUtils.getReadableString(e);
+                            forceHtml = true;
+                            if (i < 4 && !Thread.currentThread().isInterrupted()) {
+                                try {
+                                    Thread.sleep(1000);
+                                } catch (InterruptedException ie) {
+                                    interrupt = true;
+                                    break;
+                                }
+                                continue;
+                            }
                             break;
                         }
 
@@ -1527,6 +1555,16 @@ public final class SpiderQueen implements Runnable {
                         } else {
                             ExceptionUtils.throwIfFatal(e);
                             error = ExceptionUtils.getReadableString(e);
+                            forceHtml = true;
+                            if (i < 4 && !Thread.currentThread().isInterrupted()) {
+                                try {
+                                    Thread.sleep(500);
+                                } catch (InterruptedException ie) {
+                                    interrupt = true;
+                                    break;
+                                }
+                                continue;
+                            }
                             break;
                         }
                     }
@@ -1981,6 +2019,33 @@ public final class SpiderQueen implements Runnable {
             }
 
             if (finish) {
+                if (mDownloadReference > 0 && !mGot509 && mRetryPassCount.compareAndSet(0, 1) && mQueenThread != null) {
+                    List<Integer> failedIndices = new ArrayList<>();
+                    synchronized (mPageStateLock) {
+                        if (mPageStateArray != null) {
+                            for (int i = 0; i < mPageStateArray.length; i++) {
+                                if (mPageStateArray[i] == STATE_FAILED) {
+                                    failedIndices.add(i);
+                                }
+                            }
+                        }
+                    }
+                    if (!failedIndices.isEmpty()) {
+                        Log.i(TAG, "Download completed first pass with " + failedIndices.size()
+                                + " failed pages, starting in-gallery retry pass.");
+                        for (int idx : failedIndices) {
+                            updatePageState(idx, STATE_NONE);
+                        }
+                        synchronized (mRequestPageQueue) {
+                            for (int idx : failedIndices) {
+                                mForceRequestPageQueue.add(idx);
+                            }
+                        }
+                        cancelTimeCount();
+                        ensureWorkers();
+                        return;
+                    }
+                }
                 notifyFinish();
             }
             cancelTimeCount();

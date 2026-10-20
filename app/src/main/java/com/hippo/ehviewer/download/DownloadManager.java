@@ -112,6 +112,10 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     // Cache of recently deleted DownloadInfo, so user edits (title, titleJpn, etc.) survive remove+re-add
     private final HashMap<Long, DownloadInfo> mDeletedInfoCache = new HashMap<>();
 
+    private static final int MAX_AUTO_RETRY_COUNT = 2;
+    private final HashMap<Long, Integer> mGalleryRetryMap = new HashMap<>();
+    private final java.util.HashSet<Long> m509Gids = new java.util.HashSet<>();
+
     private final ConcurrentPool<NotifyTask> mNotifyTaskPool = new ConcurrentPool<>(5);
 
     public DownloadManager(Context context) {
@@ -593,6 +597,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 return;
             }
             if (info.state != DownloadInfo.STATE_WAIT) {
+                mGalleryRetryMap.remove(info.gid);
+                m509Gids.remove(info.gid);
                 // Set state DownloadInfo.STATE_WAIT
                 info.state = DownloadInfo.STATE_WAIT;
                 // Add to wait list
@@ -625,6 +631,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             info.label = label;
             info.state = DownloadInfo.STATE_WAIT;
             info.time = System.currentTimeMillis();
+            mGalleryRetryMap.remove(info.gid);
+            m509Gids.remove(info.gid);
 
             // Add to label download list
             LinkedList<DownloadInfo> list = getInfoListForLabel(info.label);
@@ -690,6 +698,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 if (info.state == DownloadInfo.STATE_NONE ||
                         info.state == DownloadInfo.STATE_FAILED ||
                         info.state == DownloadInfo.STATE_FINISH) {
+                    mGalleryRetryMap.remove(info.gid);
+                    m509Gids.remove(info.gid);
                     update = true;
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
@@ -714,6 +724,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 if (info.state == DownloadInfo.STATE_NONE ||
                         info.state == DownloadInfo.STATE_FAILED ||
                         info.state == DownloadInfo.STATE_FINISH) {
+                    mGalleryRetryMap.remove(info.gid);
+                    m509Gids.remove(info.gid);
                     update = true;
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
@@ -738,6 +750,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
     void startAllDownload() {
         boolean update = false;
+        mGalleryRetryMap.clear();
+        m509Gids.clear();
         // Start all STATE_NONE and STATE_FAILED item
         LinkedList<DownloadInfo> allInfoList = mAllInfoList;
         LinkedList<DownloadInfo> waitList = mWaitList;
@@ -1049,6 +1063,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void stopAllDownload() {
+        mGalleryRetryMap.clear();
+        m509Gids.clear();
         // Stop all in wait list
         for (DownloadInfo info : mWaitList) {
             info.state = DownloadInfo.STATE_NONE;
@@ -1067,6 +1083,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void failAllDownload() {
+        mGalleryRetryMap.clear();
+        m509Gids.clear();
         // Mark all in wait list as failed
         for (DownloadInfo info : mWaitList) {
             info.state = DownloadInfo.STATE_FAILED;
@@ -1092,6 +1110,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
     public void deleteDownload(long gid) {
         stopDownloadInternal(gid);
+        mGalleryRetryMap.remove(gid);
+        m509Gids.remove(gid);
         DownloadInfo info = mAllInfoMap.get(gid);
         if (info != null) {
             // Cache info before deletion so user edits survive remove+re-add
@@ -1230,6 +1250,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     // Update listener
     // No ensureDownload
     private DownloadInfo stopDownloadInternal(long gid) {
+        mGalleryRetryMap.remove(gid);
+        m509Gids.remove(gid);
         // Check current task
         if (mCurrentTask != null && mCurrentTask.gid == gid) {
             // Stop current
@@ -1268,6 +1290,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         if (info == null) {
             return null;
         }
+
+        mGalleryRetryMap.remove(info.gid);
+        m509Gids.remove(info.gid);
 
         // Update state
         info.state = DownloadInfo.STATE_NONE;
@@ -1612,6 +1637,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     break;
                 }
                 case TYPE_ON_GET_509: {
+                    if (mCurrentTask != null) {
+                        m509Gids.add(mCurrentTask.gid);
+                    }
                     if (mDownloadListener != null) {
                         mDownloadListener.onGet509();
                     }
@@ -1693,17 +1721,33 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                         info.pages = endPage;
                         info.total = endPage;
                     }
+                    boolean autoRetry = false;
                     if (info.legacy == 0) {
+                        mGalleryRetryMap.remove(info.gid);
                         info.state = DownloadInfo.STATE_FINISH;
                         // 统计：下载完成
                         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadCompleted();
                     } else {
-                        info.state = DownloadInfo.STATE_FAILED;
+                        boolean got509 = m509Gids.remove(info.gid);
+                        int retryCount = mGalleryRetryMap.getOrDefault(info.gid, 0);
+                        if (!got509 && retryCount < MAX_AUTO_RETRY_COUNT) {
+                            mGalleryRetryMap.put(info.gid, retryCount + 1);
+                            info.state = DownloadInfo.STATE_WAIT;
+                            if (endPage > 0) {
+                                mPendingEndPages.put(info.gid, endPage);
+                            }
+                            mWaitList.addLast(info);
+                            autoRetry = true;
+                            Log.i(TAG, "Auto-retrying download for gid=" + info.gid + " (attempt " + (retryCount + 1) + "/" + MAX_AUTO_RETRY_COUNT + ")");
+                        } else {
+                            mGalleryRetryMap.remove(info.gid);
+                            info.state = DownloadInfo.STATE_FAILED;
+                        }
                     }
                     // Update in DB
                     EhDB.putDownloadInfo(info);
                     // Notify
-                    if (mDownloadListener != null) {
+                    if (mDownloadListener != null && !autoRetry) {
                         mDownloadListener.onFinish(info);
                     }
                     List<DownloadInfo> list = getInfoListForLabel(info.label);
@@ -1736,7 +1780,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                         });
                     }
                     // Start next download
-                    ensureDownload();
+                    if (autoRetry && !mWaitList.isEmpty() && mWaitList.peekFirst() == info) {
+                        SimpleHandler.getInstance().postDelayed(DownloadManager.this::ensureDownload, 2000);
+                    } else {
+                        ensureDownload();
+                    }
                     break;
                 }
             }
