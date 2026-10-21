@@ -383,10 +383,32 @@ public final class GalleryListScene extends BaseScene
 
             @Override
             public void onUpdate(@NonNull DownloadInfo info, @NonNull List<DownloadInfo> list, LinkedList<DownloadInfo> mWaitList) {
+                if (mAdapter != null && info.state == DownloadInfo.STATE_FINISH) {
+                    if (mRecyclerView != null && mRecyclerView.isComputingLayout()) {
+                        mRecyclerView.post(() -> {
+                            if (mAdapter != null) {
+                                mAdapter.notifyDataSetChanged();
+                            }
+                        });
+                    } else {
+                        mAdapter.notifyDataSetChanged();
+                    }
+                }
             }
 
             @Override
             public void onUpdateAll() {
+                if (mAdapter != null) {
+                    if (mRecyclerView != null && mRecyclerView.isComputingLayout()) {
+                        mRecyclerView.post(() -> {
+                            if (mAdapter != null) {
+                                mAdapter.notifyDataSetChanged();
+                            }
+                        });
+                    } else {
+                        mAdapter.notifyDataSetChanged();
+                    }
+                }
             }
 
             @Override

@@ -40,6 +40,7 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.EhCacheKeyFactory;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
+import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.ui.scene.GalleryHolder;
 import com.hippo.ehviewer.ui.scene.TransitionNameFactory;
@@ -74,7 +75,7 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
     private int mType = TYPE_INVALID;
     private boolean mShowFavourited;
 
-    private final DownloadManager mDownloadManager;
+    private DownloadManager mDownloadManager;
 
     private final ExecutorService executor;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -102,7 +103,10 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
         // 非阻塞获取，未就绪时先不显示下载徽标，就绪后刷新补上
         mDownloadManager = EhApplication.peekDownloadManager(inflater.getContext());
         if (mDownloadManager == null) {
-            EhApplication.whenDownloadManagerReady(inflater.getContext(), this::notifyDataSetChanged);
+            EhApplication.whenDownloadManagerReady(inflater.getContext(), () -> {
+                mDownloadManager = EhApplication.peekDownloadManager(inflater.getContext());
+                notifyDataSetChanged();
+            });
         }
     }
 
@@ -250,7 +254,22 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
                     holder.simpleLanguage.setVisibility(View.VISIBLE);
                 }
                 holder.favourited.setVisibility((mShowFavourited && gi.favoriteSlot >= -1 && gi.favoriteSlot <= 10) ? View.VISIBLE : View.GONE);
-                holder.downloaded.setVisibility((mDownloadManager != null && mDownloadManager.containDownloadInfo(gi.gid)) ? View.VISIBLE : View.GONE);
+                DownloadManager dm = mDownloadManager;
+                if (dm == null) {
+                    dm = EhApplication.peekDownloadManager(mInflater.getContext());
+                    mDownloadManager = dm;
+                }
+                int downloadState = dm != null ? dm.getDownloadState(gi.gid) : DownloadInfo.STATE_INVALID;
+                if (downloadState == DownloadInfo.STATE_INVALID) {
+                    holder.downloaded.setVisibility(View.GONE);
+                } else {
+                    holder.downloaded.setVisibility(View.VISIBLE);
+                    if (downloadState == DownloadInfo.STATE_FINISH) {
+                        holder.downloaded.setImageResource(R.drawable.v_download_x16);
+                    } else {
+                        holder.downloaded.setImageResource(R.drawable.v_download_outline_x16);
+                    }
+                }
                 break;
             }
             case TYPE_GRID: {
