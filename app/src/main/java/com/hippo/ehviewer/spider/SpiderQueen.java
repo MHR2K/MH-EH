@@ -282,50 +282,44 @@ public final class SpiderQueen implements Runnable {
         }
     }
 
-//    @UiThread
-//    public static int findStartPage(@NonNull Context context, @NonNull GalleryInfo galleryInfo) {
-//        Log.e("StartTime",System.currentTimeMillis()+"");
-//        SpiderInfo fromDownload = SpiderInfo.getSpiderInfo(galleryInfo);
-//        SpiderInfo fromCache = readSpiderInfoFromCache(context, galleryInfo.gid);
-//
-//        int startPage = 0;
-//        if (isValidSpiderInfo(fromDownload, galleryInfo)) {
-//            startPage = fromDownload.startPage;
-//        }
-//        if (isValidSpiderInfo(fromCache, galleryInfo)) {
-//            startPage = Math.max(startPage, fromCache.startPage);
-//        }
-//        Log.e("EndTime",System.currentTimeMillis()+"");
-//        return startPage;
-//    }
-
-    @UiThread
     public static int findStartPage(@NonNull Context context, @NonNull GalleryInfo galleryInfo) {
-        Log.e("StartTime",System.currentTimeMillis()+"");
-        SpiderInfo spiderInfo = null;
-        SimpleDiskCache msic;
-        EhApplication application = (EhApplication) context.getApplicationContext();
-        msic = EhApplication.getSpiderInfoCache(application);
-        InputStreamPipe pipe = msic.getInputStreamPipe(Long.toString(galleryInfo.gid));
-        if (null != pipe) {
+        SpiderInfo fromCache = readSpiderInfoFromCache(context, galleryInfo.gid);
+        int startPage = 0;
+        if (isValidSpiderInfo(fromCache, galleryInfo)) {
+            startPage = fromCache.startPage;
+        }
+
+        try {
+            boolean isOnSmb = SmbStorageTracker.INSTANCE.isOnSmb(galleryInfo.gid);
+            SpiderInfo fromRepo = EhApplication.getSpiderInfoRepository(context).get(galleryInfo, isOnSmb);
+            if (isValidSpiderInfo(fromRepo, galleryInfo)) {
+                startPage = Math.max(startPage, fromRepo.startPage);
+                if (fromCache == null && startPage > 0) {
+                    writeSpiderInfoToCache(context, galleryInfo.gid, fromRepo);
+                }
+            }
+        } catch (Throwable e) {
+            ExceptionUtils.throwIfFatal(e);
+        }
+
+        return startPage;
+    }
+
+    private static void writeSpiderInfoToCache(@NonNull Context context, long gid, @NonNull SpiderInfo spiderInfo) {
+        try {
+            EhApplication application = (EhApplication) context.getApplicationContext();
+            SimpleDiskCache cache = EhApplication.getSpiderInfoCache(application);
+            OutputStreamPipe pipe = cache.getOutputStreamPipe(Long.toString(gid));
+            pipe.obtain();
             try {
-                pipe.obtain();
-                spiderInfo = SpiderInfo.read(pipe.open());
-            } catch (IOException ignore) {
-                // Ignore
-//                Crashes.trackError(ignore);
+                spiderInfo.write(pipe.open());
             } finally {
                 pipe.close();
                 pipe.release();
             }
+        } catch (Throwable e) {
+            ExceptionUtils.throwIfFatal(e);
         }
-
-        int startPage = 0;
-        if (spiderInfo != null) {
-            startPage = spiderInfo.startPage;
-        }
-        Log.e("EndTime",System.currentTimeMillis()+"");
-        return startPage;
     }
 
     @Nullable
@@ -349,8 +343,13 @@ public final class SpiderQueen implements Runnable {
 
     private static boolean isValidSpiderInfo(@Nullable SpiderInfo spiderInfo,
             @NonNull GalleryInfo galleryInfo) {
-        return spiderInfo != null && spiderInfo.gid == galleryInfo.gid
-                && TextUtils.equals(spiderInfo.token, galleryInfo.token);
+        if (spiderInfo == null || spiderInfo.gid != galleryInfo.gid) {
+            return false;
+        }
+        if (TextUtils.isEmpty(galleryInfo.token) || TextUtils.isEmpty(spiderInfo.token)) {
+            return true;
+        }
+        return TextUtils.equals(spiderInfo.token, galleryInfo.token);
     }
 
     @UiThread

@@ -107,6 +107,7 @@ import com.hippo.ehviewer.ui.scene.GalleryInfoScene;
 import com.hippo.ehviewer.ui.scene.GalleryPreviewsScene;
 import com.hippo.ehviewer.ui.scene.TransitionNameFactory;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
+import com.hippo.ehviewer.ui.scene.download.part.DownloadBatchActions;
 import com.hippo.ehviewer.ui.scene.gallery.list.FavoritesScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListSceneDialog;
@@ -215,6 +216,8 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     private TextView mUploader;
     @Nullable
     private TextView mCategory;
+    @Nullable
+    private TextView mDownloadLabel;
     @Nullable
     private ImageView mOtherActions;
     @Nullable
@@ -603,6 +606,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mTitle = (TextView) ViewUtils.$$(mHeader, R.id.title);
         mUploader = (TextView) ViewUtils.$$(mHeader, R.id.uploader);
         mCategory = (TextView) ViewUtils.$$(mHeader, R.id.category);
+        mDownloadLabel = (TextView) ViewUtils.$$(mHeader, R.id.download_label);
         mOtherActions = (ImageView) ViewUtils.$$(mHeader, R.id.other_actions);
         mActionGroup = (ViewGroup) ViewUtils.$$(mHeader, R.id.action_card);
         mDownload = (TextView) ViewUtils.$$(mActionGroup, R.id.download);
@@ -621,6 +625,10 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mThumb.setOnClickListener(this);
         mUploader.setOnClickListener(this);
         mCategory.setOnClickListener(this);
+        if (mDownloadLabel != null) {
+            Ripple.addRipple(mDownloadLabel, isDarkTheme);
+            mDownloadLabel.setOnClickListener(this);
+        }
         mOtherActions.setOnClickListener(this);
         mDownload.setOnClickListener(this);
         mDownload.setOnLongClickListener(this);
@@ -739,6 +747,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         if (info != null && mGalleryDetail != null && mPages != null) {
             bindReadProgress(info);
         }
+        updateDownloadLabelBadge();
     }
 
     @Override
@@ -760,6 +769,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mTitle = null;
         mUploader = null;
         mCategory = null;
+        mDownloadLabel = null;
         mOtherActions = null;
         mActionGroup = null;
         mDownload = null;
@@ -1006,6 +1016,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             mCategory.setText(EhUtils.getCategory(gi.category));
             mCategory.setTextColor(EhUtils.getCategoryColor(gi.category));
             updateDownloadText();
+            updateDownloadLabelBadge();
         }
     }
 
@@ -1113,6 +1124,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mCategory.setText(EhUtils.getCategory(gd.category));
         mCategory.setTextColor(EhUtils.getCategoryColor(gd.category));
         updateDownloadText();
+        updateDownloadLabelBadge();
 
         mLanguage.setText(gd.language);
         GalleryInfo galleryInfo = getGalleryInfo();
@@ -1147,19 +1159,32 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
     }
 
     private void bindReadProgress(GalleryInfo info) {
+        if (info == null) {
+            return;
+        }
         if (mContext == null) {
             mContext = getEHContext();
             if (mContext == null) {
                 return;
             }
         }
+        final Context context = mContext;
         if (executorService == null) {
-            executorService = EhApplication.getExecutorService(mContext);
+            executorService = EhApplication.getExecutorService(context);
         }
 
         executorService.submit(() -> {
-            int startPage = SpiderQueen.findStartPage(this.mContext, info);
+            int startPage = SpiderQueen.findStartPage(context, info);
             int pages = info.pages;
+            if (pages <= 0 && mGalleryDetail != null) {
+                pages = mGalleryDetail.pages;
+            }
+            if (pages <= 0 && mGalleryDetail != null) {
+                pages = mGalleryDetail.SpiderInfoPages;
+            }
+            if (pages <= 0 && mGalleryInfo != null) {
+                pages = mGalleryInfo.pages;
+            }
             String text;
             if (startPage > 0) {
                 text = startPage + 1 + "/" + pages + "P";
@@ -1445,6 +1470,12 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                 case R.id.action_goto_download:
                     gotoDownloadList();
                     break;
+                case R.id.action_move_to_position:
+                    onMoveToPosition();
+                    break;
+                case R.id.action_smb_migration:
+                    onSmbMigration();
+                    break;
             }
             return true;
         });
@@ -1562,6 +1593,12 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             ListUrlBuilder lub = new ListUrlBuilder();
             lub.setCategory(category);
             GalleryListScene.startScene(this, lub);
+        } else if (mDownloadLabel == v) {
+            Context context = getEHContext();
+            DownloadInfo downloadInfo = getDownloadInfo();
+            if (context != null && downloadInfo != null) {
+                DownloadBatchActions.showChangeLabelDialog(context, downloadInfo, this::updateDownloadLabelBadge);
+            }
         } else if (mDownload == v) {
             onDownload();
         } else if (mHaveOldVersion == v) {
@@ -1891,6 +1928,80 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         }
     }
 
+    @Nullable
+    private DownloadInfo getDownloadInfo() {
+        if (mDownloadInfo != null) {
+            return mDownloadInfo;
+        }
+        Context context = getEHContext();
+        long gid = getGid();
+        if (context != null && gid != -1L) {
+            mDownloadInfo = EhApplication.getDownloadManager(context).getDownloadInfo(gid);
+            return mDownloadInfo;
+        }
+        return null;
+    }
+
+    private void updateDownloadLabelBadge() {
+        if (mDownloadLabel == null) {
+            return;
+        }
+        Context context = getEHContext();
+        if (context == null) {
+            mDownloadLabel.setVisibility(View.GONE);
+            return;
+        }
+        long gid = getGid();
+        if (gid == -1L) {
+            mDownloadLabel.setVisibility(View.GONE);
+            return;
+        }
+        DownloadManager dm = EhApplication.getDownloadManager(context);
+        DownloadInfo info = dm.getDownloadInfo(gid);
+        if (info == null) {
+            info = mDownloadInfo;
+        }
+        int state = dm.getDownloadState(gid);
+        if (info != null && state != DownloadInfo.STATE_INVALID) {
+            mDownloadInfo = info;
+            String label = info.getLabel();
+            if (TextUtils.isEmpty(label)) {
+                label = context.getString(R.string.default_download_label_name);
+            }
+            mDownloadLabel.setText("🏷 " + label);
+            mDownloadLabel.setVisibility(View.VISIBLE);
+        } else {
+            mDownloadLabel.setVisibility(View.GONE);
+        }
+    }
+
+    private void onMoveToPosition() {
+        Context context = getEHContext();
+        DownloadInfo downloadInfo = getDownloadInfo();
+        if (context == null || downloadInfo == null || mDownloadState == DownloadInfo.STATE_INVALID) {
+            showTip(R.string.not_in_download_list, LENGTH_SHORT);
+            return;
+        }
+        DownloadBatchActions.showMoveToPositionDialog(context, downloadInfo, () -> {
+            updateDownloadState();
+            updateDownloadLabelBadge();
+        });
+    }
+
+    private void onSmbMigration() {
+        Context context = getEHContext();
+        DownloadInfo downloadInfo = getDownloadInfo();
+        if (context == null || downloadInfo == null || mDownloadState == DownloadInfo.STATE_INVALID) {
+            showTip(R.string.not_in_download_list, LENGTH_SHORT);
+            return;
+        }
+        DownloadBatchActions.showSmbMigrationDialog(context, downloadInfo, () -> {
+            updateDownloadState();
+            updateDownloadText();
+            updateDownloadLabelBadge();
+        });
+    }
+
     public void startUpdateDownload(String updateUrl) {
         if (mGalleryDetail == null || mGalleryDetail.newVersions == null) {
             return;
@@ -2214,10 +2325,12 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
 
         int downloadState = EhApplication.getDownloadManager(context).getDownloadState(gid);
         if (downloadState == mDownloadState) {
+            updateDownloadLabelBadge();
             return;
         }
         mDownloadState = downloadState;
         updateDownloadText();
+        updateDownloadLabelBadge();
     }
 
     @Override

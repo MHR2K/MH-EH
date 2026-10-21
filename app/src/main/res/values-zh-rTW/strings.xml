@@ -431,6 +431,18 @@
     <string name="rename_label_title">重新命名標籤</string>
     <string name="delete_label_title">刪除標籤</string>
     <string name="delete_label_message">將 “%s”刪除？</string>
+    <string name="menu_move_to_position">移動位置</string>
+    <string name="move_to_position_title">移動畫廊位置</string>
+    <string name="move_to_position_hint">(輸入目標畫廊的GID來移動到它下面。留空則移動到預設標籤最新位置，輸入0則移動到當前標籤最新位置。)</string>
+    <string name="move_to_position_error">未找到目標</string>
+    <string name="move_to_position_success">移動成功</string>
+    <string name="smb_migration">SMB 儲存遷移</string>
+    <string name="smb_migration_to_smb">移動到 SMB 伺服器</string>
+    <string name="smb_migration_to_local">從 SMB 移動到本機</string>
+    <string name="smb_migration_select_server">選擇目標 SMB 伺服器</string>
+    <string name="smb_migration_no_server">請先在 設定>進階>新增 SMB 伺服器</string>
+    <string name="smb_migration_not_on_smb">該漫畫不在 SMB 上</string>
+    <string name="smb_migration_to_local_confirm">確定要將此漫畫從 SMB 移動到本機儲存嗎？</string>
 
     <!-- History -->
     <string name="no_history">歷史紀錄將會顯示在這裡</string>

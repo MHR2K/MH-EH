@@ -741,20 +741,11 @@ class DownloadBatchActions(private val mHost: Host?) {
                 }
                 4 -> { // Move (Change Label)
                     if (downloadInfoList!!.isEmpty()) return
-                    val labelRawList: List<DownloadLabel> = EhApplication.getDownloadManager(context).labelList
-                    val labelList = ArrayList<String>(labelRawList.size + 1)
-                    labelList.add(mHost.getString(R.string.default_download_label_name))
-                    for (i in labelRawList.indices) {
-                        labelList.add(labelRawList[i].label)
+                    recyclerView.outOfCustomChoiceMode()
+                    showChangeLabelDialog(context, downloadInfoList) {
+                        mHost.updateForLabel()
+                        mHost.updateView()
                     }
-                    val labels = labelList.toTypedArray()
-
-                    val helper = MoveDialogHelper(labels, downloadInfoList)
-
-                    AlertDialog.Builder(context)
-                        .setTitle(R.string.download_move_dialog_title)
-                        .setItems(labels, helper)
-                        .show()
                 }
                 5 -> { // Random
                     if (mHost.list.isNullOrEmpty()) return
@@ -766,71 +757,11 @@ class DownloadBatchActions(private val mHost: Host?) {
                 }
                 7 -> { // SMB Migration (now last)
                     if (downloadInfoList!!.isEmpty()) return
-
-                    // 显示选择对话框：移动到SMB 或 从SMB移动到本地
-                    val ctxFinal = context
-                    val infosFinal = downloadInfoList
-
-                    val migrationOptions = arrayOf<CharSequence>(
-                        "移动到 SMB 服务器",
-                        "从 SMB 移动到本地"
-                    )
-
-                    AlertDialog.Builder(context)
-                        .setTitle("SMB 存储迁移")
-                        .setItems(migrationOptions) { _, which ->
-                            if (which == 0) {
-                                // 移动到 SMB
-                                val servers = SmbServerStore.list()
-                                if (servers.isNullOrEmpty()) {
-                                    Toast.makeText(ctxFinal, "请先在 设置>高级>添加 SMB 服务器", Toast.LENGTH_LONG).show()
-                                    return@setItems
-                                }
-                                val choices = Array<CharSequence>(servers.size) { i ->
-                                    val s = servers[i]
-                                    val a = s.authority
-                                    val userPart = if (!a.domain.isNullOrEmpty()) "${a.domain}\\\\${a.username}" else a.username
-                                    val portPart = if (a.port != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ":${a.port}" else ""
-                                    val path = s.relativePath
-                                    val pathPart = if (path.isNullOrEmpty()) "" else "/" + path.replace('\\', '/')
-                                    val url = "smb://$userPart:${s.password}@${a.host}$portPart$pathPart"
-                                    (if (s.name != null) "${s.name}: " else "") + url
-                                }
-
-                                AlertDialog.Builder(ctxFinal)
-                                    .setTitle("选择目标 SMB 服务器")
-                                    .setItems(choices) { _, whichIdx ->
-                                        val server = servers[whichIdx]
-                                        migrateToSmbAsync(ctxFinal, infosFinal, server)
-                                    }
-                                    .show()
-                            } else if (which == 1) {
-                                // 从 SMB 移动到本地
-                                // 筛选出在SMB上的下载项
-                                val smbInfos = mutableListOf<DownloadInfo>()
-                                for (info in infosFinal) {
-                                    val smbCheck = SmbPathResolver.resolve(info.gid)
-                                    if (smbCheck != null && SmbStorageTracker.isOnSmb(info.gid)) {
-                                        smbInfos.add(info)
-                                    }
-                                }
-
-                                if (smbInfos.isEmpty()) {
-                                    Toast.makeText(ctxFinal, "所选漫画均不在 SMB 上", Toast.LENGTH_SHORT).show()
-                                    return@setItems
-                                }
-
-                                AlertDialog.Builder(ctxFinal)
-                                    .setTitle("从 SMB 移动到本地")
-                                    .setMessage("确定要将 ${smbInfos.size} 个漫画从 SMB 移动到本地存储吗？")
-                                    .setNegativeButton(android.R.string.cancel, null)
-                                    .setPositiveButton(android.R.string.ok) { _, _ ->
-                                        moveFromSmbToLocalAsync(ctxFinal, smbInfos)
-                                    }
-                                    .show()
-                            }
-                        }
-                        .show()
+                    recyclerView.outOfCustomChoiceMode()
+                    showSmbMigrationDialog(context, downloadInfoList) {
+                        mHost.updateForLabel()
+                        mHost.updateView()
+                    }
                 }
             }
         }
@@ -845,207 +776,6 @@ class DownloadBatchActions(private val mHost: Host?) {
         } else {
             fab.setImageDrawable(ResourcesCompat.getDrawable(mHost.resources, R.drawable.v_mobile_hand_left_off_x24, context.theme))
         }
-    }
-
-    private fun migrateToSmbAsync(context: Context, infos: List<DownloadInfo>, server: SmbServer) {
-        // 取消选择模式
-        mHost?.recyclerView?.outOfCustomChoiceMode()
-        object : AsyncTask<Void, Int, Int>() {
-            override fun doInBackground(vararg voids: Void): Int {
-                var okCount = 0
-                for (info in infos) {
-                    try {
-                        val dir = getGalleryDownloadDir(info) ?: continue
-                        if (!dir.isDirectory) continue
-                        val dirname = dir.name ?: continue
-                        val base = server.toTarget() ?: continue
-                        val basePath = joinPath(base.pathInShare, dirname)
-                        val targetBase = Client.Target(base.authority, base.share, basePath)
-                        val success = Client.withTempPassword(targetBase.authority, server.password) {
-                            try {
-                                Client.mkdirs(targetBase)
-                                val children = dir.listFiles()
-                                if (children != null) {
-                                    for (child in children) {
-                                        if (child == null || child.isDirectory) continue
-                                        val name = child.name
-                                        var ins: InputStream? = null
-                                        try {
-                                            ins = child.openInputStream()
-                                            Client.upload(
-                                                Client.Target(targetBase.authority, targetBase.share, joinPath(targetBase.pathInShare, name)),
-                                                ins,
-                                                true
-                                            )
-                                        } finally {
-                                            IOUtils.closeQuietly(ins)
-                                        }
-                                    }
-                                }
-                                true
-                            } catch (t: Throwable) {
-                                t.printStackTrace()
-                                false
-                            }
-                        }
-                        if (success) {
-                            // 删除本地目录以实现"移动"效果
-                            dir.delete()
-                            SmbStorageTracker.markOnSmb(info.gid)
-                            // 更新存储位置缓存：从本地迁移到 SMB
-                            StorageDetector.updateCache(info.gid, StorageLocation.SMB)
-                            okCount++
-                        }
-                    } catch (t: Throwable) {
-                        t.printStackTrace()
-                    }
-                }
-                return okCount
-            }
-
-            override fun onPostExecute(okCount: Int?) {
-                Toast.makeText(context, "已移动漫画到 SMB：$okCount/${infos.size}", Toast.LENGTH_LONG).show()
-                // 刷新界面
-                mHost?.updateForLabel()
-                mHost?.updateView()
-            }
-        }.executeOnExecutor(IoThreadPoolExecutor.instance)
-    }
-
-    private fun moveFromSmbToLocalAsync(context: Context, infos: List<DownloadInfo>) {
-        // 取消选择模式
-        mHost?.recyclerView?.outOfCustomChoiceMode()
-
-        Toast.makeText(context, "开始从 SMB 移动到本地...", Toast.LENGTH_SHORT).show()
-
-        object : AsyncTask<Void, Int, Int>() {
-            override fun doInBackground(vararg voids: Void): Int {
-                var okCount = 0
-                for (info in infos) {
-                    try {
-                        // 通过 dirname 推导 SMB 路径
-                        val smbTarget = SmbPathResolver.resolve(info.gid) ?: continue
-
-                        // 获取对应的 SMB 服务器配置（用于密码）
-                        val server = SmbServerStore.findByAuthority(smbTarget.authority)
-                        if (server == null) {
-                            Log.e("DownloadsScene", "找不到匹配的 SMB 服务器配置")
-                            continue
-                        }
-
-                        // 创建本地目标目录
-                        val localDir = Settings.getDownloadLocation() ?: continue
-
-                        // 从 SMB 路径中提取文件夹名称
-                        var dirname: String? = smbTarget.pathInShare
-                        if (dirname != null && dirname.contains("\\")) {
-                            val parts = dirname.split("\\\\")
-                            dirname = parts[parts.size - 1]
-                        } else if (dirname != null && dirname.contains("/")) {
-                            val parts = dirname.split("/")
-                            dirname = parts[parts.size - 1]
-                        }
-
-                        if (dirname.isNullOrEmpty()) {
-                            dirname = info.gid.toString()
-                        }
-
-                        val targetDir = localDir.createDirectory(dirname)
-                        if (targetDir == null || !targetDir.ensureDir()) {
-                            Log.e("DownloadsScene", "无法创建本地目录: $dirname")
-                            continue
-                        }
-
-                        // 从 SMB 下载文件到本地
-                        val success = Client.withTempPassword(
-                            smbTarget.authority,
-                            server.password
-                        ) {
-                            try {
-                                val entries = Client.listDirectory(smbTarget)
-                                if (entries.isNullOrEmpty()) {
-                                    return@withTempPassword false
-                                }
-
-                                for (entry in entries) {
-                                    // 只下载文件，跳过目录
-                                    if (entry.isDirectory) continue
-
-                                    val fileName = entry.name
-                                    val fileTarget = Client.Target(
-                                        smbTarget.authority,
-                                        smbTarget.share,
-                                        joinPath(smbTarget.pathInShare, fileName)
-                                    )
-
-                                    val localFile = targetDir.createFile(fileName) ?: continue
-
-                                    var ins: InputStream? = null
-                                    var os: OutputStream? = null
-                                    try {
-                                        ins = Client.openInputStream(fileTarget)
-                                        os = localFile.openOutputStream()
-
-                                        val buffer = ByteArray(8192)
-                                        var bytesRead: Int
-                                        while (ins.read(buffer).also { bytesRead = it } != -1) {
-                                            os.write(buffer, 0, bytesRead)
-                                        }
-                                        os.flush()
-                                    } finally {
-                                        IOUtils.closeQuietly(ins)
-                                        IOUtils.closeQuietly(os)
-                                    }
-                                }
-                                true
-                            } catch (t: Throwable) {
-                                t.printStackTrace()
-                                false
-                            }
-                        }
-
-                        if (success) {
-                            // 更新下载路径
-                            EhDB.putDownloadDirname(info.gid, dirname)
-                            SmbStorageTracker.markLocal(info.gid)
-                            // 更新存储位置缓存：从 SMB 迁移到本地
-                            StorageDetector.updateCache(info.gid, StorageLocation.LOCAL)
-
-                            // 可选：删除 SMB 上的文件（实现"移动"效果）
-                            try {
-                                Client.withTempPassword(
-                                    smbTarget.authority,
-                                    server.password
-                                ) {
-                                    try {
-                                        deleteSmbDirectoryRecursively(smbTarget)
-                                        true
-                                    } catch (t: Throwable) {
-                                        Log.e("DownloadsScene", "删除 SMB 目录失败: $dirname", t)
-                                        false
-                                    }
-                                }
-                            } catch (t: Throwable) {
-                                // 删除失败不影响主流程
-                                Log.e("DownloadsScene", "删除 SMB 目录异常: $dirname", t)
-                            }
-
-                            okCount++
-                        }
-                    } catch (t: Throwable) {
-                        t.printStackTrace()
-                    }
-                }
-                return okCount
-            }
-
-            override fun onPostExecute(okCount: Int?) {
-                Toast.makeText(context, "已从 SMB 移动到本地：$okCount/${infos.size}", Toast.LENGTH_LONG).show()
-                // 刷新界面
-                mHost?.updateForLabel()
-                mHost?.updateView()
-            }
-        }.executeOnExecutor(IoThreadPoolExecutor.instance)
     }
 
     /**
@@ -1273,22 +1003,438 @@ class DownloadBatchActions(private val mHost: Host?) {
         }
     }
 
-    private inner class MoveDialogHelper(
-        private val mLabels: Array<String>,
-        private val mDownloadInfoList: List<DownloadInfo>
-    ) : DialogInterface.OnClickListener {
-
-        override fun onClick(dialog: DialogInterface, which: Int) {
-            // Cancel check mode
-            val context = mHost?.getEHContext() ?: return
-            mHost.recyclerView?.outOfCustomChoiceMode()
-
-            val label: String? = if (which == 0) null else mLabels[which]
-            EhApplication.getDownloadManager(context).changeLabel(mDownloadInfoList, label)
-        }
-    }
-
     companion object {
+
+        /**
+         * 显示修改下载标签对话框 (单项)
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun showChangeLabelDialog(
+            context: Context,
+            info: DownloadInfo,
+            onLabelChanged: Runnable? = null
+        ) {
+            showChangeLabelDialog(context, listOf(info), onLabelChanged)
+        }
+
+        /**
+         * 显示修改下载标签对话框 (批量/单项通用)
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun showChangeLabelDialog(
+            context: Context,
+            infos: List<DownloadInfo>,
+            onLabelChanged: Runnable? = null
+        ) {
+            val dm = EhApplication.getDownloadManager(context) ?: return
+            val list = dm.labelList
+            val labels = Array(list.size + 1) { i ->
+                if (i == 0) context.getString(R.string.default_download_label_name)
+                else list[i - 1].label
+            }
+
+            AlertDialog.Builder(context)
+                .setTitle(R.string.download_move_dialog_title)
+                .setItems(labels) { _, which ->
+                    val targetLabel: String? = if (which == 0) null else labels[which]
+                    dm.changeLabel(infos, targetLabel)
+                    Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
+                    onLabelChanged?.run()
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
+        /**
+         * 显示移动位置对话框 (输入目标 GID、0 或留空，适用于详情页等独立调用场景)
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun showMoveToPositionDialog(
+            context: Context,
+            sourceInfo: DownloadInfo,
+            onMoved: Runnable? = null
+        ) {
+            val editText = EditText(context).apply {
+                hint = ""
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER
+                isSingleLine = true
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            }
+
+            val builder = AlertDialog.Builder(context)
+                .setTitle(R.string.move_to_position_title)
+                .setMessage(context.getString(R.string.move_to_position_hint))
+                .setView(editText)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                    imm?.hideSoftInputFromWindow(editText.windowToken, 0)
+                    val gidInput = editText.text.toString().trim()
+                    moveToPosition(context, sourceInfo, gidInput, onMoved)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+
+            val dialog = builder.show()
+            dialog.setOnDismissListener {
+                val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                imm?.hideSoftInputFromWindow(editText.windowToken, 0)
+            }
+        }
+
+        private fun moveToPosition(
+            context: Context,
+            sourceInfo: DownloadInfo,
+            targetGidInput: String,
+            onMoved: Runnable?
+        ) {
+            val dm = EhApplication.getDownloadManager(context)
+            if (targetGidInput.isEmpty()) {
+                val defaultLabel = Settings.getDefaultDownloadLabel()
+                sourceInfo.time = System.currentTimeMillis()
+                EhDB.putDownloadInfo(sourceInfo)
+                dm?.changeLabel(listOf(sourceInfo), defaultLabel)
+                Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
+                onMoved?.run()
+                return
+            } else if (targetGidInput == "0") {
+                sourceInfo.time = System.currentTimeMillis() + 1
+                EhDB.putDownloadInfo(sourceInfo)
+                Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
+                onMoved?.run()
+                return
+            } else {
+                try {
+                    val targetGid = targetGidInput.toLong()
+                    val allList = EhDB.getAllDownloadInfo()
+                    var targetIdx = -1
+                    var sourceIdx = -1
+                    for (i in allList.indices) {
+                        if (allList[i].gid == targetGid) targetIdx = i
+                        if (allList[i].gid == sourceInfo.gid) sourceIdx = i
+                    }
+
+                    if (targetIdx == -1) {
+                        Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show()
+                        return
+                    }
+
+                    if (sourceIdx == targetIdx + 1) {
+                        return
+                    }
+
+                    val targetTime = allList[targetIdx].time
+                    val newTime = if (targetIdx + 1 < allList.size) {
+                        (targetTime + allList[targetIdx + 1].time) / 2
+                    } else {
+                        targetTime - 1
+                    }
+
+                    sourceInfo.time = newTime
+                    EhDB.putDownloadInfo(sourceInfo)
+                    Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
+                    onMoved?.run()
+                } catch (e: NumberFormatException) {
+                    Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        /**
+         * 显示 SMB 存储迁移对话框 (单项)
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun showSmbMigrationDialog(
+            context: Context,
+            info: DownloadInfo,
+            onComplete: Runnable? = null
+        ) {
+            showSmbMigrationDialog(context, listOf(info), onComplete)
+        }
+
+        /**
+         * 显示 SMB 存储迁移对话框 (批量/单项通用)
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun showSmbMigrationDialog(
+            context: Context,
+            infos: List<DownloadInfo>,
+            onComplete: Runnable? = null
+        ) {
+            if (infos.isEmpty()) return
+
+            val migrationOptions = arrayOf<CharSequence>(
+                context.getString(R.string.smb_migration_to_smb),
+                context.getString(R.string.smb_migration_to_local)
+            )
+
+            AlertDialog.Builder(context)
+                .setTitle(R.string.smb_migration)
+                .setItems(migrationOptions) { _, which ->
+                    if (which == 0) {
+                        // 移动到 SMB
+                        val servers = SmbServerStore.list()
+                        if (servers.isNullOrEmpty()) {
+                            Toast.makeText(context, R.string.smb_migration_no_server, Toast.LENGTH_LONG).show()
+                            return@setItems
+                        }
+                        val choices = Array<CharSequence>(servers.size) { i ->
+                            val s = servers[i]
+                            val a = s.authority
+                            val userPart = if (!a.domain.isNullOrEmpty()) "${a.domain}\\${a.username}" else a.username
+                            val portPart = if (a.port != com.hippo.ehviewer.smb.Authority.DEFAULT_PORT) ":${a.port}" else ""
+                            val path = s.relativePath
+                            val pathPart = if (path.isNullOrEmpty()) "" else "/" + path.replace('\\', '/')
+                            val url = "smb://$userPart:${s.password}@${a.host}$portPart$pathPart"
+                            (if (s.name != null) "${s.name}: " else "") + url
+                        }
+
+                        AlertDialog.Builder(context)
+                            .setTitle(R.string.smb_migration_select_server)
+                            .setItems(choices) { _, whichIdx ->
+                                val server = servers[whichIdx]
+                                migrateToSmbAsync(context, infos, server, onComplete)
+                            }
+                            .show()
+                    } else if (which == 1) {
+                        // 从 SMB 移动到本地
+                        val smbInfos = mutableListOf<DownloadInfo>()
+                        for (info in infos) {
+                            val smbCheck = SmbPathResolver.resolve(info.gid)
+                            if (smbCheck != null && SmbStorageTracker.isOnSmb(info.gid)) {
+                                smbInfos.add(info)
+                            }
+                        }
+
+                        if (smbInfos.isEmpty()) {
+                            Toast.makeText(context, R.string.smb_migration_not_on_smb, Toast.LENGTH_SHORT).show()
+                            return@setItems
+                        }
+
+                        val confirmMsg = if (smbInfos.size == 1) {
+                            context.getString(R.string.smb_migration_to_local_confirm)
+                        } else {
+                            "确定要将 ${smbInfos.size} 个漫画从 SMB 移动到本地存储吗？"
+                        }
+
+                        AlertDialog.Builder(context)
+                            .setTitle(R.string.smb_migration_to_local)
+                            .setMessage(confirmMsg)
+                            .setNegativeButton(android.R.string.cancel, null)
+                            .setPositiveButton(android.R.string.ok) { _, _ ->
+                                moveFromSmbToLocalAsync(context, smbInfos, onComplete)
+                            }
+                            .show()
+                    }
+                }
+                .show()
+        }
+
+        /**
+         * 异步迁移漫画到 SMB 服务器
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun migrateToSmbAsync(
+            context: Context,
+            infos: List<DownloadInfo>,
+            server: SmbServer,
+            onComplete: Runnable? = null
+        ) {
+            Toast.makeText(context, "正在移动漫画到 SMB...", Toast.LENGTH_SHORT).show()
+            object : AsyncTask<Void, Int, Int>() {
+                override fun doInBackground(vararg voids: Void): Int {
+                    var okCount = 0
+                    for (info in infos) {
+                        try {
+                            val dir = getGalleryDownloadDir(info) ?: continue
+                            if (!dir.isDirectory) continue
+                            val dirname = dir.name ?: continue
+                            val base = server.toTarget() ?: continue
+                            val basePath = joinPath(base.pathInShare, dirname)
+                            val targetBase = Client.Target(base.authority, base.share, basePath)
+                            val success = Client.withTempPassword(targetBase.authority, server.password) {
+                                try {
+                                    Client.mkdirs(targetBase)
+                                    val children = dir.listFiles()
+                                    if (children != null) {
+                                        for (child in children) {
+                                            if (child == null || child.isDirectory) continue
+                                            val name = child.name
+                                            var ins: InputStream? = null
+                                            try {
+                                                ins = child.openInputStream()
+                                                Client.upload(
+                                                    Client.Target(targetBase.authority, targetBase.share, joinPath(targetBase.pathInShare, name)),
+                                                    ins,
+                                                    true
+                                                )
+                                            } finally {
+                                                IOUtils.closeQuietly(ins)
+                                            }
+                                        }
+                                    }
+                                    true
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                    false
+                                }
+                            }
+                            if (success) {
+                                dir.delete()
+                                SmbStorageTracker.markOnSmb(info.gid)
+                                StorageDetector.updateCache(info.gid, StorageLocation.SMB)
+                                okCount++
+                            }
+                        } catch (t: Throwable) {
+                            t.printStackTrace()
+                        }
+                    }
+                    return okCount
+                }
+
+                override fun onPostExecute(okCount: Int?) {
+                    Toast.makeText(context, "已移动漫画到 SMB：$okCount/${infos.size}", Toast.LENGTH_LONG).show()
+                    onComplete?.run()
+                }
+            }.executeOnExecutor(IoThreadPoolExecutor.instance)
+        }
+
+        /**
+         * 异步从 SMB 迁移漫画到本地存储
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun moveFromSmbToLocalAsync(
+            context: Context,
+            infos: List<DownloadInfo>,
+            onComplete: Runnable? = null
+        ) {
+            Toast.makeText(context, "开始从 SMB 移动到本地...", Toast.LENGTH_SHORT).show()
+            object : AsyncTask<Void, Int, Int>() {
+                override fun doInBackground(vararg voids: Void): Int {
+                    var okCount = 0
+                    for (info in infos) {
+                        try {
+                            val smbTarget = SmbPathResolver.resolve(info.gid) ?: continue
+                            val server = SmbServerStore.findByAuthority(smbTarget.authority)
+                            if (server == null) {
+                                Log.e("DownloadBatchActions", "找不到匹配的 SMB 服务器配置")
+                                continue
+                            }
+
+                            val localDir = Settings.getDownloadLocation() ?: continue
+
+                            var dirname: String? = smbTarget.pathInShare
+                            if (dirname != null && dirname.contains("\\")) {
+                                val parts = dirname.split("\\\\")
+                                dirname = parts[parts.size - 1]
+                            } else if (dirname != null && dirname.contains("/")) {
+                                val parts = dirname.split("/")
+                                dirname = parts[parts.size - 1]
+                            }
+
+                            if (dirname.isNullOrEmpty()) {
+                                dirname = info.gid.toString()
+                            }
+
+                            val targetDir = localDir.createDirectory(dirname)
+                            if (targetDir == null || !targetDir.ensureDir()) {
+                                Log.e("DownloadBatchActions", "无法创建本地目录: $dirname")
+                                continue
+                            }
+
+                            val success = Client.withTempPassword(
+                                smbTarget.authority,
+                                server.password
+                            ) {
+                                try {
+                                    val entries = Client.listDirectory(smbTarget)
+                                    if (entries.isNullOrEmpty()) {
+                                        return@withTempPassword false
+                                    }
+
+                                    for (entry in entries) {
+                                        if (entry.isDirectory) continue
+
+                                        val fileName = entry.name
+                                        val fileTarget = Client.Target(
+                                            smbTarget.authority,
+                                            smbTarget.share,
+                                            joinPath(smbTarget.pathInShare, fileName)
+                                        )
+
+                                        val localFile = targetDir.createFile(fileName) ?: continue
+
+                                        var ins: InputStream? = null
+                                        var os: OutputStream? = null
+                                        try {
+                                            ins = Client.openInputStream(fileTarget)
+                                            os = localFile.openOutputStream()
+
+                                            val buffer = ByteArray(8192)
+                                            var bytesRead: Int
+                                            while (ins.read(buffer).also { bytesRead = it } != -1) {
+                                                os.write(buffer, 0, bytesRead)
+                                            }
+                                            os.flush()
+                                        } finally {
+                                            IOUtils.closeQuietly(ins)
+                                            IOUtils.closeQuietly(os)
+                                        }
+                                    }
+                                    true
+                                } catch (t: Throwable) {
+                                    t.printStackTrace()
+                                    false
+                                }
+                            }
+
+                            if (success) {
+                                EhDB.putDownloadDirname(info.gid, dirname)
+                                SmbStorageTracker.markLocal(info.gid)
+                                StorageDetector.updateCache(info.gid, StorageLocation.LOCAL)
+
+                                try {
+                                    Client.withTempPassword(
+                                        smbTarget.authority,
+                                        server.password
+                                    ) {
+                                        try {
+                                            deleteSmbDirectoryRecursively(smbTarget)
+                                            true
+                                        } catch (t: Throwable) {
+                                            Log.e("DownloadBatchActions", "删除 SMB 目录失败: $dirname", t)
+                                            false
+                                        }
+                                    }
+                                } catch (t: Throwable) {
+                                    Log.e("DownloadBatchActions", "删除 SMB 目录异常: $dirname", t)
+                                }
+
+                                okCount++
+                            }
+                        } catch (t: Throwable) {
+                            t.printStackTrace()
+                        }
+                    }
+                    return okCount
+                }
+
+                override fun onPostExecute(okCount: Int?) {
+                    Toast.makeText(context, "已从 SMB 移动到本地：$okCount/${infos.size}", Toast.LENGTH_LONG).show()
+                    onComplete?.run()
+                }
+            }.executeOnExecutor(IoThreadPoolExecutor.instance)
+        }
 
         /**
          * 递归删除 SMB 目录及其所有内容

@@ -30,4 +30,12 @@
         android:id="@+id/action_goto_download"
         android:title="@string/goto_download_list"/>
 
+    <item
+        android:id="@+id/action_move_to_position"
+        android:title="@string/menu_move_to_position"/>
+
+    <item
+        android:id="@+id/action_smb_migration"
+        android:title="@string/smb_migration"/>
+
 </menu>

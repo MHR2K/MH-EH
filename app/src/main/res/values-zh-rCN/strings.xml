@@ -465,6 +465,13 @@
     <string name="move_to_position_hint">(输入目标画廊的GID来移动到它下面。留空则移动到默认标签最新位置，输入0则移动到当前标签最新位置。)</string>
     <string name="move_to_position_error">未找到目标</string>
     <string name="move_to_position_success">移动成功</string>
+    <string name="smb_migration">SMB 存储迁移</string>
+    <string name="smb_migration_to_smb">移动到 SMB 服务器</string>
+    <string name="smb_migration_to_local">从 SMB 移动到本地</string>
+    <string name="smb_migration_select_server">选择目标 SMB 服务器</string>
+    <string name="smb_migration_no_server">请先在 设置>高级>添加 SMB 服务器</string>
+    <string name="smb_migration_not_on_smb">该漫画不在 SMB 上</string>
+    <string name="smb_migration_to_local_confirm">确定要将此漫画从 SMB 移动到本地存储吗？</string>
     <string name="searching_author">搜索作者中...</string>
     <string name="author_not_found">未找到作者信息</string>
     <string name="add_download_entry_only">仅添加下载项</string>

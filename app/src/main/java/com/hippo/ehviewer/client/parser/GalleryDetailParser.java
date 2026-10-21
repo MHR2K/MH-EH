@@ -346,7 +346,7 @@ public class GalleryDetailParser {
         } else if (key.startsWith("Length")) {
             int index = value.indexOf(' ');
             if (index >= 0) {
-                gd.pages = NumberUtils.parseIntSafely(value.substring(0, index), 1);
+                gd.pages = NumberUtils.parseIntSafely(value.substring(0, index).replace(",", ""), 1);
             } else {
                 gd.pages = 1;
             }
