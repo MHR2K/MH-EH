@@ -592,6 +592,18 @@ class DownloadAdapter(
                     Log.d("DownloadAdapter", "onItemDragFinished: $toPosition")
                 }
             }
+
+            if (fromPosition != toPosition) {
+                val info = getDownloadInfoAtAdapterPosition(toPosition)
+                if (info != null) {
+                    val context = mScene.context ?: com.hippo.ehviewer.EhApplication.getInstance()
+                    com.hippo.ehviewer.gallerylog.GalleryLogManager.getInstance(context).logItemReorder(
+                        info.gid,
+                        info.title,
+                        "拖拽排序: 位置 $fromPosition ➔ $toPosition"
+                    )
+                }
+            }
         } catch (e: Exception) {
             // 忽略硬件位图相关错误
             Log.e("DownloadAdapter", "Error in onItemDragFinished: ${e.message}")

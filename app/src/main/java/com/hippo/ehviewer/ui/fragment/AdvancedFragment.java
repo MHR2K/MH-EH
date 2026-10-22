@@ -17,13 +17,17 @@
 package com.hippo.ehviewer.ui.fragment;
 
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -31,16 +35,20 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.preference.Preference;
 
+import com.hippo.content.FileProvider;
 import com.hippo.ehviewer.AppConfig;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.backup.BackupScheduler;
+import com.hippo.ehviewer.gallerylog.GalleryLogManager;
 import com.hippo.ehviewer.ui.wifi.WiFiClientActivity;
 import com.hippo.ehviewer.ui.wifi.WiFiServerActivity;
 import com.hippo.ehviewer.smb.ui.SmbAddServerActivity;
 import com.hippo.ehviewer.widget.ProgressHelper;
+import com.hippo.lib.yorozuya.SimpleHandler;
+import com.hippo.util.IoThreadPoolExecutor;
 import com.hippo.util.LogCat;
 import com.hippo.util.ReadableTime;
 
@@ -56,6 +64,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
     public static final String LOADING_PROGRESS = "loading_progress";
 
     private static final String KEY_DUMP_LOGCAT = "dump_logcat";
+    private static final String KEY_EXPORT_GALLERY_LOG = "export_gallery_log";
     private static final String KEY_CLEAR_MEMORY_CACHE = "clear_memory_cache";
     private static final String KEY_APP_LANGUAGE = "app_language";
     private static final String KEY_IMPORT_DATA = "import_data";
@@ -86,6 +95,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         );
 
         Preference dumpLogcat = findPreference(KEY_DUMP_LOGCAT);
+        Preference exportGalleryLog = findPreference(KEY_EXPORT_GALLERY_LOG);
         Preference clearMemoryCache = findPreference(KEY_CLEAR_MEMORY_CACHE);
         Preference appLanguage = findPreference(KEY_APP_LANGUAGE);
         Preference importData = findPreference(KEY_IMPORT_DATA);
@@ -95,6 +105,7 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         Preference smbScan = findPreference(KEY_SMB_SCAN_MAPPING);
 
         dumpLogcat.setOnPreferenceClickListener(this);
+        if (exportGalleryLog != null) exportGalleryLog.setOnPreferenceClickListener(this);
         clearMemoryCache.setOnPreferenceClickListener(this);
         importData.setOnPreferenceClickListener(this);
         socketData.setOnPreferenceClickListener(this);
@@ -157,6 +168,8 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
         switch (key) {
             case KEY_DUMP_LOGCAT:
                 return dumpLogcat();
+            case KEY_EXPORT_GALLERY_LOG:
+                return exportGalleryLog();
             case KEY_CLEAR_MEMORY_CACHE:
                 return clearMemoryCache();
             case KEY_IMPORT_DATA:
@@ -297,6 +310,65 @@ public class AdvancedFragment extends BasePreferenceFragmentCompat
                 ok ? resources.getString(R.string.settings_advanced_dump_logcat_to, file.getPath()) :
                         resources.getString(R.string.settings_advanced_dump_logcat_failed), Toast.LENGTH_SHORT).show();
         return true;
+    }
+
+    private boolean exportGalleryLog() {
+        Context ctx = getContext();
+        Activity activity = getActivity();
+        if (ctx == null || activity == null) {
+            return false;
+        }
+        Toast.makeText(activity, R.string.export_gallery_log_exporting, Toast.LENGTH_SHORT).show();
+        IoThreadPoolExecutor.getInstance().execute(() -> {
+            File logFile = GalleryLogManager.getInstance(ctx).exportLogsToFile(ctx);
+            SimpleHandler.getInstance().post(() -> {
+                Activity act = getActivity();
+                if (act == null || act.isFinishing()) {
+                    return;
+                }
+                if (logFile == null || !logFile.exists() || logFile.length() == 0) {
+                    Toast.makeText(act, R.string.export_gallery_log_failed, Toast.LENGTH_LONG).show();
+                    return;
+                }
+                String path = logFile.getAbsolutePath();
+                String message = act.getString(R.string.export_gallery_log_success_msg, path);
+                new AlertDialog.Builder(act)
+                        .setTitle(R.string.export_gallery_log_success_title)
+                        .setMessage(message)
+                        .setNegativeButton(R.string.export_gallery_log_share, (dialog, which) -> {
+                            shareOrOpenFile(act, logFile);
+                        })
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+            });
+        });
+        return true;
+    }
+
+    private void shareOrOpenFile(Activity activity, File file) {
+        try {
+            Uri contentUri;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                String authority = activity.getPackageName() + ".fileprovider";
+                contentUri = FileProvider.getUriForFile(activity, authority, file);
+            } else {
+                contentUri = Uri.fromFile(file);
+            }
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("text/plain");
+            intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+                intent.setClipData(ClipData.newRawUri("", contentUri));
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+            Intent chooser = Intent.createChooser(intent, activity.getString(R.string.export_gallery_log_share));
+            chooser.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            activity.startActivity(chooser);
+        } catch (Throwable t) {
+            Log.e("AdvancedFragment", "Failed to share gallery log file", t);
+            Toast.makeText(activity, t.getMessage() != null ? t.getMessage() : "Failed to share log file", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private boolean importData(final Context context) {

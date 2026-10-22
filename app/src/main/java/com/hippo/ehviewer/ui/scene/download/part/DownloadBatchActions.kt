@@ -50,6 +50,7 @@ import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.dao.DownloadLabel
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.download.DownloadService
+import com.hippo.ehviewer.gallerylog.GalleryLogManager
 import com.hippo.ehviewer.util.FavCountStore
 import com.hippo.ehviewer.smb.Client
 import com.hippo.ehviewer.smb.SmbPathResolver
@@ -861,6 +862,7 @@ class DownloadBatchActions(private val mHost: Host?) {
             // 输入0，移到当前标签列表的最前面（该标签最新的位置）
             sourceInfo.time = System.currentTimeMillis() + 1
             EhDB.putDownloadInfo(sourceInfo)
+            GalleryLogManager.getInstance(context).logItemReorder(sourceInfo.gid, sourceInfo.title, "置顶到当前列表首位")
             backList.sortWith { a, b -> b.time.compareTo(a.time) }
             if (list !== backList) {
                 val srcIdx = list.indexOfFirst { it.gid == sourceInfo.gid }
@@ -911,6 +913,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                 // 更新源项的 time 并写入数据库
                 sourceInfo.time = newTime
                 EhDB.putDownloadInfo(sourceInfo)
+                GalleryLogManager.getInstance(context).logItemReorder(sourceInfo.gid, sourceInfo.title, "移至画廊 GID [${targetGid}] 之后")
 
                 // backList 按 time 降序重排
                 backList.sortWith { a, b -> b.time.compareTo(a.time) }
@@ -1293,6 +1296,13 @@ class DownloadBatchActions(private val mHost: Host?) {
                                 SmbStorageTracker.markOnSmb(info.gid)
                                 StorageDetector.updateCache(info.gid, StorageLocation.SMB)
                                 okCount++
+                                GalleryLogManager.getInstance(context).logSmbMigrateToSmb(
+                                    info.gid, info.title, server.authority.host, true, "已迁移至 ${targetBase.pathInShare}"
+                                )
+                            } else {
+                                GalleryLogManager.getInstance(context).logSmbMigrateToSmb(
+                                    info.gid, info.title, server.authority.host, false, "上传或目录创建失败"
+                                )
                             }
                         } catch (t: Throwable) {
                             t.printStackTrace()
@@ -1421,6 +1431,13 @@ class DownloadBatchActions(private val mHost: Host?) {
                                 }
 
                                 okCount++
+                                GalleryLogManager.getInstance(context).logSmbMigrateToLocal(
+                                    info.gid, info.title, true, "已迁回本地: $dirname"
+                                )
+                            } else {
+                                GalleryLogManager.getInstance(context).logSmbMigrateToLocal(
+                                    info.gid, info.title, false, "从 SMB 复制文件失败"
+                                )
                             }
                         } catch (t: Throwable) {
                             t.printStackTrace()

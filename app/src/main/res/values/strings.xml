@@ -1363,4 +1363,13 @@
     <string name="statistics_total_time">总时间</string>
     <string name="statistics_read_time">阅读时间</string>
     <string name="statistics_download_time">浏览与其他</string>
+
+    <!-- Gallery Log -->
+    <string name="settings_advanced_export_gallery_log">Export Manga Activity Log</string>
+    <string name="settings_advanced_export_gallery_log_summary">Export manga download lifecycle, storage migrations, and operation logs to EhViewer/logcat/</string>
+    <string name="export_gallery_log_exporting">Exporting logs…</string>
+    <string name="export_gallery_log_success_title">Log Exported Successfully</string>
+    <string name="export_gallery_log_success_msg">Log file saved to:\n%s</string>
+    <string name="export_gallery_log_share">Share / Open</string>
+    <string name="export_gallery_log_failed">Failed to export log or log is empty</string>
 </resources>

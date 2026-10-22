@@ -47,6 +47,7 @@ import com.hippo.unifile.UniFile;
 import com.hippo.util.ExceptionUtils;
 import com.hippo.util.IoThreadPoolExecutor;
 import com.hippo.lib.yorozuya.ConcurrentPool;
+import com.hippo.ehviewer.gallerylog.GalleryLogManager;
 import com.hippo.lib.yorozuya.MathUtils;
 import com.hippo.lib.yorozuya.ObjectUtils;
 import com.hippo.lib.yorozuya.SimpleHandler;
@@ -115,6 +116,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     private static final int MAX_AUTO_RETRY_COUNT = 2;
     private final HashMap<Long, Integer> mGalleryRetryMap = new HashMap<>();
     private final java.util.HashSet<Long> m509Gids = new java.util.HashSet<>();
+    private final HashMap<Long, Long> mDownloadStartTimeMap = new HashMap<>();
+    private final HashMap<Long, Integer> mOriginStateBeforeWaitMap = new HashMap<>();
 
     private final ConcurrentPool<NotifyTask> mNotifyTaskPool = new ConcurrentPool<>(5);
 
@@ -512,6 +515,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             info.state = DownloadInfo.STATE_DOWNLOAD;
             // 更新存储位置缓存：下载开始，本地目录已创建
             StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.LOCAL);
+            mDownloadStartTimeMap.put(info.gid, System.currentTimeMillis());
+            Integer originState = mOriginStateBeforeWaitMap.remove(info.gid);
+            GalleryLogManager.getInstance(mContext).logDownloadStart(info, originState != null ? originState : DownloadInfo.STATE_WAIT, info.finished > 0);
             info.speed = -1;
             info.remaining = -1;
             info.total = -1;
@@ -599,8 +605,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             if (info.state != DownloadInfo.STATE_WAIT) {
                 mGalleryRetryMap.remove(info.gid);
                 m509Gids.remove(info.gid);
+                int oldState = info.state;
+                mOriginStateBeforeWaitMap.put(info.gid, oldState);
                 // Set state DownloadInfo.STATE_WAIT
                 info.state = DownloadInfo.STATE_WAIT;
+                GalleryLogManager.getInstance(mContext).logDownloadWait(info, oldState, "手动开始");
                 // Add to wait list
                 mWaitList.add(info);
                 // Update in DB
@@ -665,6 +674,8 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // 统计：添加下载
             com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+            mOriginStateBeforeWaitMap.put(info.gid, DownloadInfo.STATE_NONE);
+            GalleryLogManager.getInstance(mContext).logDownloadAdd(info, "画廊详情");
 
             // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
             if (TextUtils.isEmpty(info.titleJpn)) {
@@ -701,8 +712,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     mGalleryRetryMap.remove(info.gid);
                     m509Gids.remove(info.gid);
                     update = true;
+                    int oldState = info.state;
+                    mOriginStateBeforeWaitMap.put(info.gid, oldState);
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
+                    GalleryLogManager.getInstance(mContext).logDownloadWait(info, oldState, "批量开始");
                     // Add to wait list
                     mWaitList.add(info);
                     // Update in DB
@@ -727,8 +741,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     mGalleryRetryMap.remove(info.gid);
                     m509Gids.remove(info.gid);
                     update = true;
+                    int oldState = info.state;
+                    mOriginStateBeforeWaitMap.put(info.gid, oldState);
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
+                    GalleryLogManager.getInstance(mContext).logDownloadWait(info, oldState, "批量开始");
                     // Add to wait list
                     mWaitList.add(info);
                     // Update in DB
@@ -760,8 +777,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             for (DownloadInfo info : allInfoList) {
                 if (info.state == DownloadInfo.STATE_NONE || info.state == DownloadInfo.STATE_FAILED) {
                     update = true;
+                    int oldState = info.state;
+                    mOriginStateBeforeWaitMap.put(info.gid, oldState);
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
+                    GalleryLogManager.getInstance(mContext).logDownloadWait(info, oldState, "全部开始");
                     // Add to wait list
                     waitList.add(info);
                     // Update in DB
@@ -772,8 +792,11 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             for (DownloadInfo info : allInfoList) {
                 if (info.state == DownloadInfo.STATE_NONE || info.state == DownloadInfo.STATE_FAILED) {
                     update = true;
+                    int oldState = info.state;
+                    mOriginStateBeforeWaitMap.put(info.gid, oldState);
                     // Set state DownloadInfo.STATE_WAIT
                     info.state = DownloadInfo.STATE_WAIT;
+                    GalleryLogManager.getInstance(mContext).logDownloadWait(info, oldState, "全部开始");
                     // Add to wait list
                     waitList.addFirst(info);
                     // Update in DB
@@ -827,6 +850,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // Save to
             EhDB.putDownloadInfo(info);
+            GalleryLogManager.getInstance(mContext).logDownloadAdd(info, "导入画廊");
         }
 
         // Sort all download list
@@ -932,6 +956,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // 统计：添加下载
         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+        GalleryLogManager.getInstance(mContext).logDownloadAdd(info, null);
 
         // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
         if (TextUtils.isEmpty(info.titleJpn)) {
@@ -972,6 +997,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         // 统计：添加下载
         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadAdded();
+        GalleryLogManager.getInstance(mContext).logDownloadAdd(info, null);
 
         // 若日文标题为空且为线上画廊，异步通过 API 补全真实日文标题
         if (TextUtils.isEmpty(info.titleJpn)) {
@@ -1067,9 +1093,12 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         m509Gids.clear();
         // Stop all in wait list
         for (DownloadInfo info : mWaitList) {
+            int oldState = info.state;
+            mOriginStateBeforeWaitMap.remove(info.gid);
             info.state = DownloadInfo.STATE_NONE;
             // Update in DB
             EhDB.putDownloadInfo(info);
+            GalleryLogManager.getInstance(mContext).logDownloadPause(info, oldState, "全部暂停");
         }
         mWaitList.clear();
 
@@ -1087,8 +1116,10 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         m509Gids.clear();
         // Mark all in wait list as failed
         for (DownloadInfo info : mWaitList) {
+            mOriginStateBeforeWaitMap.remove(info.gid);
             info.state = DownloadInfo.STATE_FAILED;
             EhDB.putDownloadInfo(info);
+            GalleryLogManager.getInstance(mContext).logDownloadFailed(info, "全部失败");
         }
         mWaitList.clear();
 
@@ -1109,11 +1140,14 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void deleteDownload(long gid) {
+        DownloadInfo info = mAllInfoMap.get(gid);
+        int oldState = info != null ? info.state : DownloadInfo.STATE_NONE;
         stopDownloadInternal(gid);
         mGalleryRetryMap.remove(gid);
         m509Gids.remove(gid);
-        DownloadInfo info = mAllInfoMap.get(gid);
+        mOriginStateBeforeWaitMap.remove(gid);
         if (info != null) {
+            GalleryLogManager.getInstance(mContext).logItemDelete(info.gid, info.title, oldState, "从下载列表移除");
             // Cache info before deletion so user edits survive remove+re-add
             mDeletedInfoCache.put(info.gid, info);
 
@@ -1147,6 +1181,14 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     }
 
     public void deleteRangeDownload(LongList gidList) {
+        HashMap<Long, Integer> oldStates = new HashMap<>();
+        for (int i = 0, n = gidList.size(); i < n; i++) {
+            long gid = gidList.get(i);
+            DownloadInfo info = mAllInfoMap.get(gid);
+            if (info != null) {
+                oldStates.put(gid, info.state);
+            }
+        }
         stopRangeDownloadInternal(gidList);
 
         for (int i = 0, n = gidList.size(); i < n; i++) {
@@ -1156,6 +1198,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 Log.d(TAG, "Can't get download info with gid: " + gid);
                 continue;
             }
+            mOriginStateBeforeWaitMap.remove(gid);
+            int oldState = oldStates.getOrDefault(gid, info.state);
+            GalleryLogManager.getInstance(mContext).logItemDelete(info.gid, info.title, oldState, "批量移除下载");
 
             // Cache info before deletion so user edits survive remove+re-add
             mDeletedInfoCache.put(info.gid, info);
@@ -1252,6 +1297,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
     private DownloadInfo stopDownloadInternal(long gid) {
         mGalleryRetryMap.remove(gid);
         m509Gids.remove(gid);
+        mOriginStateBeforeWaitMap.remove(gid);
         // Check current task
         if (mCurrentTask != null && mCurrentTask.gid == gid) {
             // Stop current
@@ -1263,10 +1309,13 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             if (info.gid == gid) {
                 // Remove from wait list
                 iterator.remove();
+                int oldState = info.state;
                 // Update state
                 info.state = DownloadInfo.STATE_NONE;
                 // Update in DB
                 EhDB.putDownloadInfo(info);
+                mDownloadStartTimeMap.remove(info.gid);
+                GalleryLogManager.getInstance(mContext).logDownloadPause(info, oldState, "手动暂停");
                 return info;
             }
         }
@@ -1293,11 +1342,15 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
         mGalleryRetryMap.remove(info.gid);
         m509Gids.remove(info.gid);
+        mOriginStateBeforeWaitMap.remove(info.gid);
 
+        int oldState = info.state;
         // Update state
         info.state = DownloadInfo.STATE_NONE;
         // Update in DB
         EhDB.putDownloadInfo(info);
+        mDownloadStartTimeMap.remove(info.gid);
+        GalleryLogManager.getInstance(mContext).logDownloadPause(info, oldState, "手动暂停");
         // Listener
         if (mDownloadListener != null) {
             mDownloadListener.onCancel(info);
@@ -1361,6 +1414,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                 continue;
             }
 
+            String oldLabel = info.label;
             srcList.remove(info);
             dstList.add(info);
             info.label = label;
@@ -1368,6 +1422,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
 
             // Save to DB
             EhDB.putDownloadInfo(info);
+            GalleryLogManager.getInstance(mContext).logItemLabelChange(info.gid, info.title, oldLabel, label);
         }
 
         for (DownloadInfoListener l : mDownloadInfoListeners) {
@@ -1724,14 +1779,19 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                     boolean autoRetry = false;
                     if (info.legacy == 0) {
                         mGalleryRetryMap.remove(info.gid);
+                        mOriginStateBeforeWaitMap.remove(info.gid);
                         info.state = DownloadInfo.STATE_FINISH;
                         // 统计：下载完成
                         com.hippo.ehviewer.stats.StatsManager.getInstance(mContext).incrementDownloadCompleted();
+                        Long startTime = mDownloadStartTimeMap.remove(info.gid);
+                        long costTimeMs = startTime != null ? System.currentTimeMillis() - startTime : -1;
+                        GalleryLogManager.getInstance(mContext).logDownloadFinish(info, costTimeMs);
                     } else {
                         boolean got509 = m509Gids.remove(info.gid);
                         int retryCount = mGalleryRetryMap.getOrDefault(info.gid, 0);
                         if (!got509 && retryCount < MAX_AUTO_RETRY_COUNT) {
                             mGalleryRetryMap.put(info.gid, retryCount + 1);
+                            mOriginStateBeforeWaitMap.put(info.gid, DownloadInfo.STATE_DOWNLOAD);
                             info.state = DownloadInfo.STATE_WAIT;
                             if (endPage > 0) {
                                 mPendingEndPages.put(info.gid, endPage);
@@ -1739,9 +1799,13 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                             mWaitList.addLast(info);
                             autoRetry = true;
                             Log.i(TAG, "Auto-retrying download for gid=" + info.gid + " (attempt " + (retryCount + 1) + "/" + MAX_AUTO_RETRY_COUNT + ")");
+                            GalleryLogManager.getInstance(mContext).logDownloadRetry(info, retryCount + 1, MAX_AUTO_RETRY_COUNT, null);
                         } else {
                             mGalleryRetryMap.remove(info.gid);
+                            mOriginStateBeforeWaitMap.remove(info.gid);
                             info.state = DownloadInfo.STATE_FAILED;
+                            mDownloadStartTimeMap.remove(info.gid);
+                            GalleryLogManager.getInstance(mContext).logDownloadFailed(info, got509 ? "509 Bandwidth Exceeded" : "未完成页数: " + info.legacy);
                         }
                     }
                     // Update in DB
@@ -1770,6 +1834,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
                                             finalInfo.simpleTags,
                                             true
                                     );
+                                    GalleryLogManager.getInstance(mContext).logArchiveCbz(finalInfo.gid, finalInfo.title, ok, ok ? "下载后自动打包" : "自动打包失败");
                                     if (!ok) {
                                         new Handler(Looper.getMainLooper()).post(() -> {
                                             android.widget.Toast.makeText(mContext, mContext.getString(R.string.auto_cbz_failed), android.widget.Toast.LENGTH_SHORT).show();

@@ -1218,4 +1218,13 @@
     <string name="gallery_update_loading_preview">正在加载新版本预览…</string>
     <string name="gallery_update_loading_failed">加载新版本失败</string>
 
+    <!-- Gallery Log -->
+    <string name="settings_advanced_export_gallery_log">导出漫画操作日志</string>
+    <string name="settings_advanced_export_gallery_log_summary">将漫画下载流转、状态变动与操作日志导出至 EhViewer/logcat/</string>
+    <string name="export_gallery_log_exporting">正在导出日志…</string>
+    <string name="export_gallery_log_success_title">日志导出成功</string>
+    <string name="export_gallery_log_success_msg">日志已保存至：\n%s</string>
+    <string name="export_gallery_log_share">分享 / 打开</string>
+    <string name="export_gallery_log_failed">导出日志失败或日志为空</string>
+
 </resources>
