@@ -491,6 +491,11 @@ public class DownloadsScene extends ToolbarScene
                 }
 
                 @Override
+                public void refreshAfterDataChange() {
+                    DownloadsScene.this.refreshAfterDataChange();
+                }
+
+                @Override
                 public void updateView() {
                     DownloadsScene.this.updateView();
                 }
@@ -805,6 +810,119 @@ public class DownloadsScene extends ToolbarScene
         updatePaginationIndicator();
         Settings.putRecentDownloadLabel(mLabel);
         queryUnreadSpiderInfo();
+    }
+
+    /**
+     * 数据变更（删除、移动、状态修改等）后刷新界面，保留当前的筛选与搜索状态。
+     */
+    @SuppressLint("NotifyDataSetChanged")
+    public void refreshAfterDataChange() {
+        if (mDownloadManager == null) {
+            return;
+        }
+
+        // 1. 重新从 DownloadManager 获取当前标签的完整列表，更新 mBackList
+        if (mLabel == null) {
+            mBackList = mDownloadManager.getDefaultDownloadInfoList();
+        } else {
+            mBackList = mDownloadManager.getLabelDownloadInfoList(mLabel);
+            if (mBackList == null) {
+                mLabel = null;
+                mBackList = mDownloadManager.getDefaultDownloadInfoList();
+            }
+        }
+        com.hippo.ehviewer.util.FavCountStore.applyTo(mBackList);
+
+        // 2. 检查是否有筛选或搜索处于激活状态
+        boolean isSearchActive = (searchKey != null && !searchKey.isEmpty())
+                || (mSearchController.getGroupedSearchResults() != null && !mSearchController.getGroupedSearchResults().isEmpty());
+
+        if (isSearchActive) {
+            // 搜索状态下：保留搜索结果，移除已删除或移出当前标签的项
+            if (mSearchController.getGroupedSearchResults() != null && !mSearchController.getGroupedSearchResults().isEmpty()) {
+                // 全标签搜索模式
+                Map<String, List<DownloadInfo>> grouped = mSearchController.getGroupedSearchResults();
+                Map<String, List<DownloadInfo>> updatedGrouped = new HashMap<>();
+                List<DownloadInfo> newSearchList = new ArrayList<>();
+                for (List<DownloadInfo> groupItems : grouped.values()) {
+                    for (DownloadInfo info : groupItems) {
+                        if (mDownloadManager.containDownloadInfo(info.gid)) {
+                            String curLabel = info.label != null ? info.label : getString(R.string.default_download_label_name);
+                            List<DownloadInfo> targetGroup = updatedGrouped.computeIfAbsent(curLabel, k -> new ArrayList<>());
+                            targetGroup.add(info);
+                            newSearchList.add(info);
+                        }
+                    }
+                }
+                mSearchController.setGroupedSearchResults(updatedGrouped);
+                mList = newSearchList;
+                if (mOriginalAdapter != null) {
+                    mOriginalAdapter.setGroupedData(updatedGrouped, mSearchController.getCollapsedLabels());
+                }
+            } else if (mList != null) {
+                // 单标签搜索模式
+                Set<Long> backListGids = new HashSet<>();
+                for (DownloadInfo info : mBackList) {
+                    backListGids.add(info.gid);
+                }
+                try {
+                    mList.removeIf(info -> !backListGids.contains(info.gid));
+                } catch (UnsupportedOperationException e) {
+                    List<DownloadInfo> mutableList = new ArrayList<>(mList);
+                    mutableList.removeIf(info -> !backListGids.contains(info.gid));
+                    mList = mutableList;
+                }
+                if (mAdapter != null) {
+                    mAdapter.notifyDataSetChanged();
+                }
+            }
+            updateTitle();
+            updatePaginationIndicator();
+            updateView();
+            queryUnreadSpiderInfo();
+        } else if (mFilterState.isCombinedFilterActive()) {
+            // 组合筛选激活：重新应用组合筛选
+            mFilterState.applyCombinedFilterWithScroll(false);
+        } else if (mFilterState.getCurrentFilterId() != -1) {
+            // 菜单分类/排序/状态筛选激活：重新应用过滤
+            mFilterState.gotoFilterAndSortWithScroll(mFilterState.getCurrentFilterId(), false);
+        } else if (mSelectedCategory != EhUtils.ALL_CATEGORY) {
+            // 分类 Spinner 筛选激活
+            filterByCategory();
+        } else if (mList != null && mList != mBackList) {
+            // 其他未知筛选修改了 mList：从 mList 移除不存在项
+            Set<Long> backListGids = new HashSet<>();
+            for (DownloadInfo info : mBackList) {
+                backListGids.add(info.gid);
+            }
+            try {
+                mList.removeIf(info -> !backListGids.contains(info.gid));
+            } catch (UnsupportedOperationException e) {
+                List<DownloadInfo> mutableList = new ArrayList<>(mList);
+                mutableList.removeIf(info -> !backListGids.contains(info.gid));
+                mList = mutableList;
+            }
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            }
+            updateTitle();
+            updatePaginationIndicator();
+            updateView();
+            queryUnreadSpiderInfo();
+        } else {
+            // 未处于任何筛选状态：直接展示完整列表
+            mList = mBackList;
+            if (mOriginalAdapter != null) {
+                mOriginalAdapter.clearGroupMode();
+            }
+            if (mAdapter != null) {
+                mAdapter.notifyDataSetChanged();
+            }
+            updateTitle();
+            updatePaginationIndicator();
+            updateView();
+            queryUnreadSpiderInfo();
+        }
     }
 
     private void updatePaginationIndicator() {
@@ -1875,53 +1993,48 @@ public class DownloadsScene extends ToolbarScene
         if (mList == null) {
             return;
         }
-        // 先保存过滤ID和滚动位置，因为后面的 updateForLabel 会改变列表
-        final int savedFilterId = mFilterState.getCurrentFilterId();
-        // 保存组合筛选的状态（用于恢复）
-        final Set<Integer> savedStatusFilters = new HashSet<>(mFilterState.getSelectedStatusFilters());
-        final Set<Integer> savedProgressFilters = new HashSet<>(mFilterState.getSelectedProgressFilters());
-        final long restoreScrollGid = captureFirstVisibleGid();
 
-        updateForLabel();
-
-        // 如果之前处于某种过滤（例如"已下载"），则重新应用过滤，保持过滤视图
-        if (savedFilterId != -1) {
-            // 直接设置保存的滚动位置，不在 gotoFilterAndSort 中重新捕获
-            mPaginationController.setRestoreScrollGid(restoreScrollGid);
-            // 设置标志避免滚动到顶部，保持当前位置
-            mPaginationController.setDoNotScroll(true);
-            if (mPaginationController.getMyPageChangeListener() != null) {
-                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
+        // 直接在 mList 中就地更新该项，避免触发 updateForLabel 导致筛选/搜索状态丢失
+        int index = -1;
+        for (int i = 0; i < mList.size(); i++) {
+            if (mList.get(i).gid == oldInfo.gid) {
+                mList.set(i, newInfo);
+                index = i;
+                break;
             }
-            // 使用 false 参数表示不需要重新捕获滚动位置
-            gotoFilterAndSortWithScroll(savedFilterId, false);
-            return; // 异步刷新，后续由回调处理
         }
 
-        // 如果之前处于组合筛选状态，也需要恢复
-        if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
-            // 恢复组合筛选状态
-            mFilterState.setSelectedStatusFilters(savedStatusFilters);
-            mFilterState.setSelectedProgressFilters(savedProgressFilters);
-            // 直接设置保存的滚动位置
-            mPaginationController.setRestoreScrollGid(restoreScrollGid);
-            // 设置标志避免滚动到顶部，保持当前位置
-            mPaginationController.setDoNotScroll(true);
-            if (mPaginationController.getMyPageChangeListener() != null) {
-                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
+        // 如果 mBackList 存在且不同于 mList，也在 mBackList 中更新
+        if (mBackList != null && mBackList != mList) {
+            for (int i = 0; i < mBackList.size(); i++) {
+                if (mBackList.get(i).gid == oldInfo.gid) {
+                    mBackList.set(i, newInfo);
+                    break;
+                }
             }
-            // 重新应用组合筛选
-            applyCombinedFilterWithScroll(false);
-            return;
+        }
+
+        // 如果处于全标签搜索分组模式，更新分组中的数据
+        if (mSearchController.getGroupedSearchResults() != null) {
+            for (List<DownloadInfo> groupList : mSearchController.getGroupedSearchResults().values()) {
+                for (int i = 0; i < groupList.size(); i++) {
+                    if (groupList.get(i).gid == oldInfo.gid) {
+                        groupList.set(i, newInfo);
+                        break;
+                    }
+                }
+            }
+            if (mOriginalAdapter != null && mOriginalAdapter.isGroupMode()) {
+                mOriginalAdapter.notifyDataSetChanged();
+            }
+        }
+
+        if (index >= 0 && mAdapter != null && (mOriginalAdapter == null || !mOriginalAdapter.isGroupMode())) {
+            mAdapter.notifyItemChanged(listIndexInPage(index));
         }
 
         updateView();
 
-        int index = mList.indexOf(newInfo);
-        if (index >= 0 && mAdapter != null) {
-//            mPaginationController.getSpiderInfoMap().put(info.gid,getSpiderInfo(info));
-            mAdapter.notifyItemChanged(listIndexInPage(index));
-        }
         List<DownloadInfo> infos = new ArrayList<>();
         infos.add(newInfo);
         DownloadSpiderInfoExecutor executor = new DownloadSpiderInfoExecutor(infos, mPaginationController::spiderInfoResultCallBack);
@@ -1950,10 +2063,7 @@ public class DownloadsScene extends ToolbarScene
     @SuppressLint("NotifyDataSetChanged")
     @Override
     public void onReload() {
-        if (mAdapter != null) {
-            mAdapter.notifyDataSetChanged();
-        }
-        updateView();
+        refreshAfterDataChange();
     }
 
     @Override
@@ -1987,38 +2097,49 @@ public class DownloadsScene extends ToolbarScene
         if (!ObjectUtils.equal(mLabel, from)) {
             return;
         }
-
-        // 保存组合筛选的状态（用于恢复）
-        final Set<Integer> savedStatusFilters = new HashSet<>(mFilterState.getSelectedStatusFilters());
-        final Set<Integer> savedProgressFilters = new HashSet<>(mFilterState.getSelectedProgressFilters());
-        final long restoreScrollGid = captureFirstVisibleGid();
-
         mLabel = to;
-        updateForLabel();
-
-        // 恢复组合筛选状态
-        if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
-            mFilterState.setSelectedStatusFilters(savedStatusFilters);
-            mFilterState.setSelectedProgressFilters(savedProgressFilters);
-            // 设置标志避免滚动到顶部，保持当前位置
-            mPaginationController.setDoNotScroll(true);
-            if (mPaginationController.getMyPageChangeListener() != null) {
-                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
-            }
-            // 重新应用组合筛选
-            applyCombinedFilterWithScroll(false);
-        }
-
-        updateView();
+        refreshAfterDataChange();
     }
 
     @Override
     public void onRemove(@NonNull DownloadInfo info, @NonNull List<DownloadInfo> list, int position) {
-        if (mList != list) {
+        if (mList == null) {
             return;
         }
-        if (mAdapter != null) {
-            mAdapter.notifyItemRemoved(listIndexInPage(position));
+        if (mList == list) {
+            if (mAdapter != null) {
+                mAdapter.notifyItemRemoved(listIndexInPage(position));
+            }
+        } else {
+            int index = -1;
+            for (int i = 0; i < mList.size(); i++) {
+                if (mList.get(i).gid == info.gid) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index >= 0) {
+                try {
+                    mList.remove(index);
+                } catch (UnsupportedOperationException e) {
+                    List<DownloadInfo> mutableList = new ArrayList<>(mList);
+                    mutableList.remove(index);
+                    mList = mutableList;
+                }
+                if (mAdapter != null) {
+                    mAdapter.notifyItemRemoved(listIndexInPage(index));
+                }
+            }
+            if (mSearchController.getGroupedSearchResults() != null) {
+                for (List<DownloadInfo> groupList : mSearchController.getGroupedSearchResults().values()) {
+                    groupList.removeIf(item -> item.gid == info.gid);
+                }
+                if (mOriginalAdapter != null && mOriginalAdapter.isGroupMode()) {
+                    mOriginalAdapter.setGroupedData(mSearchController.getGroupedSearchResults(), mSearchController.getCollapsedLabels());
+                }
+            }
+            updateTitle();
+            updatePaginationIndicator();
         }
         updateView();
     }

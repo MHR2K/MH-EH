@@ -103,6 +103,7 @@ class DownloadBatchActions(private val mHost: Host?) {
         fun getString(resId: Int): String
         fun getString(resId: Int, vararg formatArgs: Any?): String
         fun updateForLabel()
+        fun refreshAfterDataChange()
         fun updateView()
         fun updateAdapter()
         fun launchGalleryActivity(intent: Intent)
@@ -351,8 +352,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                 }
                 // 退出选择模式并刷新
                 mHost.recyclerView?.outOfCustomChoiceMode()
-                mHost.updateForLabel()
-                mHost.updateView()
+                mHost.refreshAfterDataChange()
             }
         }.executeOnExecutor(IoThreadPoolExecutor.instance)
     }
@@ -606,8 +606,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                                             }
 
                                             // 刷新界面
-                                            mHost.updateForLabel()
-                                            mHost.updateView()
+                                            mHost.refreshAfterDataChange()
                                         }
                                     }.executeOnExecutor(IoThreadPoolExecutor.instance)
                                 }
@@ -727,16 +726,14 @@ class DownloadBatchActions(private val mHost: Host?) {
                                                 Toast.makeText(context, "删除 SMB 图片失败 (${failCount} 项，已保留状态)", Toast.LENGTH_LONG).show()
                                             }
 
-                                            mHost.updateForLabel()
-                                            mHost.updateView()
+                                            mHost.refreshAfterDataChange()
                                         }
                                     }.executeOnExecutor(IoThreadPoolExecutor.instance)
                                 }
                             }
 
                             // 刷新界面
-                            mHost.updateForLabel()
-                            mHost.updateView()
+                            mHost.refreshAfterDataChange()
                         }
                         .show()
                 }
@@ -744,8 +741,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                     if (downloadInfoList!!.isEmpty()) return
                     recyclerView.outOfCustomChoiceMode()
                     showChangeLabelDialog(context, downloadInfoList) {
-                        mHost.updateForLabel()
-                        mHost.updateView()
+                        mHost.refreshAfterDataChange()
                     }
                 }
                 5 -> { // Random
@@ -760,8 +756,7 @@ class DownloadBatchActions(private val mHost: Host?) {
                     if (downloadInfoList!!.isEmpty()) return
                     recyclerView.outOfCustomChoiceMode()
                     showSmbMigrationDialog(context, downloadInfoList) {
-                        mHost.updateForLabel()
-                        mHost.updateView()
+                        mHost.refreshAfterDataChange()
                     }
                 }
             }
@@ -850,8 +845,10 @@ class DownloadBatchActions(private val mHost: Host?) {
                 // 如果当前不在默认下载标签视图，切换到默认下载标签
                 if (!ObjectUtils.equal(mHost.label, defaultLabel)) {
                     mHost.label = defaultLabel
+                    mHost.updateForLabel()
+                } else {
+                    mHost.refreshAfterDataChange()
                 }
-                mHost.updateForLabel()
 
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
             } else {
@@ -869,7 +866,8 @@ class DownloadBatchActions(private val mHost: Host?) {
                 if (srcIdx != -1) (list as MutableList).removeAt(srcIdx)
                 (list as MutableList).add(0, sourceInfo)
             }
-            mHost.updateForLabel()
+            mHost.updateAdapter()
+            mHost.updateView()
             Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
             return
         } else {
@@ -935,7 +933,8 @@ class DownloadBatchActions(private val mHost: Host?) {
                         (list as MutableList).add(insertIndex, sourceInfo)
                     }
                 }
-                mHost.updateForLabel()
+                mHost.updateAdapter()
+                mHost.updateView()
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
             } catch (e: NumberFormatException) {
                 Toast.makeText(context, R.string.move_to_position_error, Toast.LENGTH_SHORT).show()

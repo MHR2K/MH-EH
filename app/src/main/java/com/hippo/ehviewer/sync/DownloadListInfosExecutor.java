@@ -473,7 +473,7 @@ public class DownloadListInfosExecutor {
                 merge(arr, left, mid, n - 1, type);
             }
         }
-        return Arrays.<DownloadInfo>asList(arr);
+        return new ArrayList<>(Arrays.<DownloadInfo>asList(arr));
     }
 
     // 合并函数，把两个有序的数组合并起来

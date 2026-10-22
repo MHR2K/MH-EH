@@ -185,6 +185,8 @@ class DownloadAdapter(
         mFlatList.clear()
     }
 
+    fun isGroupMode(): Boolean = mGroupMode
+
     private fun rebuildFlatList() {
         mFlatList.clear()
         val groupedData = mGroupedData ?: return
