@@ -199,7 +199,7 @@ public class Settings {
 
     public static boolean getBoolean(String key, boolean defValue) {
         try {
-            return sSettingsPre.getBoolean(key, defValue);
+            return sSettingsPre != null ? sSettingsPre.getBoolean(key, defValue) : defValue;
         } catch (ClassCastException e) {
             Log.d(TAG, "Get ClassCastException when get " + key + " value", e);
             return defValue;

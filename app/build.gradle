@@ -91,6 +91,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
 }
 
 //tasks.withType(JavaCompile) {

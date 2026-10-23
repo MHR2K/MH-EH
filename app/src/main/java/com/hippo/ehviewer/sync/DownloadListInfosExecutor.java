@@ -15,6 +15,7 @@ import com.hippo.ehviewer.dao.GalleryTags;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.spider.SpiderInfo;
+import com.hippo.ehviewer.util.ChineseConverterHelper;
 import com.hippo.unifile.UniFile;
 
 import java.util.ArrayList;
@@ -61,8 +62,18 @@ public class DownloadListInfosExecutor {
     private boolean mSortByRelevance = false;
     private boolean mGroupByLabel = false;
     private Map<String, List<DownloadInfo>> mGroupedResults;
+    private long mStartTime = System.currentTimeMillis();
+
+    public void setStartTime(long startTime) {
+        this.mStartTime = startTime;
+    }
+
+    public long getStartTime() {
+        return mStartTime;
+    }
+
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey) {
-        this.mList = mList;
+        this.mList = mList != null ? new ArrayList<>(mList) : null;
         this.mSearchKey = searchKey;
     }
 
@@ -71,7 +82,7 @@ public class DownloadListInfosExecutor {
     }
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, String searchKey, boolean fuzzySearch, boolean ignoreCase, boolean enableChineseConversion) {
-        this.mList = mList;
+        this.mList = mList != null ? new ArrayList<>(mList) : null;
         this.mSearchKey = searchKey;
         this.mFuzzySearch = fuzzySearch;
         this.mIgnoreCase = ignoreCase;
@@ -79,12 +90,12 @@ public class DownloadListInfosExecutor {
     }
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, DownloadManager downloadManager) {
-        this.mList = mList;
+        this.mList = mList != null ? new ArrayList<>(mList) : null;
         this.mSearchKey = "";
     }
 
     public DownloadListInfosExecutor(@Nullable List<DownloadInfo> mList, DownloadManager downloadManager, Map<Long, SpiderInfo> spiderInfoMap) {
-        this.mList = mList;
+        this.mList = mList != null ? new ArrayList<>(mList) : null;
         this.mSearchKey = "";
         mDownloadManager = downloadManager;
         mSpiderInfoMap = spiderInfoMap;
@@ -121,16 +132,15 @@ public class DownloadListInfosExecutor {
      */
     public void executeSearching() {
         service.execute(() -> {
+            final long tBgStart = System.currentTimeMillis();
+            android.util.Log.e("EhSearch", "[2.BG-Start] 后台搜索线程启动 (线程调度延迟=" + (tBgStart - mStartTime) + "ms)");
             if (mGroupByLabel) {
                 resultList = searchingInBackgroundGrouped();
             } else {
                 resultList = searchingInBackground();
             }
-
-            // 如果启用按相关性排序，对搜索结果进行排序
-            if (mSortByRelevance && mSearchKey != null && !mSearchKey.isEmpty() && resultList != null && !resultList.isEmpty()) {
-                resultList = sortByRelevance(resultList, mSearchKey);
-            }
+            final long tBgEnd = System.currentTimeMillis();
+            android.util.Log.e("EhSearch", "[6.BG-Done] 后台搜索处理完成: 后台总耗时=" + (tBgEnd - tBgStart) + "ms (距发起=" + (tBgEnd - mStartTime) + "ms), 结果数=" + (resultList != null ? resultList.size() : 0) + ", 正在派发到主线程...");
 
             handler.post(() -> {
                 if (mDownloadSearchCallback == null) {
@@ -140,58 +150,80 @@ public class DownloadListInfosExecutor {
             });
         });
     }
-    
+
     /**
      * 执行同步搜索，直接返回结果
      * @return 搜索结果列表
      */
     public List<DownloadInfo> executeSearchingSync() {
-        List<DownloadInfo> results = searchingInBackgroundInternal();
-        
-        // 如果启用按相关性排序，对搜索结果进行排序
-        if (mSortByRelevance && mSearchKey != null && !mSearchKey.isEmpty() && results != null && !results.isEmpty()) {
-            results = sortByRelevance(results, mSearchKey);
-        }
-        
-        return results;
+        return searchingInBackgroundInternal();
     }
-    
+
     /**
      * 同步搜索的内部实现，跳过回调检查
      */
     private List<DownloadInfo> searchingInBackgroundInternal() {
-        android.util.Log.d("EhSearch", "开始执行同步下载列表搜索: 关键词=" + mSearchKey + 
-                        ", 模糊搜索=" + mFuzzySearch + 
-                        ", 忽略大小写=" + mIgnoreCase + 
-                        ", 简繁体转换=" + mEnableChineseConversion);
-        
+        android.util.Log.e("EhSearch", "[2.BG-Exec] 开始执行下载列表搜索: 关键词='" + mSearchKey + "'" +
+                ", 模糊搜索=" + mFuzzySearch + 
+                ", 忽略大小写=" + mIgnoreCase + 
+                ", 简繁体转换=" + mEnableChineseConversion +
+                ", 相关性排序=" + mSortByRelevance +
+                ", 待搜数据量=" + (mList != null ? mList.size() : 0));
+
         if (mSearchKey == null || mSearchKey.isEmpty()) {
-            android.util.Log.d("EhSearch", "搜索关键词为空，返回完整列表");
-            return mList;
+            android.util.Log.e("EhSearch", "搜索关键词为空，返回完整列表");
+            return mList != null ? mList : new ArrayList<>();
         }
-        if (mList == null) {
-            android.util.Log.d("EhSearch", "下载列表为null，返回空列表");
+        if (mList == null || mList.isEmpty()) {
+            android.util.Log.e("EhSearch", "下载列表为null或空，返回空列表");
             return new ArrayList<>();
         }
-        
-        // 创建结果列表和相似度分数映射
+
+        // 1. 批量预加载所有未加载标签项，消除 N+1 单条 SQLite 查询
+        preloadMissingTags(mList);
+
+        // 2. 预解析搜索参数（包括简繁体、大小写、标签分词）
+        final long tContextStart = System.currentTimeMillis();
+        SearchContext ctx = buildSearchContext(mSearchKey);
+        final long tContextEnd = System.currentTimeMillis();
+
+        // 3. 收集所有匹配的结果及其相似度分数
+        final long tScanStart = System.currentTimeMillis();
         List<DownloadInfo> cache = new ArrayList<>();
         final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
+        int total = mList.size();
 
-        // 首先收集所有匹配的结果及其相似度分数
-        for (int i = 0; i < mList.size(); i++) {
+        for (int i = 0; i < total; i++) {
             DownloadInfo info = mList.get(i);
-            double score = calculateSimilarityScore(info, mSearchKey);
-            
+            double score = calculateSimilarityScore(info, ctx);
+
             if (score > 0) {
                 cache.add(info);
                 scoreMap.put(info, score);
             }
+
+            if (i % 200 == 0 && mDownloadSearchCallback != null) {
+                final int scanned = i;
+                handler.post(() -> mDownloadSearchCallback.onSearchProgress(scanned, total));
+            }
         }
-        
-        // 根据相似度分数对结果进行排序
-        cache.sort((a, b) -> Double.compare(scoreMap.getOrDefault(b, 0.0), 
-                                        scoreMap.getOrDefault(a, 0.0)));
+
+        if (mDownloadSearchCallback != null) {
+            handler.post(() -> mDownloadSearchCallback.onSearchProgress(total, total));
+        }
+        final long tScanEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[4.Scan] 扫描匹配完成: 遍历=" + total + "项, 命中=" + cache.size() +
+                "项 | 扫描耗时=" + (tScanEnd - tScanStart) + "ms (分词与预处理=" + (tContextEnd - tContextStart) + "ms)");
+
+        // 4. 根据相似度分数对结果进行排序（若启用相关性排序）
+        final long tSortStart = System.currentTimeMillis();
+        if (mSortByRelevance) {
+            cache.sort((a, b) -> Double.compare(scoreMap.getOrDefault(b, 0.0), 
+                                                scoreMap.getOrDefault(a, 0.0)));
+        }
+        final long tSortEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[5.Sort] 排序整理完成: 耗时=" + (tSortEnd - tSortStart) + "ms" +
+                (mSortByRelevance ? " (按相关性排序已启用)" : " (无需排序)"));
 
         return cache;
     }
@@ -201,28 +233,44 @@ public class DownloadListInfosExecutor {
      * 搜索结果按 DownloadInfo.label 分组，每组内按相似度分数排序
      */
     private List<DownloadInfo> searchingInBackgroundGrouped() {
-        android.util.Log.d("EhSearch", "开始执行分组搜索: 关键词=" + mSearchKey);
+        android.util.Log.e("EhSearch", "[2.BG-Exec] 开始执行全部标签分组搜索: 关键词='" + mSearchKey + "'" +
+                ", 模糊搜索=" + mFuzzySearch + 
+                ", 忽略大小写=" + mIgnoreCase + 
+                ", 简繁体转换=" + mEnableChineseConversion +
+                ", 相关性排序=" + mSortByRelevance +
+                ", 待搜数据量=" + (mList != null ? mList.size() : 0));
 
         if (mSearchKey == null || mSearchKey.isEmpty()) {
             // 关键词为空时，返回全部列表（不按标签分组）
             mGroupedResults = null;
             return mList != null ? mList : new ArrayList<>();
         }
-        if (mList == null) {
+        if (mList == null || mList.isEmpty()) {
             mGroupedResults = null;
             return new ArrayList<>();
         }
 
+        // 1. 批量预加载所有未加载标签项，消除 N+1 单条 SQLite 查询
+        preloadMissingTags(mList);
+
+        // 2. 预解析搜索参数（包括简繁体、大小写、标签分词）
+        final long tContextStart = System.currentTimeMillis();
+        SearchContext ctx = buildSearchContext(mSearchKey);
+        final long tContextEnd = System.currentTimeMillis();
+
         // 分组结果：标签名 -> (DownloadInfo -> 分数)
+        final long tScanStart = System.currentTimeMillis();
         Map<String, List<DownloadInfo>> grouped = new HashMap<>();
         Map<String, Map<DownloadInfo, Double>> groupScoreMaps = new HashMap<>();
         int total = mList.size();
+        int matchedCount = 0;
 
         for (int i = 0; i < total; i++) {
             DownloadInfo info = mList.get(i);
-            double score = calculateSimilarityScore(info, mSearchKey);
+            double score = calculateSimilarityScore(info, ctx);
 
             if (score > 0) {
+                matchedCount++;
                 String label = (info.label != null && !info.label.isEmpty())
                         ? info.label : "默认";
                 grouped.computeIfAbsent(label, k -> new ArrayList<>()).add(info);
@@ -240,16 +288,22 @@ public class DownloadListInfosExecutor {
         if (mDownloadSearchCallback != null) {
             handler.post(() -> mDownloadSearchCallback.onSearchProgress(total, total));
         }
+        final long tScanEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[4.Scan] 分组扫描匹配完成: 遍历=" + total + "项, 命中=" + matchedCount +
+                "项, 分组数=" + grouped.size() + " | 扫描耗时=" + (tScanEnd - tScanStart) + "ms (分词与预处理=" + (tContextEnd - tContextStart) + "ms)");
 
-        // 每个分组内部按相似度分数排序
-        for (Map.Entry<String, List<DownloadInfo>> entry : grouped.entrySet()) {
-            String label = entry.getKey();
-            List<DownloadInfo> items = entry.getValue();
-            Map<DownloadInfo, Double> scoreMap = groupScoreMaps.get(label);
-            if (scoreMap != null) {
-                items.sort((a, b) -> Double.compare(
-                        scoreMap.getOrDefault(b, 0.0),
-                        scoreMap.getOrDefault(a, 0.0)));
+        // 每个分组内部若开启按相关性排序，按相似度分数排序
+        final long tSortStart = System.currentTimeMillis();
+        if (mSortByRelevance) {
+            for (Map.Entry<String, List<DownloadInfo>> entry : grouped.entrySet()) {
+                String label = entry.getKey();
+                List<DownloadInfo> items = entry.getValue();
+                Map<DownloadInfo, Double> scoreMap = groupScoreMaps.get(label);
+                if (scoreMap != null) {
+                    items.sort((a, b) -> Double.compare(
+                            scoreMap.getOrDefault(b, 0.0),
+                            scoreMap.getOrDefault(a, 0.0)));
+                }
             }
         }
 
@@ -260,6 +314,9 @@ public class DownloadListInfosExecutor {
         for (List<DownloadInfo> items : grouped.values()) {
             flatResult.addAll(items);
         }
+        final long tSortEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[5.Sort] 分组排序与展平完成: 耗时=" + (tSortEnd - tSortStart) + "ms");
+
         return flatResult;
     }
 
@@ -661,25 +718,23 @@ public class DownloadListInfosExecutor {
         if (list == null || list.isEmpty()) {
             return new ArrayList<>();
         }
-        
-        // 创建副本以避免修改原列表
+        final long tStart = System.currentTimeMillis();
         List<DownloadInfo> result = new ArrayList<>(list);
+        preloadMissingTags(result);
+        SearchContext ctx = buildSearchContext(searchKey);
         
-        // 创建相似度分数映射
-        final Map<DownloadInfo, Double> scoreMap = new HashMap<>();
-        
-        // 计算每个下载项与搜索关键词的相似度分数
+        final Map<DownloadInfo, Double> scoreMap = new HashMap<>(result.size());
         for (DownloadInfo info : result) {
-            double score = calculateSimilarityScore(info, searchKey);
+            double score = calculateSimilarityScore(info, ctx);
             scoreMap.put(info, score);
         }
         
-        // 根据相似度分数排序（高分在前）
         result.sort((a, b) -> Double.compare(
             scoreMap.getOrDefault(b, 0.0),
             scoreMap.getOrDefault(a, 0.0)
         ));
-        
+        final long tEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[RelevanceSort] 相关性排序耗时=" + (tEnd - tStart) + "ms, 项数=" + result.size());
         return result;
     }
 
@@ -715,85 +770,236 @@ public class DownloadListInfosExecutor {
     }
 
 
-    // 计算标题与查询词的相似度分数
-    private double calculateSimilarityScore(DownloadInfo info, String searchKey) {
-        String title = info.title;
-        String titleJpn = info.titleJpn;
-        
-        // 合并标题
-        String fullTitle = (titleJpn != null ? titleJpn : "") + " " + (title != null ? title : "");
-        
-        // 精确匹配给予最高分
-        if ((mIgnoreCase && fullTitle.toLowerCase().contains(searchKey.toLowerCase())) ||
-            (!mIgnoreCase && fullTitle.contains(searchKey))) {
-            return 1.5; // 超过1的分数，确保精确匹配排在最前面
+    /**
+     * 批量预加载所有未加载标签项，消除单条 SQLite 查询瓶颈并避免缓存穿透
+     */
+    private void preloadMissingTags(List<DownloadInfo> list) {
+        if (list == null || list.isEmpty()) {
+            return;
         }
-        
-        // 如果启用模糊搜索，使用Jaro-Winkler相似度计算
+        final long tPreloadStart = System.currentTimeMillis();
+        int total = list.size();
+        int alreadyCached = 0;
+        int simpleTagsUsed = 0;
+        List<Long> missingGids = null;
+        for (int i = 0, size = list.size(); i < size; i++) {
+            DownloadInfo info = list.get(i);
+            if (info != null && info.galleryTags == null && info.tgList == null) {
+                if (info.simpleTags != null && info.simpleTags.length > 0) {
+                    ArrayList<String> tagList = new ArrayList<>(info.simpleTags.length);
+                    for (String tag : info.simpleTags) {
+                        if (tag != null && !tag.isEmpty()) {
+                            tagList.add(tag);
+                        }
+                    }
+                    info.tgList = tagList;
+                    simpleTagsUsed++;
+                } else {
+                    if (missingGids == null) {
+                        missingGids = new ArrayList<>();
+                    }
+                    missingGids.add(info.gid);
+                }
+            } else if (info != null) {
+                alreadyCached++;
+            }
+        }
+
+        int missingCount = missingGids != null ? missingGids.size() : 0;
+        long tDbDuration = 0;
+        long tParseDuration = 0;
+
+        if (missingGids != null && !missingGids.isEmpty()) {
+            final int missingTotal = missingGids.size();
+            final long tDbStart = System.currentTimeMillis();
+            Map<Long, GalleryTags> dbTagsMap = EhDB.queryGalleryTags(missingGids, (loaded, totalCount) -> {
+                if (mDownloadSearchCallback != null) {
+                    handler.post(() -> mDownloadSearchCallback.onSearchPrepareProgress(loaded, missingTotal));
+                }
+            });
+            final long tDbEnd = System.currentTimeMillis();
+            tDbDuration = tDbEnd - tDbStart;
+
+            for (int i = 0, size = list.size(); i < size; i++) {
+                DownloadInfo info = list.get(i);
+                if (info != null && info.galleryTags == null && info.tgList == null) {
+                    GalleryTags gt = dbTagsMap.get(info.gid);
+                    if (gt != null) {
+                        info.galleryTags = gt;
+                    } else {
+                        // 标记为空哨兵，避免重复查库
+                        info.galleryTags = com.hippo.ehviewer.client.data.GalleryInfo.EMPTY_GALLERY_TAGS;
+                        info.tgList = new ArrayList<>(0);
+                    }
+                }
+            }
+            final long tParseEnd = System.currentTimeMillis();
+            tParseDuration = tParseEnd - tDbEnd;
+        }
+
+        final long tPreloadTotal = System.currentTimeMillis() - tPreloadStart;
+        android.util.Log.e("EhSearch", "[3.PreloadTags] 标签预加载: 总项数=" + total +
+                ", 内存已有=" + alreadyCached +
+                ", 简单标签转换=" + simpleTagsUsed +
+                ", SQLite批量查询=" + missingCount + "项 (DB耗时=" + tDbDuration + "ms, 引用赋值耗时=" + tParseDuration + "ms)" +
+                " | 预加载总耗时=" + tPreloadTotal + "ms");
+    }
+
+    private SearchContext buildSearchContext(String searchKey) {
+        return new SearchContext(searchKey, mIgnoreCase, mEnableChineseConversion);
+    }
+
+    // 计算标题与查询词的相似度分数（保留公共方法以兼容旧代码）
+    public double calculateSimilarityScore(DownloadInfo info, String searchKey) {
+        if (info == null || searchKey == null || searchKey.isEmpty()) {
+            return 0.0;
+        }
+        return calculateSimilarityScore(info, buildSearchContext(searchKey));
+    }
+
+    // 计算标题与查询词的相似度分数（使用预解析好的 SearchContext，避免重复分配）
+    private double calculateSimilarityScore(DownloadInfo info, SearchContext ctx) {
+        if (info == null || ctx == null) {
+            return 0.0;
+        }
+
+        // 1. 精确/包含匹配标题给予最高分（1.5分，确保精确匹配排在最前面）
+        if (matchTitle(info, ctx)) {
+            return 1.5;
+        }
+
+        // 2. 如果启用模糊搜索，使用 Jaro-Winkler 相似度计算
         if (mFuzzySearch) {
-            String titleToMatch = mIgnoreCase ? fullTitle.toLowerCase() : fullTitle;
-            String keyToMatch = mIgnoreCase ? searchKey.toLowerCase() : searchKey;
-            double similarity = EhUtils.calculateJaroWinklerSimilarity(titleToMatch, keyToMatch);
-            
-            // 如果相似度超过阈值，将分数放大到0.7-1.0范围内
+            String keyToMatch = mIgnoreCase ? ctx.searchKeyLower : ctx.searchKey;
+            double sim1 = 0.0;
+            if (info.title != null && !info.title.isEmpty()) {
+                String t = mIgnoreCase ? info.title.toLowerCase(Locale.ROOT) : info.title;
+                sim1 = EhUtils.calculateJaroWinklerSimilarity(t, keyToMatch);
+            }
+            double sim2 = 0.0;
+            if (info.titleJpn != null && !info.titleJpn.isEmpty()) {
+                String t = mIgnoreCase ? info.titleJpn.toLowerCase(Locale.ROOT) : info.titleJpn;
+                sim2 = EhUtils.calculateJaroWinklerSimilarity(t, keyToMatch);
+            }
+            double similarity = Math.max(sim1, sim2);
             if (similarity >= 0.7) {
                 return 0.7 + similarity * 0.3;
             }
         }
-        
-        // 匹配标签给予一定分数
-        if (matchTag(searchKey, info)) {
-            return 0.6;  // 标签匹配的相似度较低
+
+        // 3. 匹配标签给予一定分数
+        if (matchTag(ctx.parsedSearchTags, info)) {
+            return 0.6;
         }
-        
-        return 0.0;  // 不匹配
+
+        return 0.0;
+    }
+
+    private boolean matchTitle(DownloadInfo info, SearchContext ctx) {
+        return containsTitleText(info.title, ctx) || containsTitleText(info.titleJpn, ctx);
+    }
+
+    private boolean containsTitleText(String title, SearchContext ctx) {
+        if (title == null || title.isEmpty()) {
+            return false;
+        }
+        if (!mIgnoreCase) {
+            if (title.contains(ctx.searchKey)) return true;
+            if (ctx.hasChineseVariants) {
+                return title.contains(ctx.searchKeySimp) || title.contains(ctx.searchKeyTrad);
+            }
+            return false;
+        }
+        // 使用零内存分配的 containsIgnoreCase 代替 toLowerCase
+        if (ParsedSearchTag.containsIgnoreCase(title, ctx.searchKeyLower)) return true;
+        if (ctx.hasChineseVariants) {
+            return ParsedSearchTag.containsIgnoreCase(title, ctx.searchKeySimp) ||
+                   ParsedSearchTag.containsIgnoreCase(title, ctx.searchKeyTrad);
+        }
+        return false;
     }
 
     protected List<DownloadInfo> searchingInBackground() {
-        android.util.Log.d("EhSearch", "开始执行下载列表搜索: 关键词=" + mSearchKey + 
-                          ", 模糊搜索=" + mFuzzySearch + 
-                          ", 忽略大小写=" + mIgnoreCase + 
-                          ", 简繁体转换=" + mEnableChineseConversion);
-        
-        if (mDownloadSearchCallback == null) {
-            android.util.Log.d("EhSearch", "搜索回调为null，改用内部搜索实现");
-            // 使用不依赖回调的内部搜索实现
-            return searchingInBackgroundInternal();
-        }
-        
-        // 使用内部搜索实现执行搜索
         return searchingInBackgroundInternal();
     }
 
-    private boolean matchTag(String mSearchKey, DownloadInfo info) {
-        ArrayList<String> searchableTags = getSearchableTags(info);
-        if (searchableTags.isEmpty()) {
+    private boolean matchTag(ParsedSearchTag[] searchTags, DownloadInfo info) {
+        if (searchTags == null || searchTags.length == 0 || info == null) {
             return false;
         }
 
-        String[] searchTags = splitSearchTags(mSearchKey);
-        if (searchTags.length == 0) {
-            return false;
-        }
-
-        for (String searchTag : searchTags) {
-            boolean matched = false;
-            for (String tag : searchableTags) {
-                if (matchSingleTag(tag, searchTag)) {
-                    matched = true;
-                    break;
+        // 1. 如果有预加载的 GalleryTags，直接在 GalleryTags 原始字段上进行高速零分配匹配
+        if (info.galleryTags != null) {
+            if (info.galleryTags == com.hippo.ehviewer.client.data.GalleryInfo.EMPTY_GALLERY_TAGS) {
+                return matchFallbackTags(searchTags, info);
+            }
+            for (ParsedSearchTag searchTag : searchTags) {
+                if (!searchTag.matches(info.galleryTags)) {
+                    return false;
                 }
             }
-            if (!matched) {
-                return false;
+            return true;
+        }
+
+        // 2. 回退到 simpleTags、tgList 或单条懒加载查询
+        return matchFallbackTags(searchTags, info);
+    }
+
+    private boolean matchFallbackTags(ParsedSearchTag[] searchTags, DownloadInfo info) {
+        if (info.simpleTags != null && info.simpleTags.length > 0) {
+            for (ParsedSearchTag searchTag : searchTags) {
+                boolean matched = false;
+                for (String tag : info.simpleTags) {
+                    if (searchTag.matches(tag)) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (info.tgList != null && !info.tgList.isEmpty()) {
+            for (ParsedSearchTag searchTag : searchTags) {
+                boolean matched = false;
+                for (int i = 0, size = info.tgList.size(); i < size; i++) {
+                    if (searchTag.matches(info.tgList.get(i))) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // 单条按需懒加载（处理未执行批量预加载的孤立调用）
+        if (info.galleryTags == null && (info.tgList == null || info.tgList.isEmpty())) {
+            GalleryTags dbTags = EhDB.queryGalleryTags(info.gid);
+            info.galleryTags = dbTags != null ? dbTags : com.hippo.ehviewer.client.data.GalleryInfo.EMPTY_GALLERY_TAGS;
+            if (dbTags != null) {
+                for (ParsedSearchTag searchTag : searchTags) {
+                    if (!searchTag.matches(dbTags)) {
+                        return false;
+                    }
+                }
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     private ArrayList<String> getSearchableTags(DownloadInfo info) {
-        if (info.tgList != null && !info.tgList.isEmpty()) {
+        if (info == null) {
+            return new ArrayList<>(0);
+        }
+        if (info.tgList != null) {
             return info.tgList;
         }
 
@@ -837,86 +1043,188 @@ public class DownloadListInfosExecutor {
         return tags.<String>toArray(new String[0]);
     }
 
-    private static boolean matchSingleTag(String tag, String searchTag) {
-        if (tag == null || searchTag == null) {
-            return false;
+    private static ParsedSearchTag[] parseSearchTags(String searchKey, boolean enableChinese) {
+        String[] rawTags = splitSearchTags(searchKey);
+        if (rawTags.length == 0) {
+            return new ParsedSearchTag[0];
         }
-
-        String normalizedTag = tag.trim().toLowerCase(Locale.ROOT);
-        String normalizedSearchTag = searchTag.trim().toLowerCase(Locale.ROOT);
-        if (normalizedTag.isEmpty() || normalizedSearchTag.isEmpty()) {
-            return false;
+        ParsedSearchTag[] result = new ParsedSearchTag[rawTags.length];
+        for (int i = 0; i < rawTags.length; i++) {
+            result[i] = new ParsedSearchTag(rawTags[i], enableChinese);
         }
-
-        int tagIndex = normalizedTag.indexOf(':');
-        String tagNamespace = tagIndex >= 0 ? normalizedTag.substring(0, tagIndex) : null;
-        String tagName = tagIndex >= 0 ? normalizedTag.substring(tagIndex + 1) : normalizedTag;
-
-        int searchTagIndex = normalizedSearchTag.indexOf(':');
-        String searchNamespace = searchTagIndex >= 0 ? normalizedSearchTag.substring(0, searchTagIndex) : null;
-        String searchName = searchTagIndex >= 0 ? normalizedSearchTag.substring(searchTagIndex + 1) : normalizedSearchTag;
-
-        if (searchNamespace != null && (tagNamespace == null || !tagNamespace.equals(searchNamespace))) {
-            return false;
-        }
-
-        if (searchName.isEmpty()) {
-            return false;
-        }
-
-        if (tagName.equals(searchName)) {
-            return true;
-        }
-
-        // Search hint is "keyword", so allow contains match on tag name.
-        return tagName.contains(searchName);
+        return result;
     }
 
+    private static class ParsedSearchTag {
+        final String searchNamespace; // lowercase or null
+        final String searchName;      // lowercase
+        final String searchNameSimp;  // lowercase
+        final String searchNameTrad;  // lowercase
+        final String prefix;          // "namespace:" or null
+        final boolean hasChineseVariants;
+
+        ParsedSearchTag(String raw, boolean enableChinese) {
+            String normalized = raw.trim();
+            int idx = normalized.indexOf(':');
+            if (idx >= 0) {
+                searchNamespace = normalized.substring(0, idx).trim().toLowerCase(Locale.ROOT);
+                searchName = normalized.substring(idx + 1).trim().toLowerCase(Locale.ROOT);
+                prefix = searchNamespace + ":";
+            } else {
+                searchNamespace = null;
+                searchName = normalized.toLowerCase(Locale.ROOT);
+                prefix = null;
+            }
+            if (enableChinese && ChineseConverterHelper.isAvailable()) {
+                searchNameSimp = ChineseConverterHelper.toSimplified(searchName);
+                searchNameTrad = ChineseConverterHelper.toTraditional(searchName);
+                hasChineseVariants = (searchNameSimp != null && !searchNameSimp.equals(searchName)) ||
+                                     (searchNameTrad != null && !searchNameTrad.equals(searchName));
+            } else {
+                searchNameSimp = searchName;
+                searchNameTrad = searchName;
+                hasChineseVariants = false;
+            }
+        }
+
+        boolean matches(GalleryTags tags) {
+            if (tags == null) {
+                return false;
+            }
+            if (searchNamespace != null) {
+                String field = getNamespaceField(tags, searchNamespace);
+                return matchField(field);
+            } else {
+                return matchField(tags.female)
+                    || matchField(tags.artist)
+                    || matchField(tags.character)
+                    || matchField(tags.parody)
+                    || matchField(tags.group)
+                    || matchField(tags.male)
+                    || matchField(tags.language)
+                    || matchField(tags.cosplayer)
+                    || matchField(tags.mixed)
+                    || matchField(tags.other)
+                    || matchField(tags.misc)
+                    || matchField(tags.rows)
+                    || matchField(tags.reclass)
+                    || matchField(tags.location);
+            }
+        }
+
+        private static String getNamespaceField(GalleryTags tags, String ns) {
+            switch (ns) {
+                case "artist": return tags.artist;
+                case "female": return tags.female;
+                case "male": return tags.male;
+                case "character": return tags.character;
+                case "parody": return tags.parody;
+                case "group": return tags.group;
+                case "cosplayer": return tags.cosplayer;
+                case "language": return tags.language;
+                case "mixed": return tags.mixed;
+                case "other": return tags.other;
+                case "misc": return tags.misc;
+                case "rows": return tags.rows;
+                case "reclass": return tags.reclass;
+                case "location": return tags.location;
+                default: return null;
+            }
+        }
+
+        boolean matches(String tag) {
+            if (tag == null || searchName.isEmpty()) {
+                return false;
+            }
+            String trimmedTag = tag.trim();
+            if (trimmedTag.isEmpty()) {
+                return false;
+            }
+
+            if (searchNamespace != null) {
+                if (!trimmedTag.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                    return false;
+                }
+                String tagName = trimmedTag.substring(prefix.length()).trim();
+                return matchField(tagName);
+            } else {
+                int colon = trimmedTag.indexOf(':');
+                String tagName = colon >= 0 ? trimmedTag.substring(colon + 1).trim() : trimmedTag;
+                return matchField(tagName);
+            }
+        }
+
+        private boolean matchField(String field) {
+            if (field == null || field.isEmpty() || searchName.isEmpty()) {
+                return false;
+            }
+            if (containsIgnoreCase(field, searchName)) {
+                return true;
+            }
+            if (hasChineseVariants) {
+                if (searchNameSimp != null && !searchNameSimp.equals(searchName) && containsIgnoreCase(field, searchNameSimp)) {
+                    return true;
+                }
+                if (searchNameTrad != null && !searchNameTrad.equals(searchName) && containsIgnoreCase(field, searchNameTrad)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static boolean containsIgnoreCase(String src, String what) {
+            if (src == null || what == null) {
+                return false;
+            }
+            final int length = what.length();
+            if (length == 0) {
+                return true;
+            }
+            final int max = src.length() - length;
+            for (int i = 0; i <= max; i++) {
+                if (src.regionMatches(true, i, what, 0, length)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static class SearchContext {
+        final String searchKey;
+        final String searchKeyLower;
+        final String searchKeySimp;
+        final String searchKeyTrad;
+        final boolean hasChineseVariants;
+        final ParsedSearchTag[] parsedSearchTags;
+
+        SearchContext(String searchKey, boolean ignoreCase, boolean enableChinese) {
+            this.searchKey = searchKey != null ? searchKey : "";
+            this.searchKeyLower = ignoreCase ? this.searchKey.toLowerCase(Locale.ROOT) : this.searchKey;
+            if (enableChinese && ChineseConverterHelper.isAvailable()) {
+                this.searchKeySimp = ChineseConverterHelper.toSimplified(this.searchKeyLower);
+                this.searchKeyTrad = ChineseConverterHelper.toTraditional(this.searchKeyLower);
+                this.hasChineseVariants = (searchKeySimp != null && !searchKeySimp.equals(searchKeyLower)) ||
+                                          (searchKeyTrad != null && !searchKeyTrad.equals(searchKeyLower));
+            } else {
+                this.searchKeySimp = this.searchKeyLower;
+                this.searchKeyTrad = this.searchKeyLower;
+                this.hasChineseVariants = false;
+            }
+            this.parsedSearchTags = parseSearchTags(this.searchKey, enableChinese);
+        }
+    }
 
     private ArrayList<String> searchTagList(long gid) {
         GalleryTags tags = EhDB.queryGalleryTags(gid);
-
         if (tags == null) {
             return null;
         }
-
-        ArrayList<String> tagList = new ArrayList<>();
-
-        tagList.addAll(parserList("artist", tags.artist));
-        tagList.addAll(parserList("rows", tags.rows));
-        tagList.addAll(parserList("cosplayer", tags.cosplayer));
-        tagList.addAll(parserList("character", tags.character));
-        tagList.addAll(parserList("female", tags.female));
-        tagList.addAll(parserList("group", tags.group));
-        tagList.addAll(parserList("language", tags.language));
-        tagList.addAll(parserList("male", tags.male));
-        tagList.addAll(parserList("misc", tags.misc));
-        tagList.addAll(parserList("mixed", tags.mixed));
-        tagList.addAll(parserList("other", tags.other));
-        tagList.addAll(parserList("parody", tags.parody));
-        tagList.addAll(parserList("reclass", tags.reclass));
-        tagList.addAll(parserList("location", tags.location));
-
-        return tagList;
+        return parseGalleryTags(tags);
     }
 
-    private ArrayList<String> parserList(String name, String content) {
-        if (name == null || content == null) {
-            return new ArrayList<>();
-        }
-        ArrayList<String> list = new ArrayList<>();
-
-        String[] tagNames = content.split(",");
-
-        for (String s : tagNames) {
-            String normalized = s == null ? null : s.trim();
-            if (normalized == null || normalized.isEmpty()) {
-                continue;
-            }
-            list.add(name + ":" + normalized);
-        }
-
-        return list;
+    public static ArrayList<String> parseGalleryTags(GalleryTags tags) {
+        return com.hippo.ehviewer.client.data.GalleryInfo.parseGalleryTags(tags);
     }
 
     /**

@@ -73,6 +73,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -819,6 +820,69 @@ public class EhDB {
             return null;
         }
         return list.get(0);
+    }
+
+    public interface QueryProgressCallback {
+        void onProgress(int loaded, int total);
+    }
+
+    public static synchronized Map<Long, GalleryTags> queryGalleryTags(Collection<Long> gids) {
+        return queryGalleryTags(gids, null);
+    }
+
+    public static synchronized Map<Long, GalleryTags> queryGalleryTags(Collection<Long> gids, @Nullable QueryProgressCallback callback) {
+        long tStart = System.currentTimeMillis();
+        Map<Long, GalleryTags> map = new HashMap<>();
+        if (sDaoSession == null || gids == null || gids.isEmpty()) {
+            return map;
+        }
+        GalleryTagsDao dao = sDaoSession.getGalleryTagsDao();
+        List<Long> chunk = new ArrayList<>(500);
+        int chunkCount = 0;
+        int total = gids.size();
+        int loaded = 0;
+        for (Long gid : gids) {
+            if (gid == null) {
+                continue;
+            }
+            chunk.add(gid);
+            if (chunk.size() == 500) {
+                queryGalleryTagsChunk(dao, chunk, map);
+                chunk.clear();
+                chunkCount++;
+                loaded += 500;
+                if (callback != null && chunkCount % 10 == 0) {
+                    callback.onProgress(loaded, total);
+                }
+            }
+        }
+        if (!chunk.isEmpty()) {
+            queryGalleryTagsChunk(dao, chunk, map);
+            chunkCount++;
+            loaded += chunk.size();
+        }
+        if (callback != null) {
+            callback.onProgress(total, total);
+        }
+        long tEnd = System.currentTimeMillis();
+        android.util.Log.e("EhSearch", "[EhDB] 批量查询 GalleryTags 完成: GID总数=" + gids.size() +
+                ", 分批次=" + chunkCount + ", 命中记录数=" + map.size() + ", SQLite执行耗时=" + (tEnd - tStart) + "ms");
+        return map;
+    }
+
+    private static void queryGalleryTagsChunk(GalleryTagsDao dao, List<Long> chunk, Map<Long, GalleryTags> outMap) {
+        StringBuilder sb = new StringBuilder("where gid in (");
+        for (int i = 0, size = chunk.size(); i < size; i++) {
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append(chunk.get(i));
+        }
+        sb.append(')');
+        List<GalleryTags> results = dao.queryRaw(sb.toString());
+        for (GalleryTags gt : results) {
+            outMap.put(gt.gid, gt);
+        }
     }
 
     public static synchronized void insertGalleryTags(GalleryTags galleryTags) {

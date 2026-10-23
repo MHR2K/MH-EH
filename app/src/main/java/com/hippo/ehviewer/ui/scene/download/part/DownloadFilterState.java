@@ -214,6 +214,7 @@ public class DownloadFilterState {
         // 清除分组搜索状态
         mHost.setGroupedSearchResults(null);
         mHost.getCollapsedLabels().clear();
+        mHost.setSearchAllLabelsMode(false);
         DownloadAdapter originalAdapter = mHost.getOriginalAdapter();
         if (originalAdapter != null) {
             originalAdapter.clearGroupMode();

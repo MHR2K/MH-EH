@@ -50,6 +50,7 @@ import android.widget.ArrayAdapter;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -249,6 +250,16 @@ public class DownloadsScene extends ToolbarScene
                     searching = value;
                 }
 
+                @Override
+                public boolean isSearchAllLabelsMode() {
+                    return mSearchController.isSearchAllLabelsMode();
+                }
+
+                @Override
+                public void setSearchAllLabelsMode(boolean isSearchAllLabelsMode) {
+                    mSearchController.setSearchAllLabelsMode(isSearchAllLabelsMode);
+                }
+
                 @Nullable
                 @Override
                 public ProgressView getProgressView() {
@@ -259,6 +270,18 @@ public class DownloadsScene extends ToolbarScene
                 @Override
                 public View getSearchProgressContainer() {
                     return mSearchProgressContainer;
+                }
+
+                @Nullable
+                @Override
+                public android.widget.ProgressBar getSearchProgressBar() {
+                    return mSearchProgressBar;
+                }
+
+                @Nullable
+                @Override
+                public android.widget.TextView getSearchProgressText() {
+                    return mSearchProgressText;
                 }
 
                 @Nullable
@@ -557,6 +580,7 @@ public class DownloadsScene extends ToolbarScene
     private ProgressView mProgressView;
 
     private View mSearchProgressContainer;
+    private ProgressBar mSearchProgressBar;
     private TextView mSearchProgressText;
 
     private DownloadLabelDraw downloadLabelDraw;
@@ -785,6 +809,7 @@ public class DownloadsScene extends ToolbarScene
         // 切换标签时清除分组搜索状态
         mSearchController.setGroupedSearchResults(null);
         mSearchController.getCollapsedLabels().clear();
+        mSearchController.setSearchAllLabelsMode(false);
         if (mOriginalAdapter != null) {
             mOriginalAdapter.clearGroupMode();
         }
@@ -1077,6 +1102,7 @@ public class DownloadsScene extends ToolbarScene
 
         mProgressView = (ProgressView) ViewUtils.$$(view, R.id.download_progress_view);
         mSearchProgressContainer = ViewUtils.$$(view, R.id.search_progress_container);
+        mSearchProgressBar = (ProgressBar) ViewUtils.$$(view, R.id.search_progress_bar);
         mSearchProgressText = (TextView) ViewUtils.$$(view, R.id.search_progress_text);
         View content = ViewUtils.$$(view, R.id.content);
         mRecyclerView = (MyEasyRecyclerView) ViewUtils.$$(content, R.id.recycler_view);
@@ -2345,8 +2371,40 @@ public class DownloadsScene extends ToolbarScene
     }
 
     @Override
+    public void onSearchPrepareProgress(int prepared, int total) {
+        if (!isAdded()) return;
+        if (mSearchProgressBar != null) {
+            if (mSearchProgressBar.isIndeterminate()) {
+                mSearchProgressBar.setIndeterminate(false);
+            }
+            mSearchProgressBar.setMax(total);
+            mSearchProgressBar.setProgress(prepared);
+            mSearchProgressBar.setVisibility(View.VISIBLE);
+        }
+        if (mSearchProgressText != null) {
+            mSearchProgressText.setText(getString(R.string.search_prepare_progress_format, prepared, total));
+            mSearchProgressText.setVisibility(View.VISIBLE);
+        }
+    }
+
+    @Override
     public void onSearchProgress(int scanned, int total) {
         if (!isAdded()) return;
+        if (scanned == 0 || scanned == total || scanned % 1000 == 0) {
+            long tElapsed = mSearchController != null && mSearchController.getSearchStartTime() > 0
+                    ? (System.currentTimeMillis() - mSearchController.getSearchStartTime())
+                    : -1L;
+            android.util.Log.e("EhSearch", "[Progress] 搜索进度: " + scanned + " / " + total +
+                    (tElapsed >= 0 ? " (已耗时 " + tElapsed + "ms)" : ""));
+        }
+        if (mSearchProgressBar != null) {
+            if (mSearchProgressBar.isIndeterminate()) {
+                mSearchProgressBar.setIndeterminate(false);
+            }
+            mSearchProgressBar.setMax(total);
+            mSearchProgressBar.setProgress(scanned);
+            mSearchProgressBar.setVisibility(View.VISIBLE);
+        }
         if (mSearchProgressText != null) {
             mSearchProgressText.setText(getString(R.string.search_progress_format, scanned, total));
             mSearchProgressText.setVisibility(View.VISIBLE);
@@ -2355,6 +2413,11 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public void onDownloadSearchSuccess(List<DownloadInfo> list) {
+        final long tUiStart = System.currentTimeMillis();
+        final long tTotalStart = mSearchController != null ? mSearchController.getSearchStartTime() : 0L;
+        android.util.Log.e("EhSearch", "[7.UI-Start] 主线程收到搜索结果: 结果数=" + (list != null ? list.size() : 0) +
+                (tTotalStart > 0 ? " (后台全过程耗时=" + (tUiStart - tTotalStart) + "ms)" : "") + ", 开始更新UI与Adapter...");
+
         // 检查 Fragment 是否已附加，如果未附加则忽略回调
         if (!isAdded()) {
             return;
@@ -2365,6 +2428,9 @@ public class DownloadsScene extends ToolbarScene
             mSearchProgressContainer.setVisibility(View.GONE);
         }
         mProgressView.setVisibility(View.GONE);
+        if (mSearchProgressBar != null) {
+            mSearchProgressBar.setVisibility(View.GONE);
+        }
         if (mSearchProgressText != null) {
             mSearchProgressText.setVisibility(View.GONE);
         }
@@ -2416,8 +2482,13 @@ public class DownloadsScene extends ToolbarScene
         updateTitle();
         updatePaginationIndicator();
         searching = false;
-        mSearchController.setSearchAllLabelsMode(false);
         queryUnreadSpiderInfo();
+
+        final long tUiEnd = System.currentTimeMillis();
+        final long uiDuration = tUiEnd - tUiStart;
+        final long totalDuration = tTotalStart > 0 ? (tUiEnd - tTotalStart) : -1L;
+        android.util.Log.e("EhSearch", "[8.UI-Done] UI更新与渲染完成: UI主线程耗时=" + uiDuration + "ms" +
+                (totalDuration >= 0 ? " | ★★★ 搜索全流程端到端总用时=" + totalDuration + "ms ★★★" : ""));
     }
 
     @Override
@@ -2444,6 +2515,9 @@ public class DownloadsScene extends ToolbarScene
             mSearchProgressContainer.setVisibility(View.GONE);
         }
         mProgressView.setVisibility(View.GONE);
+        if (mSearchProgressBar != null) {
+            mSearchProgressBar.setVisibility(View.GONE);
+        }
         if (mSearchProgressText != null) {
             mSearchProgressText.setVisibility(View.GONE);
         }
@@ -2465,7 +2539,16 @@ public class DownloadsScene extends ToolbarScene
         } else {
             updateAdapter();
         }
+        if (mSearchProgressContainer != null) {
+            mSearchProgressContainer.setVisibility(View.GONE);
+        }
         mProgressView.setVisibility(View.GONE);
+        if (mSearchProgressBar != null) {
+            mSearchProgressBar.setVisibility(View.GONE);
+        }
+        if (mSearchProgressText != null) {
+            mSearchProgressText.setVisibility(View.GONE);
+        }
         if (mRecyclerView != null) {
             mRecyclerView.setVisibility(View.VISIBLE);
         }

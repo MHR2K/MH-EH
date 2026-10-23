@@ -24,6 +24,7 @@ import androidx.annotation.Nullable;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.hippo.ehviewer.dao.DownloadInfo;
+import com.hippo.ehviewer.dao.GalleryTags;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -126,6 +127,9 @@ public class GalleryInfo implements Parcelable {
     public int spanGroupIndex;
     @Nullable
     public ArrayList<String> tgList;
+    @Nullable
+    public transient GalleryTags galleryTags;
+    public static final GalleryTags EMPTY_GALLERY_TAGS = new GalleryTags();
 
     /**
      * language from title
@@ -323,6 +327,7 @@ public class GalleryInfo implements Parcelable {
         i.favoriteName = favoriteName;
         i.favoriteCount = favoriteCount;
         i.tgList = tgList;
+        i.galleryTags = galleryTags;
         if (info != null) {
             i.state = info.state;
             i.legacy = info.legacy;
@@ -331,6 +336,59 @@ public class GalleryInfo implements Parcelable {
         }
 
         return i;
+    }
+
+    @Nullable
+    public ArrayList<String> getTgList() {
+        if (tgList != null) {
+            return tgList;
+        }
+        if (galleryTags != null && galleryTags != EMPTY_GALLERY_TAGS) {
+            tgList = parseGalleryTags(galleryTags);
+            return tgList;
+        }
+        return null;
+    }
+
+    public static ArrayList<String> parseGalleryTags(GalleryTags tags) {
+        if (tags == null) {
+            return new ArrayList<>(0);
+        }
+        ArrayList<String> list = new ArrayList<>();
+        appendTags(list, "artist", tags.artist);
+        appendTags(list, "rows", tags.rows);
+        appendTags(list, "cosplayer", tags.cosplayer);
+        appendTags(list, "character", tags.character);
+        appendTags(list, "female", tags.female);
+        appendTags(list, "group", tags.group);
+        appendTags(list, "language", tags.language);
+        appendTags(list, "male", tags.male);
+        appendTags(list, "misc", tags.misc);
+        appendTags(list, "mixed", tags.mixed);
+        appendTags(list, "other", tags.other);
+        appendTags(list, "parody", tags.parody);
+        appendTags(list, "reclass", tags.reclass);
+        appendTags(list, "location", tags.location);
+        return list;
+    }
+
+    private static void appendTags(ArrayList<String> list, String namespace, String content) {
+        if (namespace == null || content == null || content.isEmpty()) {
+            return;
+        }
+        int len = content.length();
+        int start = 0;
+        for (int i = 0; i <= len; i++) {
+            if (i == len || content.charAt(i) == ',') {
+                if (i > start) {
+                    String tag = content.substring(start, i).trim();
+                    if (!tag.isEmpty()) {
+                        list.add(namespace + ":" + tag);
+                    }
+                }
+                start = i + 1;
+            }
+        }
     }
 
     public JSONObject toJson() {

@@ -21,7 +21,9 @@ import android.content.DialogInterface
 import android.view.View
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.Spinner
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.recyclerview.widget.RecyclerView
 import com.hippo.ehviewer.R
@@ -48,8 +50,11 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         fun getEHContext(): Context?
         var searchKey: String?
         var isSearching: Boolean
+        var isSearchAllLabelsMode: Boolean
         val progressView: ProgressView?
         val searchProgressContainer: View?
+        val searchProgressBar: ProgressBar?
+        val searchProgressText: TextView?
         val recyclerView: MyEasyRecyclerView?
         var list: MutableList<DownloadInfo>?
         val backList: MutableList<DownloadInfo>?
@@ -91,6 +96,7 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
     var groupedSearchResults: Map<String, List<DownloadInfo>>? = null
     val collapsedLabels: MutableSet<String> = mutableSetOf()
     var searchExecutor: DownloadListInfosExecutor? = null
+    var searchStartTime: Long = 0L
 
     /**
      * "查找相同作者"入口的搜索选项：非模糊、忽略大小写、启用简繁转换。
@@ -110,10 +116,10 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
      ---------------*/
 
     fun gotoSearch(context: Context, helper: SearchBar.Helper?, moverHelper: SearchBarMover.Helper?) {
-        mSearchDialog?.let {
-            it.show()
-            return
-        }
+        // 避免持有旧对话框并保证每次打开时控件引用最新且状态准确
+        mSearchDialog?.dismiss()
+        mSearchDialog = null
+
         val layoutInflater = android.view.LayoutInflater.from(context)
         val drawable = DrawableManager.getVectorDrawable(context, R.drawable.big_download)
 
@@ -141,7 +147,7 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         mSortByRelevanceCheckbox = linearLayout.findViewById(R.id.sort_by_relevance_checkbox)
         mSearchAllLabelsCheckbox = linearLayout.findViewById(R.id.search_all_labels_checkbox)
 
-        // 初始化当前设置状态，从 Settings 加载所有搜索相关设置
+        // 初始化当前设置状态，"在全部下载标签中搜索" 默认不勾选，由用户按需勾选
         mFuzzySearchCheckbox?.isChecked = Settings.getEnableFuzzySearch()
         mIgnoreCaseCheckbox?.isChecked = Settings.getEnableIgnoreCase()
         mChineseConversionCheckbox?.isChecked = Settings.getEnableChineseConversion()
@@ -161,24 +167,23 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
             .setCancelable(true)
             .setOnDismissListener { dialog -> onSearchDialogDismiss(dialog) }
             .setNegativeButton(android.R.string.cancel) { dialog, _ ->
-                mHost?.searchKey = null
-                mSearchBar?.setText(null)
-                mSearchBar?.setTitle(null)
-                mSearchBar?.applySearch(true)
                 dialog.dismiss()
             }
-            .setPositiveButton(android.R.string.ok) { dialog, _ ->
+            .setPositiveButton(android.R.string.ok) { _, _ ->
                 mSearchBar?.applySearch(true)
-                dialog.dismiss()
             }.show()
     }
 
     fun onSearchDialogDismiss(dialog: DialogInterface) {
         mSearchMode = false
-        // 清除复选框引用，避免对话框关闭后 startSearching() 读到旧的勾选状态
+        mSearchDialog = null
+        mSearchBar = null
+        mSearchBarMover = null
+        mFuzzySearchCheckbox = null
+        mIgnoreCaseCheckbox = null
+        mChineseConversionCheckbox = null
+        mSortByRelevanceCheckbox = null
         mSearchAllLabelsCheckbox = null
-        // 重置 Settings，防止旧版残留值影响非对话框入口的搜索（如"查找相同作者"）
-        Settings.putEnableSearchAllLabels(false)
     }
 
     /**
@@ -230,10 +235,19 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
 
     fun startSearching() {
         val host = mHost ?: return
-        // 显示搜索进度容器
-        host.searchProgressContainer?.visibility = View.VISIBLE
-        host.progressView?.visibility = View.VISIBLE
-        host.recyclerView?.visibility = View.GONE
+        val tStart = System.currentTimeMillis()
+        searchStartTime = tStart
+
+        // 在关闭对话框前读取用户当前在对话框中勾选的状态（默认不勾选）
+        val searchAllLabels = mSearchAllLabelsCheckbox?.isChecked ?: false
+        val fuzzySearch = mFuzzySearchCheckbox?.isChecked ?: Settings.getEnableFuzzySearch()
+        val ignoreCase = mIgnoreCaseCheckbox?.isChecked ?: Settings.getEnableIgnoreCase()
+        val enableChineseConversion = mChineseConversionCheckbox?.isChecked ?: Settings.getEnableChineseConversion()
+        val sortByRelevance = fuzzySearch && (mSortByRelevanceCheckbox?.isChecked ?: Settings.getEnableSortByRelevance())
+
+        // 记录状态
+        Settings.putEnableSearchAllLabels(searchAllLabels)
+        isSearchAllLabelsMode = searchAllLabels
 
         if (mSearchMode) {
             mSearchMode = false
@@ -245,27 +259,48 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
 
         mSearchDialog?.dismiss()
 
-        // 只有当没有预先设置搜索结果时，才更新标签（避免覆盖已有的搜索结果）
-        if (!host.isSearching) {
+        // 关键词为空时，退出搜索模式并恢复当前标签列表
+        val searchKey = host.searchKey
+        if (searchKey.isNullOrEmpty()) {
+            isSearchAllLabelsMode = false
+            Settings.putEnableSearchAllLabels(false)
+            host.setGroupedSearchResults(null)
+            collapsedLabels.clear()
+            host.originalAdapter?.clearGroupMode()
+            host.searchProgressContainer?.visibility = View.GONE
+            host.progressView?.visibility = View.GONE
+            host.recyclerView?.visibility = View.VISIBLE
+            host.isSearching = false
             host.updateForLabel()
+            host.restoreScrollPositionIfNeeded()
+            return
         }
 
-        // 根据"在全部标签中搜索"复选框决定搜索范围（复选框为 null 时回退到 Settings）
-        val searchAllLabels = mSearchAllLabelsCheckbox?.isChecked ?: Settings.getEnableSearchAllLabels()
+        // 显示搜索进度容器并立即显示准备提示与进度条
+        host.searchProgressContainer?.visibility = View.VISIBLE
+        host.progressView?.visibility = View.VISIBLE
+        host.recyclerView?.visibility = View.GONE
+        host.searchProgressBar?.apply {
+            isIndeterminate = true
+            visibility = View.VISIBLE
+        }
+        host.searchProgressText?.apply {
+            setText(R.string.search_preparing)
+            visibility = View.VISIBLE
+        }
+
+        // 确定搜索目标数据源：全部标签时为 dm.allDownloadInfoList，当前标签时为 host.backList，避免被前次搜索结果污染
         val dm = host.downloadManager
         val searchTarget: List<DownloadInfo>? = if (searchAllLabels && dm != null) {
             dm.allDownloadInfoList
         } else {
-            host.list
+            host.backList ?: host.list
         }
 
         val executor = DownloadListInfosExecutor(searchTarget, host.searchKey)
+        executor.startTime = tStart
 
-        // 设置搜索选项（复选框为 null 时回退到 Settings）
-        val fuzzySearch = mFuzzySearchCheckbox?.isChecked ?: Settings.getEnableFuzzySearch()
-        val ignoreCase = mIgnoreCaseCheckbox?.isChecked ?: Settings.getEnableIgnoreCase()
-        val enableChineseConversion = mChineseConversionCheckbox?.isChecked ?: Settings.getEnableChineseConversion()
-        val sortByRelevance = fuzzySearch && (mSortByRelevanceCheckbox?.isChecked ?: Settings.getEnableSortByRelevance())
+        android.util.Log.e("EhSearch", "[1.UI] 触发搜索: keyword='${host.searchKey}', searchAllLabels=$searchAllLabels, fuzzy=$fuzzySearch, ignoreCase=$ignoreCase, chinese=$enableChineseConversion, relevance=$sortByRelevance, 数据量=${searchTarget?.size ?: 0}")
 
         executor.setSearchOptions(fuzzySearch, ignoreCase, enableChineseConversion)
         if (sortByRelevance) {
@@ -273,7 +308,6 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         }
 
         // 全部标签搜索时启用分组模式
-        isSearchAllLabelsMode = searchAllLabels
         if (searchAllLabels) {
             executor.setGroupByLabel(true)
             collapsedLabels.clear()
@@ -307,11 +341,11 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         val searchKey = host.searchKey
         if (searchKey.isNullOrEmpty()) return false
 
-        // 使用当前的搜索设置
-        val fuzzySearch = mFuzzySearchCheckbox?.isChecked == true
-        val ignoreCase = mIgnoreCaseCheckbox?.isChecked == true
-        val enableChineseConversion = mChineseConversionCheckbox?.isChecked == true
-        val sortByRelevance = fuzzySearch && mSortByRelevanceCheckbox?.isChecked == true
+        // 使用当前的搜索设置（回退到 Settings）
+        val fuzzySearch = mFuzzySearchCheckbox?.isChecked ?: Settings.getEnableFuzzySearch()
+        val ignoreCase = mIgnoreCaseCheckbox?.isChecked ?: Settings.getEnableIgnoreCase()
+        val enableChineseConversion = mChineseConversionCheckbox?.isChecked ?: Settings.getEnableChineseConversion()
+        val sortByRelevance = fuzzySearch && (mSortByRelevanceCheckbox?.isChecked ?: Settings.getEnableSortByRelevance())
 
         // 执行搜索
         val executor = DownloadListInfosExecutor(backList, searchKey,
