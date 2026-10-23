@@ -1374,4 +1374,34 @@
     <string name="export_gallery_log_success_msg">Log file saved to:\n%s</string>
     <string name="export_gallery_log_share">Share / Open</string>
     <string name="export_gallery_log_failed">Failed to export log or log is empty</string>
+
+    <!-- Subscription Digest -->
+    <string name="subscription_digest_title">Watched Digest</string>
+    <string name="subscription_digest_dialog_title">Watched Daily Digest (Sort by Favorites)</string>
+    <string name="subscription_digest_select_date">Select Date</string>
+    <string name="subscription_digest_today">Today (%s)</string>
+    <string name="subscription_digest_yesterday">Yesterday (%s)</string>
+    <string name="subscription_digest_custom_date">Custom Date…</string>
+    <string name="subscription_digest_view_last">View Last Digest (%1$s, %2$d items)</string>
+    <string name="subscription_digest_hint">Fetch watched comics for the chosen date in the background with anti-509 rate limiting. In-memory only without caching. A notification will arrive when ready.</string>
+    <string name="subscription_digest_start">Start Background Fetch</string>
+    <string name="subscription_digest_service_label">Watched Digest Service</string>
+    <string name="subscription_digest_running">Fetching Watched Digest</string>
+    <string name="subscription_digest_fetching_list">Fetching Watched list (%s)…</string>
+    <string name="subscription_digest_fetching_fav">Fetching favorites: %1$d / %2$d</string>
+    <string name="subscription_digest_done_title">Watched Digest Complete (%s)</string>
+    <string name="subscription_digest_done_text">%1$d comics fetched, top favorites ❤%2$d. Tap to view!</string>
+    <string name="subscription_digest_empty">No comics found for the selected date</string>
+    <string name="subscription_digest_failed">Digest failed: %s</string>
+    <string name="subscription_digest_hide_downloaded">Hide Downloaded</string>
+    <string name="subscription_digest_show_all">Show All</string>
+    <string name="subscription_digest_subtitle">%1$d comics (%2$d downloaded hidden)</string>
+    <string name="subscription_digest_cancel">Cancel Task</string>
+    <string name="subscription_digest_cancelled">Task cancelled</string>
+    <string name="subscription_digest_rate_limited">Rate limit reached. Task safely stopped, showing fetched items.</string>
+    <string name="subscription_digest_task_running">Fetching [%1$s] digest (%2$d/%3$d). Please wait…</string>
+    <string name="subscription_digest_wait_background">Wait in Background</string>
+    <string name="subscription_digest_change_date">Select Another Date</string>
+    <string name="subscription_digest_snackbar_done">Watched digest for %1$s is ready (%2$d items)</string>
+    <string name="subscription_digest_view">View</string>
 </resources>

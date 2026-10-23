@@ -88,6 +88,14 @@
             style="@style/Widget.Design.FloatingActionButton.Mini"/>
 
         <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/subscription_digest"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:srcCompat="@drawable/v_heart_x24"
+            app:backgroundTint="?attr/widgetColorThemeAccent"
+            style="@style/Widget.Design.FloatingActionButton.Mini"/>
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             app:backgroundTint="?attr/widgetColorThemePrimary"

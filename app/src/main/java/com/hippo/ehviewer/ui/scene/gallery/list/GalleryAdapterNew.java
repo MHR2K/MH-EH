@@ -275,6 +275,14 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
                     holder.simpleLanguage.setText(gi.simpleLanguage);
                     holder.simpleLanguage.setVisibility(View.VISIBLE);
                 }
+                if (holder.favCount != null) {
+                    if (gi.favoriteCount >= 0) {
+                        holder.favCount.setText("❤ " + gi.favoriteCount);
+                        holder.favCount.setVisibility(View.VISIBLE);
+                    } else {
+                        holder.favCount.setVisibility(View.GONE);
+                    }
+                }
                 holder.favourite.setVisibility((mShowFavourite && gi.favoriteSlot >= -1 && gi.favoriteSlot <= 10) ? View.VISIBLE : View.GONE);
                 DownloadManager dm = mDownloadManager;
                 if (dm == null) {
@@ -333,6 +341,7 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
         public final TextView simpleLanguage;
         public final ImageView favourite;
         public final ImageView downloaded;
+        public final TextView favCount;
         public final View cardView;
 
         public GalleryHolder(View itemView, final OnThumbItemClickListener onThumbItemClickListener, int mType) {
@@ -348,6 +357,7 @@ abstract class GalleryAdapterNew extends RecyclerView.Adapter<GalleryAdapterNew.
             simpleLanguage = itemView.findViewById(R.id.simple_language);
             favourite = itemView.findViewById(R.id.favourited);
             downloaded = itemView.findViewById(R.id.downloaded);
+            favCount = itemView.findViewById(R.id.fav_count);
             if (mType == 0) {
                 thumb.setOnClickListener(v -> {
                     if (onThumbItemClickListener != null) {

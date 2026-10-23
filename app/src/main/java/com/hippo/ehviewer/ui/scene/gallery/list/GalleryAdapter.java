@@ -253,6 +253,14 @@ abstract class GalleryAdapter extends RecyclerView.Adapter<GalleryHolder> {
                     holder.simpleLanguage.setText(gi.simpleLanguage);
                     holder.simpleLanguage.setVisibility(View.VISIBLE);
                 }
+                if (holder.favCount != null) {
+                    if (gi.favoriteCount >= 0) {
+                        holder.favCount.setText("❤ " + gi.favoriteCount);
+                        holder.favCount.setVisibility(View.VISIBLE);
+                    } else {
+                        holder.favCount.setVisibility(View.GONE);
+                    }
+                }
                 holder.favourited.setVisibility((mShowFavourited && gi.favoriteSlot >= -1 && gi.favoriteSlot <= 10) ? View.VISIBLE : View.GONE);
                 DownloadManager dm = mDownloadManager;
                 if (dm == null) {

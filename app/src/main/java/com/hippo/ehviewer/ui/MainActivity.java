@@ -87,6 +87,7 @@ import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryDetailScene;
 import com.hippo.ehviewer.ui.scene.GalleryInfoScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.GalleryListScene;
 import com.hippo.ehviewer.ui.scene.GalleryPreviewsScene;
+import com.hippo.ehviewer.ui.scene.gallery.list.SubscriptionDigestScene;
 import com.hippo.ehviewer.ui.scene.gallery.list.SubscriptionsScene;
 import com.hippo.ehviewer.ui.scene.sign.GetProfileScene;
 import com.hippo.ehviewer.ui.scene.topList.EhTopListScene;
@@ -204,6 +205,7 @@ public final class MainActivity extends StageActivity
         registerLaunchMode(HistoryScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TOP);
         registerLaunchMode(ProgressScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
         registerLaunchMode(ImportComicScene.class, SceneFragment.LAUNCH_MODE_STANDARD);
+        registerLaunchMode(SubscriptionDigestScene.class, SceneFragment.LAUNCH_MODE_SINGLE_TASK);
     }
 
     @Override

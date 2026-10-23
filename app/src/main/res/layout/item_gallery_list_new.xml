@@ -84,6 +84,17 @@
                 android:layout_marginBottom="4dp" />
 
             <TextView
+                android:id="@+id/fav_count"
+                style="@style/CardMessage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_toRightOf="@id/rating"
+                android:layout_alignBottom="@id/rating"
+                android:layout_marginLeft="6dp"
+                android:textColor="?attr/textColorThemeAccent"
+                android:visibility="gone" />
+
+            <TextView
                 android:id="@+id/posted"
                 style="@style/CardMessage"
                 android:layout_width="wrap_content"

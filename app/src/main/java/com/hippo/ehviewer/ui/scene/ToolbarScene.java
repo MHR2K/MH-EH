@@ -130,4 +130,15 @@ public abstract class ToolbarScene extends BaseScene {
             mTempTitle = title;
         }
     }
+
+    public void setSubtitle(CharSequence subtitle) {
+        if (mToolbar != null) {
+            mToolbar.setSubtitle(subtitle);
+        }
+    }
+
+    @Nullable
+    public Toolbar getToolbar() {
+        return mToolbar;
+    }
 }

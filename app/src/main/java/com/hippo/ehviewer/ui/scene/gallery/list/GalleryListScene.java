@@ -1653,6 +1653,11 @@ public final class GalleryListScene extends BaseScene
             case 4: // 滑动下载开关
                 toggleSwipeDownload();
                 break;
+            case 5: // 订阅日精选 (按收藏数排序)
+                if (getEHContext() != null) {
+                    new SubscriptionDigestDialog(getEHContext()).show();
+                }
+                break;
         }
 
         view.setExpanded(false);
