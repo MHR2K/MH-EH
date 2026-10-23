@@ -174,3 +174,45 @@ npx @claude-flow/cli@latest doctor --fix
 ```
 
 **Agent tool** handles execution (agents, files, code, git). **MCP tools** handle coordination (swarm, memory, hooks). **CLI** is the same via Bash.
+
+## Git Commit Guidelines
+
+Git commit messages must strictly adhere to structured, informative conventions. Vague one-liners, uninformative summaries, or rough commits without structured bodies are strictly prohibited.
+
+### Format & Length Specifications
+
+1. **Subject Line**: `<type>(<scope>): <concise Chinese summary>`
+   - **Length**: **≤ 50 Chinese characters** (approx. 72 characters). One sentence summarizing the core objective. Never end with a period (`.`).
+   - **Punctuation**: Follow `<type>(<scope>)` with a half-width colon and a space (`": "`).
+2. **Blank Line**: **Exactly one empty line** must separate the subject line and the body.
+3. **Body**:
+   - **Two-Tier Hierarchical Structure (Pattern A / B)**: Use a **numbered list** with 2–4 main items. **All items must have a newline followed by a 3-space indented `- ` sub-bullet** (even single points must be indented on a new line to ensure strict visual uniformity):
+     ```text
+     1. <Topic / Module Name>:
+        - <Specific technical changes and core explanation A>
+        - <Specific technical changes and core explanation B (if applicable)>
+     ```
+     - Keep main topic descriptions within 40–100 characters; limit nested sub-bullets to 1–3 per item.
+   - **Single-Tier Flat Structure (Pattern C)**: Use a **flat bullet list** (3–5 `- ` points) without nested tiers, concisely stating technical capabilities or changes:
+     ```text
+     - <Technical point / change explanation A>
+     - <Technical point / change explanation B>
+     ```
+     - Keep each bullet point within 30–80 characters, clearly detailing concrete implementations.
+   - **Line Wrapping & Visual Cleanliness**: Control bullet sentence length carefully. Strictly avoid awkward line wrapping where only 2–3 trailing characters spill over into an orphaned next line; ensure lines are either comfortably single-line or evenly balanced.
+4. **Structural Pattern Selection (Flexible adaptation by nature of commit)**:
+   - **Pattern A: Multi-Feature / Comprehensive Module (for `feat` / large-scale `refactor`)**: Divide main items by functional modules (e.g., 1. Core Feature, 2. UI/Interaction Refinement, 3. Architecture Refactoring).
+   - **Pattern B: Single Defect / Cause-and-Effect Fix (for `fix` / `perf`)**: Structure items by the **investigation and resolution chain** (e.g., 1. Root Cause Analysis, 2. Core Mechanism Fix, 3. Business Scope / Coverage), avoiding forced artificial modularization.
+   - **Pattern C: Self-Contained Feature / Flat Checklist (for standalone sub-systems, targeted `perf`, or `build` maintenance)**: When changes are highly cohesive under a single topic (e.g., introducing a logging system, targeted performance overhaul, dependency upgrade), use 3–5 flat bullet points to list system capabilities or optimizations cleanly without over-engineering layers.
+
+### Common Types and Scopes
+
+- **Type**: `feat` (new feature) | `fix` (bug fix) | `perf` (performance) | `refactor` (refactoring) | `build` (build/deps) | `test` (tests)
+- **Scope**: `download` (download engine/labels) | `gallery` (detail/reader) | `gallerylog` (operation logs) | `smb` (SMB storage) | `settings` (preferences)
+
+### Language & Writing Requirements
+
+- **Output Language**: **Standard Chinese** for descriptive text; technical names, protocol abbreviations, and class names must preserve their original English casing (e.g., `GID`, `SQLite`, `SMB`, `CBZ`, `DownloadManager`).
+- **Perspective**: Emphasize technical substance, root causes, and business impact. Avoid superficial narrations like "changed line X".
+- **Signature Trailers**: Trailers such as `Co-authored-by` or `Signed-off-by` are allowed but strictly optional. Prioritize clarity and technical completeness.
+
