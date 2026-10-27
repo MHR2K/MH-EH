@@ -1193,6 +1193,9 @@
     <string name="download_refresh_fav_count_abort_failed">已停止：连续多次网络请求失败</string>
     <string name="download_refresh_fav_count_progress">获取收藏数：%1$d / %2$d</string>
     <string name="download_refresh_fav_count_done">已获取 %1$d 个漫画的收藏数</string>
+    <string name="download_refresh_fav_count_service_label">收藏数刷新服务</string>
+    <string name="download_refresh_fav_count_started">已在后台开始刷新收藏数，可在通知栏查看进度</string>
+    <string name="download_refresh_fav_count_running">正在后台刷新收藏数中 (%1$d/%2$d)，请稍候或在通知栏取消</string>
     <string name="sort_by_fav_count_asc">收藏数 ↑</string>
     <string name="sort_by_fav_count_desc">收藏数 ↓</string>
     <string name="convert_to_cbz">转换为 CBZ</string>

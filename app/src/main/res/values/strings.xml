@@ -552,6 +552,9 @@
     <string name="download_refresh_fav_count_abort_failed">Stopped: Multiple consecutive network failures</string>
     <string name="download_refresh_fav_count_progress">Fetching favorites count: %1$d / %2$d</string>
     <string name="download_refresh_fav_count_done">Fetched favorites count for %1$d items</string>
+    <string name="download_refresh_fav_count_service_label">Favorites Count Refresh Service</string>
+    <string name="download_refresh_fav_count_started">Favorites count refresh started in background. Check notification for progress.</string>
+    <string name="download_refresh_fav_count_running">Favorites count refresh is already running in background (%1$d/%2$d).</string>
     <string name="sort_by_fav_count_asc">Favorites ↑</string>
     <string name="sort_by_fav_count_desc">Favorites ↓</string>
     <string name="convert_to_cbz">Convert to CBZ</string>

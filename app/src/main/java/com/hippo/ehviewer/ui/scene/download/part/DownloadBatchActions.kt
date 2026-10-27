@@ -50,6 +50,8 @@ import com.hippo.ehviewer.dao.DownloadInfo
 import com.hippo.ehviewer.dao.DownloadLabel
 import com.hippo.ehviewer.download.DownloadManager
 import com.hippo.ehviewer.download.DownloadService
+import com.hippo.ehviewer.download.FavCountHolder
+import com.hippo.ehviewer.download.FavCountService
 import com.hippo.ehviewer.gallerylog.GalleryLogManager
 import com.hippo.ehviewer.util.FavCountStore
 import com.hippo.ehviewer.smb.Client
@@ -111,8 +113,55 @@ class DownloadBatchActions(private val mHost: Host?) {
         fun onFavCountRefreshFinished()
     }
 
+    private val favCountListener = object : FavCountHolder.Listener {
+        override fun onProgress(current: Int, total: Int) {
+            // Background notification displays progress; optional UI callback
+        }
+
+        override fun onFinish(success: Int, total: Int, stopReason: Int) {
+            val host = mHost ?: return
+            val a = host.activity2
+            if (a != null && !a.isFinishing && !a.isDestroyed) {
+                when (stopReason) {
+                    EhEngine.STOP_REASON_RATE_LIMIT -> {
+                        Toast.makeText(a, R.string.download_refresh_fav_count_abort_509, Toast.LENGTH_LONG).show()
+                    }
+                    EhEngine.STOP_REASON_SAD_PANDA -> {
+                        Toast.makeText(a, R.string.download_refresh_fav_count_abort_sad_panda, Toast.LENGTH_LONG).show()
+                    }
+                    EhEngine.STOP_REASON_CONSECUTIVE_FAILURES -> {
+                        Toast.makeText(a, R.string.download_refresh_fav_count_abort_failed, Toast.LENGTH_LONG).show()
+                    }
+                    EhEngine.STOP_REASON_CANCELLED -> {
+                        Toast.makeText(a, "已中止，获取了 $success/$total 个", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        Toast.makeText(a, a.getString(R.string.download_refresh_fav_count_done, success), Toast.LENGTH_SHORT).show()
+                    }
+                }
+                host.onFavCountRefreshFinished()
+            }
+        }
+    }
+
+    fun bindFavCountListener() {
+        FavCountHolder.addListener(favCountListener)
+    }
+
+    fun unbindFavCountListener() {
+        FavCountHolder.removeListener(favCountListener)
+    }
+
     fun showRefreshFavCountDialog(targets: List<DownloadInfo>? = null) {
         val ctx = mHost?.getEHContext() ?: return
+        if (FavCountHolder.isRunning) {
+            Toast.makeText(
+                ctx,
+                ctx.getString(R.string.download_refresh_fav_count_running, FavCountHolder.progressCurrent, FavCountHolder.progressTotal),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
         val candidateList = targets ?: mHost.backList ?: return
         val totalCount = candidateList.size
         if (totalCount == 0) {
@@ -213,94 +262,27 @@ class DownloadBatchActions(private val mHost: Host?) {
 
     private fun startBatchGetFavCount(items: List<DownloadInfo>) {
         val ctx = mHost?.getEHContext() ?: return
-        val act = mHost.activity2 ?: return
         if (items.isEmpty()) {
             Toast.makeText(ctx, R.string.download_refresh_fav_count_none, Toast.LENGTH_SHORT).show()
             return
         }
-
-        val cancelled = AtomicBoolean(false)
-        val galleryInfoList = ArrayList<GalleryInfo>(items)
-
-        val progressDialog = ProgressDialog(ctx).apply {
-            setTitle(R.string.download_refresh_fav_count)
-            setMessage(mHost.getString(R.string.download_refresh_fav_count_progress, 0, items.size))
-            setProgressStyle(ProgressDialog.STYLE_HORIZONTAL)
-            max = items.size
-            setCancelable(true)
-            setOnCancelListener { cancelled.set(true) }
-            setButton(
-                DialogInterface.BUTTON_NEGATIVE,
-                ctx.getString(android.R.string.cancel)
-            ) { dialog, _ -> dialog.cancel() }
+        if (FavCountHolder.isRunning) {
+            Toast.makeText(
+                ctx,
+                ctx.getString(R.string.download_refresh_fav_count_running, FavCountHolder.progressCurrent, FavCountHolder.progressTotal),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
         }
-        progressDialog.show()
 
-        object : AsyncTask<Void, Int, IntArray>() {
-            override fun doInBackground(vararg voids: Void): IntArray {
-                return EhEngine.batchGetFavoriteCounts(
-                    EhApplication.getOkHttpClient(ctx),
-                    galleryInfoList,
-                    2,    // 2并发（更平稳，降低风控封禁风险）
-                    1000, // 批间间隔约1秒（带随机微扰抖动）
-                    cancelled
-                ) { current, total -> publishProgress(current, total) }
-            }
+        val gids = LongArray(items.size) { i -> items[i].gid }
+        FavCountService.start(ctx, gids)
+        Toast.makeText(ctx, R.string.download_refresh_fav_count_started, Toast.LENGTH_SHORT).show()
 
-            override fun onProgressUpdate(values: Array<out Int>) {
-                if (values.size >= 2) {
-                    val a = mHost.activity2
-                    if (a != null && !a.isFinishing && !a.isDestroyed) {
-                        progressDialog.progress = values[0]
-                        progressDialog.setMessage(
-                            mHost.getString(R.string.download_refresh_fav_count_progress, values[0], values[1])
-                        )
-                    }
-                }
-            }
-
-            override fun onPostExecute(result: IntArray?) {
-                val a = mHost.activity2
-                if (a != null && !a.isFinishing && !a.isDestroyed) {
-                    try {
-                        progressDialog.dismiss()
-                    } catch (ignored: Throwable) {
-                    }
-                }
-
-                // 持久化到磁盘（即便单项获取时已写入内存/临时存储，此处执行全局对齐）
-                if (mHost.backList != null) {
-                    FavCountStore.saveFrom(mHost.backList)
-                }
-
-                // 通知完成，若当前处于收藏数排序则自动重排
-                mHost.onFavCountRefreshFinished()
-
-                if (result != null && result.isNotEmpty()) {
-                    val success = result[0]
-                    val total = result[1]
-                    val stopReason = if (result.size >= 3) result[2] else EhEngine.STOP_REASON_COMPLETED
-
-                    when (stopReason) {
-                        EhEngine.STOP_REASON_RATE_LIMIT -> {
-                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_509, Toast.LENGTH_LONG).show()
-                        }
-                        EhEngine.STOP_REASON_SAD_PANDA -> {
-                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_sad_panda, Toast.LENGTH_LONG).show()
-                        }
-                        EhEngine.STOP_REASON_CONSECUTIVE_FAILURES -> {
-                            Toast.makeText(ctx, R.string.download_refresh_fav_count_abort_failed, Toast.LENGTH_LONG).show()
-                        }
-                        EhEngine.STOP_REASON_CANCELLED -> {
-                            Toast.makeText(ctx, "已中止，获取了 $success/$total 个", Toast.LENGTH_SHORT).show()
-                        }
-                        else -> {
-                            Toast.makeText(ctx, mHost.getString(R.string.download_refresh_fav_count_done, success), Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }.execute()
+        val rv = mHost?.recyclerView
+        if (rv != null && rv.isInCustomChoice) {
+            rv.outOfCustomChoiceMode()
+        }
     }
 
     fun convertBatchAsync(infos: List<DownloadInfo>, toCbz: Boolean) {

@@ -113,6 +113,7 @@ import com.hippo.ehviewer.ui.scene.download.part.MyPageChangeListener;
 import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
 import com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
+import com.hippo.ehviewer.util.FavCountStore;
 import com.hippo.ehviewer.widget.MyEasyRecyclerView;
 import com.hippo.ehviewer.widget.SearchBar;
 import com.hippo.lib.yorozuya.AssertUtils;
@@ -1276,6 +1277,7 @@ public class DownloadsScene extends ToolbarScene
     public void onViewCreated(View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
         setNavigationIcon(R.drawable.v_arrow_left_dark_x24);
+        mBatchActions.bindFavCountListener();
 
         // 从详情页返回时，如果有分组搜索结果，直接恢复（无需重新搜索）
         if (mSearchController.getGroupedSearchResults() != null && !mSearchController.getGroupedSearchResults().isEmpty()) {
@@ -1294,6 +1296,7 @@ public class DownloadsScene extends ToolbarScene
     @Override
     public void onDestroyView() {
         super.onDestroyView();
+        mBatchActions.unbindFavCountListener();
 
         if (null != mGuideHelper) {
             mGuideHelper.destroy();
@@ -1620,6 +1623,9 @@ public class DownloadsScene extends ToolbarScene
     }
 
     public void onFavCountRefreshFinished() {
+        if (mBackList != null) {
+            FavCountStore.applyTo(mBackList);
+        }
         if (mRecyclerView != null && mRecyclerView.isInCustomChoice()) {
             mRecyclerView.outOfCustomChoiceMode();
         }

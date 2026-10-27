@@ -275,6 +275,10 @@
             android:name=".subscription.SubscriptionDigestService"
             android:foregroundServiceType="dataSync"
             android:label="@string/subscription_digest_service_label" />
+        <service
+            android:name=".download.FavCountService"
+            android:foregroundServiceType="dataSync"
+            android:label="@string/download_refresh_fav_count_service_label" />
 
         <provider
             android:name="com.hippo.content.FileProvider"
