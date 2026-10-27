@@ -1267,6 +1267,14 @@
     <string name="have_new_version">Click to see new gallery version</string>
     <string name="have_old_version">Click to see older gallery version</string>
     <string name="have_old_version_downloaded">Older version (Downloaded)</string>
+    <string name="have_old_version_downloaded_smb">Older version (Downloaded SMB)</string>
+    <string name="gallery_update_smb_dialog_title">Old Version Stored on SMB</string>
+    <string name="gallery_update_smb_dialog_message">The old version is currently stored on SMB network storage. Gallery in-place update only supports local files.\n\nPlease migrate the old version from SMB back to local storage first, or download the new version directly.</string>
+    <string name="gallery_update_smb_direct_download">Download New Version</string>
+    <string name="gallery_update_smb_view_new">View New Version Detail</string>
+    <string name="gallery_update_smb_both_title">Old Version on Both Local &amp; SMB</string>
+    <string name="gallery_update_smb_both_message">The old version exists in both local storage and SMB. The update will only modify the local files; the SMB copy will not be updated automatically. Continue updating local copy?</string>
+    <string name="gallery_update_continue">Continue Update</string>
     <string name="gallery_update_old_version_title">Older Version</string>
     <string name="gallery_old_version_view_detail">View older version detail</string>
     <string name="gallery_old_version_view_in_download">View in download list</string>

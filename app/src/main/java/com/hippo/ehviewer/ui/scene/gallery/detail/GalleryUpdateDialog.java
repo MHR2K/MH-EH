@@ -34,7 +34,11 @@ import com.hippo.ehviewer.client.data.NewVersion;
 import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
+import com.hippo.ehviewer.smb.SmbStorageTracker;
+import com.hippo.ehviewer.ui.CommonOperations;
+import com.hippo.ehviewer.ui.MainActivity;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
+import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
 import com.hippo.scene.Announcer;
 
 import java.util.ArrayList;
@@ -192,6 +196,16 @@ public class GalleryUpdateDialog {
         int stateStart = sb.length();
         String stateStr = getDownloadStateString(context, ov.downloadState);
         sb.append(stateStr);
+        if (ov.isDownloaded) {
+            if (ov.storageLocation == StorageDetector.StorageLocation.SMB
+                    || (ov.storageLocation == null && ov.isOnSmb)) {
+                sb.append(" (").append(context.getString(R.string.storage_smb)).append(")");
+            } else if (ov.storageLocation == StorageDetector.StorageLocation.LOCAL) {
+                sb.append(" (").append(context.getString(R.string.storage_local)).append(")");
+            } else if (ov.storageLocation == StorageDetector.StorageLocation.BOTH) {
+                sb.append(" (").append(context.getString(R.string.storage_both)).append(")");
+            }
+        }
         int stateEnd = sb.length();
 
         sb.setSpan(new RelativeSizeSpan(0.82f), subStart, stateEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -241,6 +255,7 @@ public class GalleryUpdateDialog {
             if ((ov.title == null || ov.title.isEmpty() || ov.title.startsWith("GID: ")) && ov.galleryDetail != null) {
                 ov.title = EhUtils.getSuitableTitle(ov.galleryDetail);
             }
+            GalleryDetailScene.fillOldVersionStorageInfo(ov);
         }
 
         if (oldVersions.size() == 1) {
@@ -327,24 +342,27 @@ public class GalleryUpdateDialog {
                         detailScene.startScene(new Announcer(DownloadsScene.class).setArgs(args));
                     } else if (action == 2 && oldVersion.downloadInfo != null) {
                         // 更新旧版本
-                        GalleryDetail oldDetail = oldVersion.galleryDetail;
-                        if (oldDetail == null) {
-                            oldDetail = new GalleryDetail();
-                            oldDetail.gid = oldVersion.downloadInfo.gid;
-                            oldDetail.token = oldVersion.downloadInfo.token;
-                            oldDetail.title = oldVersion.downloadInfo.title;
-                            oldDetail.pages = oldVersion.downloadInfo.pages;
-                            oldDetail.thumb = oldVersion.downloadInfo.thumb;
-                            oldDetail.category = oldVersion.downloadInfo.category;
-                            oldDetail.uploader = oldVersion.downloadInfo.uploader;
-                            oldDetail.posted = oldVersion.downloadInfo.posted;
+                        boolean isPureSmb = (oldVersion.storageLocation == StorageDetector.StorageLocation.SMB)
+                                || (oldVersion.storageLocation == null && oldVersion.isOnSmb);
+                        if (isPureSmb) {
+                            showSmbUpdatePromptDialog(currentDetail, oldVersion);
+                            return;
                         }
 
-                        NewVersion newVersion = new NewVersion();
-                        newVersion.versionUrl = EhUrl.getGalleryDetailUrl(currentDetail.gid, currentDetail.token);
-                        newVersion.versionName = EhUtils.getSuitableTitle(currentDetail);
+                        if (oldVersion.storageLocation == StorageDetector.StorageLocation.BOTH) {
+                            new AlertDialog.Builder(context)
+                                    .setTitle(R.string.gallery_update_smb_both_title)
+                                    .setMessage(R.string.gallery_update_smb_both_message)
+                                    .setPositiveButton(R.string.gallery_update_continue, (d, w) -> {
+                                        d.dismiss();
+                                        startUpdateOldVersion(currentDetail, oldVersion);
+                                    })
+                                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
+                                    .show();
+                            return;
+                        }
 
-                        showUpdateModeDialog(oldDetail, newVersion, oldVersion.downloadInfo, currentDetail);
+                        startUpdateOldVersion(currentDetail, oldVersion);
                     }
                 })
                 .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss());
@@ -369,7 +387,52 @@ public class GalleryUpdateDialog {
             ov.title = EhUtils.getSuitableTitle(oldDownloadInfo);
             ov.posted = oldDownloadInfo.posted;
         }
+        GalleryDetailScene.fillOldVersionStorageInfo(ov);
         showSingleOldVersionActions(currentDetail, ov);
+    }
+
+    private void showSmbUpdatePromptDialog(@NonNull GalleryDetail currentDetail,
+                                           @NonNull GalleryDetailScene.OldVersion oldVersion) {
+        new AlertDialog.Builder(context)
+                .setTitle(R.string.gallery_update_smb_dialog_title)
+                .setMessage(R.string.gallery_update_smb_dialog_message)
+                .setPositiveButton(R.string.gallery_update_smb_direct_download, (dialog, which) -> {
+                    dialog.dismiss();
+                    MainActivity activity = (MainActivity) (context instanceof MainActivity ? context : detailScene.getActivity2());
+                    if (activity != null) {
+                        CommonOperations.startDownload(activity, currentDetail, false);
+                    }
+                })
+                .setNeutralButton(R.string.gallery_old_version_view_in_download, (dialog, which) -> {
+                    dialog.dismiss();
+                    Bundle args = new Bundle();
+                    args.putLong(DownloadsScene.KEY_GID, oldVersion.gid);
+                    detailScene.startScene(new Announcer(DownloadsScene.class).setArgs(args));
+                })
+                .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
+                .show();
+    }
+
+    private void startUpdateOldVersion(@NonNull GalleryDetail currentDetail,
+                                       @NonNull GalleryDetailScene.OldVersion oldVersion) {
+        GalleryDetail oldDetail = oldVersion.galleryDetail;
+        if (oldDetail == null && oldVersion.downloadInfo != null) {
+            oldDetail = new GalleryDetail();
+            oldDetail.gid = oldVersion.downloadInfo.gid;
+            oldDetail.token = oldVersion.downloadInfo.token;
+            oldDetail.title = oldVersion.downloadInfo.title;
+            oldDetail.pages = oldVersion.downloadInfo.pages;
+            oldDetail.thumb = oldVersion.downloadInfo.thumb;
+            oldDetail.category = oldVersion.downloadInfo.category;
+            oldDetail.uploader = oldVersion.downloadInfo.uploader;
+            oldDetail.posted = oldVersion.downloadInfo.posted;
+        }
+
+        NewVersion newVersion = new NewVersion();
+        newVersion.versionUrl = EhUrl.getGalleryDetailUrl(currentDetail.gid, currentDetail.token);
+        newVersion.versionName = EhUtils.getSuitableTitle(currentDetail);
+
+        showUpdateModeDialog(oldDetail, newVersion, oldVersion.downloadInfo, currentDetail);
     }
 
     /**
@@ -400,6 +463,49 @@ public class GalleryUpdateDialog {
                         Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
                         detailScene.startScene(announcer);
                     } else if (which == 1 && isDownloaded) {
+                        // 检查当前画廊（即待更新的旧版本）是否在 SMB 上
+                        boolean isOnSmb = SmbStorageTracker.INSTANCE.isOnSmb(galleryDetail.gid);
+                        StorageDetector.StorageLocation loc = StorageDetector.StorageLocation.UNKNOWN;
+                        DownloadManager dm = EhApplication.getDownloadManager(context.getApplicationContext());
+                        DownloadInfo di = dm != null ? dm.getDownloadInfo(galleryDetail.gid) : null;
+                        if (di != null) {
+                            loc = StorageDetector.detectCached(di);
+                        }
+                        boolean isPureSmb = (loc == StorageDetector.StorageLocation.SMB)
+                                || (loc == StorageDetector.StorageLocation.UNKNOWN && isOnSmb);
+                        if (isPureSmb) {
+                            new AlertDialog.Builder(context)
+                                    .setTitle(R.string.gallery_update_smb_dialog_title)
+                                    .setMessage(R.string.gallery_update_smb_dialog_message)
+                                    .setPositiveButton(R.string.gallery_update_smb_view_new, (d, w) -> {
+                                        d.dismiss();
+                                        Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
+                                        if (announcer != null) {
+                                            detailScene.startScene(announcer);
+                                        }
+                                    })
+                                    .setNeutralButton(R.string.gallery_old_version_view_in_download, (d, w) -> {
+                                        d.dismiss();
+                                        Bundle args = new Bundle();
+                                        args.putLong(DownloadsScene.KEY_GID, galleryDetail.gid);
+                                        detailScene.startScene(new Announcer(DownloadsScene.class).setArgs(args));
+                                    })
+                                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
+                                    .show();
+                            return;
+                        }
+                        if (loc == StorageDetector.StorageLocation.BOTH) {
+                            new AlertDialog.Builder(context)
+                                    .setTitle(R.string.gallery_update_smb_both_title)
+                                    .setMessage(R.string.gallery_update_smb_both_message)
+                                    .setPositiveButton(R.string.gallery_update_continue, (d, w) -> {
+                                        d.dismiss();
+                                        showUpdateModeDialog(newVersion);
+                                    })
+                                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
+                                    .show();
+                            return;
+                        }
                         // 更新下载 — 显示更新模式选择
                         showUpdateModeDialog(newVersion);
                     }

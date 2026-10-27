@@ -240,6 +240,24 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         public DownloadInfo downloadInfo;
         @Nullable
         public GalleryDetail galleryDetail;
+        public boolean isOnSmb;
+        @Nullable
+        public com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation storageLocation;
+    }
+
+    public static void fillOldVersionStorageInfo(@NonNull OldVersion ov) {
+        if (ov.downloadInfo != null) {
+            com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation loc =
+                    com.hippo.ehviewer.ui.scene.download.part.StorageDetector.detectCached(ov.downloadInfo);
+            ov.storageLocation = loc;
+            ov.isOnSmb = (loc == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.SMB
+                    || loc == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.BOTH);
+        } else if (ov.gid > 0) {
+            boolean smb = com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.isOnSmb(ov.gid);
+            ov.isOnSmb = smb;
+            ov.storageLocation = smb ? com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.SMB
+                    : com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.UNKNOWN;
+        }
     }
     private final List<OldVersion> mOldVersions = new ArrayList<>();
     @Nullable
@@ -1087,6 +1105,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                         directParent.posted = di.posted;
                     }
                 }
+                fillOldVersionStorageInfo(directParent);
 
                 synchronized (mOldVersions) {
                     mOldVersions.add(directParent);
@@ -1148,7 +1167,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         updateFavoriteDrawable();
         bindArchiverProgress(gd);
         bindTags(gd.tags);
-        bindComments(gd.comments.comments);
+        bindComments(gd.comments != null ? gd.comments.comments : null);
         bindPreviews(gd);
     }
 
@@ -1313,21 +1332,19 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         mGridLayout.setColumnSize(columnWidth);
         mGridLayout.setStrategy(SimpleGridAutoSpanLayout.STRATEGY_SUITABLE_SIZE);
 
-        // 限制初始显示的预览数量，避免创建过多视图导致滚动卡顿
-        // 只显示前27个预览（约3-4行，每行约6-9个），其余通过点击"查看更多"跳转
-        final int totalSize = previewSet.size();
-//        final int maxDisplayCount = 40; // 限制显示数量
-//        final int displayCount = Math.min(totalSize, maxDisplayCount);
         final long gid = gd.gid;
 
         if (gd.previewPages <= 0 || previewSet == null || previewSet.size() == 0) {
             mPreviewText.setText(R.string.no_previews);
             return;
-        } else if (gd.previewPages == 1 ) {
+        } else if (gd.previewPages == 1) {
             mPreviewText.setText(R.string.no_more_previews);
         } else {
             mPreviewText.setText(R.string.more_previews);
         }
+
+        // 限制初始显示的预览数量，避免创建过多视图导致滚动卡顿
+        final int totalSize = previewSet.size();
 
         // 只创建限制数量的视图，大幅减少视图数量以提升滚动性能
         for (int i = 0; i < totalSize; i++) {
@@ -2158,19 +2175,33 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
         if (mHaveOldVersion == null) return;
         boolean anyInDownloads = false;
         boolean anyDownloaded = false;
+        boolean allDownloadedOnSmb = true;
         synchronized (mOldVersions) {
             for (OldVersion v : mOldVersions) {
                 if (v.downloadInfo != null || v.downloadState != DownloadInfo.STATE_INVALID) {
                     anyInDownloads = true;
                     if (v.isDownloaded) {
                         anyDownloaded = true;
+                        boolean isPureSmb = (v.storageLocation == com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.SMB)
+                                || (v.storageLocation == null && v.isOnSmb);
+                        if (!isPureSmb) {
+                            allDownloadedOnSmb = false;
+                        }
                     }
                 }
             }
         }
         if (anyInDownloads) {
             mHaveOldVersion.setVisibility(View.VISIBLE);
-            mHaveOldVersion.setText(anyDownloaded ? R.string.have_old_version_downloaded : R.string.have_old_version);
+            if (anyDownloaded) {
+                if (allDownloadedOnSmb) {
+                    mHaveOldVersion.setText(R.string.have_old_version_downloaded_smb);
+                } else {
+                    mHaveOldVersion.setText(R.string.have_old_version_downloaded);
+                }
+            } else {
+                mHaveOldVersion.setText(R.string.have_old_version);
+            }
         } else {
             mHaveOldVersion.setVisibility(View.GONE);
         }
@@ -2199,6 +2230,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                             v.downloadInfo = null;
                         }
                     }
+                    fillOldVersionStorageInfo(v);
                 }
             }
             updateOldVersionButtonUI();
@@ -2296,6 +2328,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                             ancestor.posted = di.posted;
                         }
                     }
+                    fillOldVersionStorageInfo(ancestor);
 
                     synchronized (mOldVersions) {
                         mOldVersions.add(ancestor);

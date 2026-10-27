@@ -14,6 +14,7 @@ import com.hippo.ehviewer.Settings;
 import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.data.GalleryDetail;
+import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryUpdateDialog;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryUpdateDialog.UpdateRequest;
@@ -233,9 +234,29 @@ public class GalleryUpdater {
         deleteIntent.putExtra(DownloadService.KEY_GID, oldInfo.gid);
         context.startService(deleteIntent);
 
+        // 构建轻量级 GalleryInfo，避免携带大量 comments/tags/previews 导致 Binder TransactionTooLargeException
+        GalleryInfo lightInfo = new GalleryInfo();
+        lightInfo.gid = newDetail.gid;
+        lightInfo.token = newDetail.token;
+        lightInfo.title = newDetail.title;
+        lightInfo.titleJpn = newDetail.titleJpn;
+        lightInfo.category = newDetail.category;
+        lightInfo.thumb = newDetail.thumb;
+        lightInfo.uploader = newDetail.uploader;
+        lightInfo.posted = newDetail.posted;
+        lightInfo.rating = newDetail.rating;
+        lightInfo.rated = newDetail.rated;
+        lightInfo.pages = newDetail.pages;
+        lightInfo.simpleLanguage = newDetail.simpleLanguage;
+        lightInfo.simpleTags = newDetail.simpleTags;
+        lightInfo.thumbWidth = newDetail.thumbWidth;
+        lightInfo.thumbHeight = newDetail.thumbHeight;
+        lightInfo.favoriteSlot = newDetail.favoriteSlot;
+        lightInfo.favoriteName = newDetail.favoriteName;
+
         Intent startIntent = new Intent(context, DownloadService.class);
         startIntent.setAction(DownloadService.ACTION_START);
-        startIntent.putExtra(DownloadService.KEY_GALLERY_INFO, newDetail);
+        startIntent.putExtra(DownloadService.KEY_GALLERY_INFO, lightInfo);
         startIntent.putExtra(DownloadService.KEY_LABEL, oldInfo.label);
         context.startService(startIntent);
 

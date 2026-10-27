@@ -1015,6 +1015,15 @@
     <string name="have_new_version">點擊查看新圖庫版本</string>
     <string name="have_old_version">點擊查看舊圖庫版本</string>
     <string name="have_old_version_downloaded">舊版本 (已下載)</string>
+    <string name="have_old_version_downloaded_smb">舊版本 (已下載 SMB)</string>
+    <string name="download_state_downloaded_smb">已下載 SMB</string>
+    <string name="gallery_update_smb_dialog_title">舊版本儲存在 SMB</string>
+    <string name="gallery_update_smb_dialog_message">檢測到該舊版本目前儲存在 SMB 網路共享上。圖庫就地更新功能僅支援處理本機檔案。\n\n建議您先在下載列表中將該圖庫從 SMB 遷移回本機後再進行更新，或直接作為新圖庫重新下載。</string>
+    <string name="gallery_update_smb_direct_download">直接下載新版本</string>
+    <string name="gallery_update_smb_view_new">查看新版本詳情</string>
+    <string name="gallery_update_smb_both_title">舊版本同時存在於本機與 SMB</string>
+    <string name="gallery_update_smb_both_message">該舊版本在本機與 SMB 網路共享中均存在副本。更新操作將僅修改本機檔案，SMB 上的副本不會自動同步更新。是否繼續更新本機副本？</string>
+    <string name="gallery_update_continue">繼續更新</string>
     <string name="gallery_update_old_version_title">舊版本</string>
     <string name="gallery_old_version_view_detail">查看舊版本詳情</string>
     <string name="gallery_old_version_view_in_download">在下載列表中查看</string>

@@ -1120,6 +1120,14 @@
     <string name="have_new_version">点击查看新的画廊版本</string>
     <string name="have_old_version">点击查看旧的画廊版本</string>
     <string name="have_old_version_downloaded">旧版本 (已下载)</string>
+    <string name="have_old_version_downloaded_smb">旧版本 (已下载 SMB)</string>
+    <string name="gallery_update_smb_dialog_title">旧版本存储在 SMB</string>
+    <string name="gallery_update_smb_dialog_message">检测到该旧版本目前存储在 SMB 网络共享上。画廊就地更新功能仅支持处理本地文件。\n\n建议您先在下载列表中将该画廊从 SMB 迁移回本地后再进行更新，或直接作为新画廊重新下载。</string>
+    <string name="gallery_update_smb_direct_download">直接下载新版本</string>
+    <string name="gallery_update_smb_view_new">查看新版本详情</string>
+    <string name="gallery_update_smb_both_title">旧版本同时存在于本地与 SMB</string>
+    <string name="gallery_update_smb_both_message">该旧版本在本地与 SMB 网络共享中均存在副本。更新操作将仅修改本地文件，SMB 上的副本不会自动同步更新。是否继续更新本地副本？</string>
+    <string name="gallery_update_continue">继续更新</string>
     <string name="gallery_update_old_version_title">旧版本</string>
     <string name="gallery_old_version_view_detail">查看旧版本详情</string>
     <string name="gallery_old_version_view_in_download">在下载列表中查看</string>

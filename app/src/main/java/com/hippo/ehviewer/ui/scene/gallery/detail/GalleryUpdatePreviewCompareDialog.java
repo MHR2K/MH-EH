@@ -57,6 +57,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -97,6 +98,17 @@ public class GalleryUpdatePreviewCompareDialog {
     private AlertDialog dialog;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
+
+    private void safeExecute(Runnable runnable) {
+        if (executor.isShutdown()) {
+            return;
+        }
+        try {
+            executor.execute(runnable);
+        } catch (RejectedExecutionException e) {
+            Log.w("CompareDialog", "Task rejected: executor is shutdown", e);
+        }
+    }
 
     private GalleryDetail newDetail;
     private boolean isLocked = true;
@@ -188,7 +200,11 @@ public class GalleryUpdatePreviewCompareDialog {
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setView(view);
         dialog = builder.create();
-        dialog.setOnDismissListener(d -> executor.shutdown());
+        dialog.setOnDismissListener(d -> {
+            if (rvNew != null) rvNew.stopScroll();
+            if (rvOld != null) rvOld.stopScroll();
+            executor.shutdownNow();
+        });
         dialog.show();
 
         Window window = dialog.getWindow();
@@ -437,7 +453,7 @@ public class GalleryUpdatePreviewCompareDialog {
     private void fetchOldVersionData() {
         if (oldDetail.gid <= 0 || oldDetail.token == null) return;
         layoutLoading.setVisibility(View.VISIBLE);
-        executor.execute(() -> {
+        safeExecute(() -> {
             try {
                 String url = EhUrl.getGalleryDetailUrl(oldDetail.gid, oldDetail.token);
                 OkHttpClient client = EhApplication.getOkHttpClient(context);
@@ -493,7 +509,7 @@ public class GalleryUpdatePreviewCompareDialog {
         tvNewLabel.setText(context.getString(R.string.gallery_update_new_version_label, 0));
         tvNewTitle.setText(newVersion.versionName);
 
-        executor.execute(() -> {
+        safeExecute(() -> {
             try {
                 GalleryDetailUrlParser.Result parseResult = GalleryDetailUrlParser.parse(newVersion.versionUrl, false);
                 long gid = parseResult != null ? parseResult.gid : -1;
@@ -612,7 +628,7 @@ public class GalleryUpdatePreviewCompareDialog {
             return;
         }
 
-        executor.execute(() -> {
+        safeExecute(() -> {
             try {
                 String url = EhUrl.getGalleryDetailUrl(gid, token, previewPageIndex, false);
                 OkHttpClient client = EhApplication.getOkHttpClient(context);
@@ -731,7 +747,7 @@ public class GalleryUpdatePreviewCompareDialog {
             holder.image.load(null, null);
             final int targetPosition = position;
 
-            executor.execute(() -> {
+            safeExecute(() -> {
                 Bitmap bmp = decodeLocalPageThumbnail(targetPosition);
                 if (bmp != null) {
                     localThumbCache.put(targetPosition, bmp);

@@ -2002,11 +2002,21 @@ public class DownloadsScene extends ToolbarScene
 
     @Override
     public void onAdd(@NonNull DownloadInfo info, @NonNull List<DownloadInfo> list, int position) {
-        if (mList != list) {
+        if (mList == null) {
             return;
         }
-        if (mAdapter != null) {
-            mAdapter.notifyItemInserted(position);
+        if (mList == list) {
+            if (mAdapter != null) {
+                mAdapter.notifyItemInserted(listIndexInPage(position));
+            }
+        } else if (mLabel == null) {
+            // "全部"下载列表模式：mList 为 mAllInfoList，新下载项已被加入首位
+            int index = mList.indexOf(info);
+            if (index >= 0 && mAdapter != null) {
+                mAdapter.notifyItemInserted(listIndexInPage(index));
+            }
+        } else {
+            return;
         }
         if (downloadLabelDraw != null) {
             downloadLabelDraw.updateDownloadLabels();
