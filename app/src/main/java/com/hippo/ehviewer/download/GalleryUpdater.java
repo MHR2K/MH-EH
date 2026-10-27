@@ -233,6 +233,7 @@ public class GalleryUpdater {
         deleteIntent.setAction(DownloadService.ACTION_DELETE);
         deleteIntent.putExtra(DownloadService.KEY_GID, oldInfo.gid);
         context.startService(deleteIntent);
+        com.hippo.ehviewer.util.NewVersionStore.remove(oldInfo.gid);
 
         // 构建轻量级 GalleryInfo，避免携带大量 comments/tags/previews 导致 Binder TransactionTooLargeException
         GalleryInfo lightInfo = new GalleryInfo();

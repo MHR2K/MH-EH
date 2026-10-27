@@ -167,6 +167,11 @@
             </item>
 
             <item
+                android:id="@+id/filter_has_new_version"
+                android:title="@string/download_filter_has_new_version"
+                app:showAsAction="ifRoom"/>
+
+            <item
                 android:id="@+id/combined_filter"
                 android:title="@string/download_combined_filter"
                 app:showAsAction="ifRoom"/>

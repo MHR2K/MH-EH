@@ -371,6 +371,9 @@ public class DownloadListInfosExecutor {
                 case R.id.local_import:
                     resultList = filterLocalImport();
                     break;
+                case R.id.filter_has_new_version:
+                    resultList = filterHasNewVersion();
+                    break;
                 case R.id.all:
                 case R.id.sort_by_default:
                 default:
@@ -701,6 +704,19 @@ public class DownloadListInfosExecutor {
         for (int i = 0; i < mList.size(); i++) {
             DownloadInfo info = mList.get(i);
             if (info.state == state) {
+                list.add(info);
+            }
+        }
+        return list;
+    }
+
+    private List<DownloadInfo> filterHasNewVersion() {
+        List<DownloadInfo> list = new ArrayList<>();
+        if (mList == null) {
+            return list;
+        }
+        for (DownloadInfo info : mList) {
+            if (com.hippo.ehviewer.util.NewVersionStore.hasNewVersion(info.gid)) {
                 list.add(info);
             }
         }

@@ -1080,6 +1080,11 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                 mHaveNewVersion.setVisibility(View.GONE);
             }
         }
+        if (gd.newVersions != null && gd.newVersions.length > 0 && gd.newVersions[gd.newVersions.length - 1].versionUrl != null) {
+            com.hippo.ehviewer.util.NewVersionStore.put(gd.gid, gd.newVersions[gd.newVersions.length - 1].versionUrl);
+        } else {
+            com.hippo.ehviewer.util.NewVersionStore.remove(gd.gid);
+        }
         synchronized (mOldVersions) {
             mOldVersions.clear();
         }

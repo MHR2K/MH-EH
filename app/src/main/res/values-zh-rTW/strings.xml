@@ -420,6 +420,7 @@
     <string name="download_filter_by_status">照狀態篩選</string>
     <string name="download_status_all">全部</string>
     <string name="download_status_not_started">未開始</string>
+    <string name="download_filter_has_new_version">只看有新版本</string>
 
     <!-- Download label -->
     <string name="no_download_label">下載標籤將會顯示在這裡</string>

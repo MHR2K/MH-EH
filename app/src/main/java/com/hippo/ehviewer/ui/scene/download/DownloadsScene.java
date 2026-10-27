@@ -1453,6 +1453,7 @@ public class DownloadsScene extends ToolbarScene
             case R.id.western:
             case R.id.unknown:
             case R.id.local_import:
+            case R.id.filter_has_new_version:
                 gotoFilterAndSort(id);
                 return true;
             case R.id.import_local_archive:

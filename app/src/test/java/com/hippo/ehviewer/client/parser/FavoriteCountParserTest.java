@@ -125,4 +125,46 @@ public class FavoriteCountParserTest {
             org.junit.Assert.assertNull(EhEngine.parseTitleJpnFromHtml(html));
         }
     }
+
+    @Test
+    public void testParseNewVersionUrlNormal() {
+        String html = "<div id=\"gnd\"><p>New version:</p><a href=\"https://e-hentai.org/g/123/abc/\">Title v1</a></div>";
+        assertEquals("https://e-hentai.org/g/123/abc/", EhEngine.parseNewVersionUrlFromHtml(html));
+    }
+
+    @Test
+    public void testParseNewVersionUrlMultiple() {
+        String html = "<div id=\"gnd\"><a href=\"https://e-hentai.org/g/1/a/\">v1</a><br/><a href=\"https://e-hentai.org/g/2/b/\">v2</a></div>";
+        assertEquals("https://e-hentai.org/g/2/b/", EhEngine.parseNewVersionUrlFromHtml(html));
+    }
+
+    @Test
+    public void testParseNewVersionUrlRelative() {
+        String html = "<div id=\"gnd\"><a href=\"/g/3/c/\">v3</a></div>";
+        assertEquals("https://e-hentai.org/g/3/c/", EhEngine.parseNewVersionUrlFromHtml(html));
+    }
+
+    @Test
+    public void testParseNewVersionUrlEmptyAndNull() {
+        org.junit.Assert.assertNull(EhEngine.parseNewVersionUrlFromHtml(null));
+        org.junit.Assert.assertNull(EhEngine.parseNewVersionUrlFromHtml(""));
+        org.junit.Assert.assertNull(EhEngine.parseNewVersionUrlFromHtml("<div>No new version</div>"));
+        org.junit.Assert.assertNull(EhEngine.parseNewVersionUrlFromHtml("<div id=\"gnd\"></div>"));
+    }
+
+    @Test
+    public void testParseNewVersionUrlFromRealResources() throws Exception {
+        InputStream isDetail = getClass().getResourceAsStream("/com/hippo/ehviewer/client/parser/GalleryDetail.html");
+        if (isDetail != null) {
+            String html = IOUtils.readString(isDetail, "UTF-8");
+            org.junit.Assert.assertNull(EhEngine.parseNewVersionUrlFromHtml(html));
+        }
+
+        InputStream isNew = getClass().getResourceAsStream("/com/hippo/ehviewer/client/parser/newPage.html");
+        if (isNew != null) {
+            String html = IOUtils.readString(isNew, "UTF-8");
+            assertEquals("https://e-hentai.org/g/2582794/a49e40fb43/", EhEngine.parseNewVersionUrlFromHtml(html));
+        }
+    }
 }
+

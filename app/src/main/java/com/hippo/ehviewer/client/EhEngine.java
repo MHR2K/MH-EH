@@ -371,6 +371,40 @@ public class EhEngine {
     private static final Pattern PATTERN_FAV_COUNT = Pattern.compile("id=\"favcount\"[^>]*>([^<]+)</td>");
     private static final Pattern PATTERN_FAV_COUNT_FALLBACK = Pattern.compile("Favorited:</td>\\s*<td[^>]*>([^<]+)</td>");
     private static final Pattern PATTERN_TITLE_JPN = Pattern.compile("<h1[^>]*\\bid=[\"']gj[\"'][^>]*>(.*?)</h1>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern PATTERN_GND = Pattern.compile("<div\\s+id=[\"']gnd[\"'][^>]*>(.*?)</div>", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern PATTERN_GND_LINK = Pattern.compile("<a\\s+[^>]*href=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * 从画廊详情页 HTML 中轻量级提取新版本画廊链接，微秒级解析且避免全量 DOM 构建
+     */
+    @Nullable
+    public static String parseNewVersionUrlFromHtml(@Nullable String body) {
+        if (body == null || body.isEmpty()) {
+            return null;
+        }
+        if (!body.contains("id=\"gnd\"") && !body.contains("id='gnd'")) {
+            return null;
+        }
+        Matcher m = PATTERN_GND.matcher(body);
+        if (m.find()) {
+            String gndContent = m.group(1);
+            if (gndContent != null) {
+                Matcher linkMatcher = PATTERN_GND_LINK.matcher(gndContent);
+                String latestUrl = null;
+                while (linkMatcher.find()) {
+                    latestUrl = linkMatcher.group(1);
+                }
+                if (latestUrl != null && !latestUrl.isEmpty()) {
+                    latestUrl = org.jsoup.parser.Parser.unescapeEntities(latestUrl, false).trim();
+                    if (latestUrl.startsWith("/")) {
+                        latestUrl = "https://e-hentai.org" + latestUrl;
+                    }
+                    return latestUrl;
+                }
+            }
+        }
+        return null;
+    }
 
     /**
      * 从画廊详情页 HTML 中轻量级提取日文标题，避免全量 DOM 构建
@@ -536,6 +570,19 @@ public class EhEngine {
                             com.hippo.ehviewer.util.FavCountStore.put(gi.gid, favCount);
                             success.incrementAndGet();
                             consecutiveFailures.set(0);
+                        }
+
+                        // 检测并记录画廊新版本
+                        if (body != null && (favCount >= 0 || detail != null)) {
+                            String newVersionUrl = parseNewVersionUrlFromHtml(body);
+                            if (newVersionUrl == null && detail != null && detail.newVersions != null && detail.newVersions.length > 0) {
+                                newVersionUrl = detail.newVersions[detail.newVersions.length - 1].versionUrl;
+                            }
+                            if (newVersionUrl != null) {
+                                com.hippo.ehviewer.util.NewVersionStore.put(gi.gid, newVersionUrl);
+                            } else {
+                                com.hippo.ehviewer.util.NewVersionStore.remove(gi.gid);
+                            }
                         }
 
                         // 补充空日文标题：仅当本地日文标题为空时补充，不为空时不更新

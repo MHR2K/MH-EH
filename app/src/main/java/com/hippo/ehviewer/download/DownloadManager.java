@@ -55,6 +55,7 @@ import com.hippo.lib.yorozuya.collect.LongList;
 import com.hippo.lib.yorozuya.collect.SparseIJArray;
 import com.hippo.ehviewer.util.CrashlyticsUtils;
 import com.hippo.ehviewer.util.FavCountStore;
+import com.hippo.ehviewer.util.NewVersionStore;
 import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
 import android.util.SparseArray;
 
@@ -1154,6 +1155,7 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             // Remove from DB
             EhDB.removeDownloadInfo(info.gid);
             FavCountStore.remove(info.gid);
+            NewVersionStore.remove(info.gid);
             com.hippo.ehviewer.smb.SmbStorageTracker.INSTANCE.markLocal(info.gid);
             // 更新存储位置缓存：删除后状态未知
             StorageDetector.updateCache(info.gid, StorageDetector.StorageLocation.UNKNOWN);
@@ -1222,8 +1224,9 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
             }
         }
 
-        // 批量移除收藏数缓存
+        // 批量移除收藏数缓存与新版本缓存
         FavCountStore.removeRange(gidList);
+        NewVersionStore.removeRange(gidList);
 
         // Update listener
         for (DownloadInfoListener l : mDownloadInfoListeners) {
