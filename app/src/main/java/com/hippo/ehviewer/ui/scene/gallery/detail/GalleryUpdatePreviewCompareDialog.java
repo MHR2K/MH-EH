@@ -157,6 +157,8 @@ public class GalleryUpdatePreviewCompareDialog {
     @Nullable
     private UniFile oldDownloadDir;
     private final LruCache<Integer, Bitmap> localThumbCache = new LruCache<>(80);
+    /** 对话框已关闭，不再打开 CBZ 句柄（避免关闭后残留的在途任务重新打开句柄） */
+    private volatile boolean released;
 
     public GalleryUpdatePreviewCompareDialog(@NonNull Context context,
                                              @NonNull GalleryDetail oldDetail,
@@ -204,6 +206,12 @@ public class GalleryUpdatePreviewCompareDialog {
             if (rvNew != null) rvNew.stopScroll();
             if (rvOld != null) rvOld.stopScroll();
             executor.shutdownNow();
+            // 释放本地 CBZ 的 ZipFile 句柄：本对话框的 SpiderDen 不归 SpiderQueen 管理，
+            // 不主动关闭会一直滞留到 GC，最终在 finalizer 线程 close 失败导致进程崩溃
+            released = true;
+            if (spiderDen != null) {
+                spiderDen.closeCbzZipFile();
+            }
         });
         dialog.show();
 
@@ -780,6 +788,9 @@ public class GalleryUpdatePreviewCompareDialog {
 
         @Nullable
         private Bitmap decodeLocalPageThumbnail(int position) {
+            if (released) {
+                return null;
+            }
             if (spiderDen != null) {
                 InputStreamPipe pipe = spiderDen.openDownloadInputStreamPipe(position);
                 if (pipe != null) {
