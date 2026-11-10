@@ -17,6 +17,9 @@
 package com.hippo.ehviewer.stats;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+import com.hippo.ehviewer.ui.dialog.ReadingRecordsDialog;
 
 import org.junit.Test;
 
@@ -33,5 +36,31 @@ public class StatsManagerTest {
         assertEquals("1h 0m", StatsManager.formatDuration(3600));
         assertEquals("1h 1m", StatsManager.formatDuration(3661));
         assertEquals("2h 30m", StatsManager.formatDuration(9000));
+    }
+
+    @Test
+    public void testFormatDetailedDuration() {
+        assertEquals("< 1s", ReadingRecordsDialog.formatDetailedDuration(0));
+        assertEquals("< 1s", ReadingRecordsDialog.formatDetailedDuration(-5));
+        assertEquals("35s", ReadingRecordsDialog.formatDetailedDuration(35));
+        assertEquals("1m 0s", ReadingRecordsDialog.formatDetailedDuration(60));
+        assertEquals("2m 15s", ReadingRecordsDialog.formatDetailedDuration(135));
+        assertEquals("1h 0m", ReadingRecordsDialog.formatDetailedDuration(3600));
+        assertEquals("2h 15m", ReadingRecordsDialog.formatDetailedDuration(8100));
+    }
+
+    @Test
+    public void testReadingRecordEntity() {
+        long now = System.currentTimeMillis();
+        ReadingRecord record = new ReadingRecord(123456L, "Test Title", now - 60000, now, 60, 1, 30, 30, true);
+        assertEquals(123456L, record.gid);
+        assertEquals("Test Title", record.title);
+        assertEquals(now - 60000, record.startTime);
+        assertEquals(now, record.endTime);
+        assertEquals(60, record.durationSeconds);
+        assertEquals(1, record.pageStart);
+        assertEquals(30, record.pageEnd);
+        assertEquals(30, record.totalPages);
+        assertTrue(record.completed);
     }
 }

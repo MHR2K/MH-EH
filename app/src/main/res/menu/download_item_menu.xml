@@ -4,6 +4,8 @@
           android:title="@string/find_same_author" />
     <item android:id="@+id/menu_move_to_position"
           android:title="@string/menu_move_to_position" />
+    <item android:id="@+id/menu_reading_records"
+          android:title="@string/download_menu_reading_records" />
     <item android:id="@+id/menu_reset_reading_progress"
           android:title="@string/download_reset_reading_progress" />
     <item android:id="@+id/menu_refresh_fav_count"

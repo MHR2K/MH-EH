@@ -1925,6 +1925,9 @@ public class DownloadsScene extends ToolbarScene
                 // 显示输入对话框获取目标 gid
                 showMoveToPositionDialog(context, info, posInList);
                 return true;
+            } else if (itemId == R.id.menu_reading_records) {
+                showReadingRecordsDialog(info);
+                return true;
             } else if (itemId == R.id.menu_reset_reading_progress) {
                 new AlertDialog.Builder(context)
                         .setMessage(R.string.reset_reading_progress_message_single)
@@ -1950,6 +1953,13 @@ public class DownloadsScene extends ToolbarScene
         
         popupMenu.show();
         return true;
+    }
+
+    public void showReadingRecordsDialog(DownloadInfo info) {
+        Context context = getEHContext();
+        if (context != null && info != null) {
+            com.hippo.ehviewer.ui.dialog.ReadingRecordsDialog.show(context, info);
+        }
     }
     
     /**

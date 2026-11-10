@@ -833,6 +833,7 @@ class DownloadAdapter(
             start.setOnClickListener(this)
             stop.setOnClickListener(this)
             edit.setOnClickListener(this)
+            readProgress.setOnClickListener(this)
 
             // 为编辑按钮添加长按监听器
             edit.setOnLongClickListener { v ->
@@ -853,6 +854,7 @@ class DownloadAdapter(
             Ripple.addRipple(start, isDarkTheme)
             Ripple.addRipple(stop, isDarkTheme)
             Ripple.addRipple(edit, isDarkTheme)
+            Ripple.addRipple(readProgress, isDarkTheme)
         }
 
         override fun onClick(v: View) {
@@ -903,6 +905,9 @@ class DownloadAdapter(
                 }
                 edit -> {
                     showEditDialog(info)
+                }
+                readProgress -> {
+                    mScene.showReadingRecordsDialog(info)
                 }
             }
         }

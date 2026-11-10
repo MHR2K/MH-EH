@@ -73,6 +73,7 @@ import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
+import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
@@ -187,6 +188,13 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     private long mReadStartTime = 0;
     private long mReadAccumulatedMs = 0;
     private boolean mReadIdle = false;
+    private long mSessionStartTime = 0;
+    private int mSessionStartPage = -1;
+    private int mMinPageIndex = -1;
+    private int mPagesTurned = 0;
+    private int mLastObservedIndex = -1;
+    private long mCurrentReadingRecordId = -1;
+    private int mSessionAccumulatedSeconds = 0;
     private final Handler mReadIdleHandler = new Handler(Looper.getMainLooper());
     private static final long READ_IDLE_TIMEOUT_MS = 180_000; // 180秒（3分钟）无操作算空闲
     private static final long READ_HEARTBEAT_INTERVAL_MS = 60_000; // 每60秒心跳落盘一次
@@ -196,6 +204,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         public void run() {
             if (!mReadIdle && mReadStartTime > 0) {
                 flushReadTime(false);
+                flushReadingSession(false);
             }
             mReadIdleHandler.postDelayed(this, READ_HEARTBEAT_INTERVAL_MS);
         }
@@ -220,8 +229,50 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         long seconds = mReadAccumulatedMs / 1000;
         if (seconds > 0) {
             com.hippo.ehviewer.stats.StatsManager.getInstance(this).addReadTime(seconds);
+            mSessionAccumulatedSeconds += (int) seconds;
             mReadAccumulatedMs %= 1000;
         }
+    }
+
+    private void flushReadingSession(boolean isFinishing) {
+        if (mGalleryInfo == null || mGalleryInfo.gid == 0) {
+            return;
+        }
+        int pageStart = (mMinPageIndex >= 0 && mMinPageIndex < (mSessionStartPage - 1)) ? (mMinPageIndex + 1) : mSessionStartPage;
+        if (pageStart <= 0) pageStart = mCurrentIndex + 1;
+        int pageEnd = mCurrentIndex + 1;
+        int totalPages = mSize > 0 ? mSize : (mGalleryProvider != null ? mGalleryProvider.size() : 0);
+        boolean completed = mReadCompleted && (mPagesTurned > 0 || pageStart < totalPages);
+
+        if (mCurrentReadingRecordId <= 0) {
+            if (mSessionAccumulatedSeconds < 5 && (mPagesTurned == 0 || pageStart == pageEnd) && !completed) {
+                return;
+            }
+        } else {
+            if (mSessionAccumulatedSeconds < 3 && mPagesTurned == 0 && !completed) {
+                com.hippo.ehviewer.stats.StatsManager.getInstance(this).deleteReadingRecord(mCurrentReadingRecordId);
+                mCurrentReadingRecordId = -1;
+                return;
+            }
+        }
+
+        long now = System.currentTimeMillis();
+        long startTime = mSessionStartTime > 0 ? mSessionStartTime : (now - mSessionAccumulatedSeconds * 1000L);
+        String title = EhUtils.getSuitableTitle(mGalleryInfo);
+
+        long recordId = com.hippo.ehviewer.stats.StatsManager.getInstance(this).saveOrUpdateReadingRecordSync(
+                mCurrentReadingRecordId,
+                mGalleryInfo.gid,
+                title,
+                startTime,
+                now,
+                mSessionAccumulatedSeconds,
+                pageStart,
+                pageEnd,
+                totalPages,
+                completed
+        );
+        mCurrentReadingRecordId = recordId;
     }
 
     private void resetReadIdleTimer() {
@@ -524,6 +575,12 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
 
         mSize = mGalleryProvider.size();
         mCurrentIndex = startPage;
+        if (mSessionStartTime == 0) {
+            mSessionStartTime = System.currentTimeMillis();
+            mSessionStartPage = mCurrentIndex + 1;
+            mMinPageIndex = mCurrentIndex;
+            mLastObservedIndex = mCurrentIndex;
+        }
         if (mGalleryView != null) {
             mLayoutMode = mGalleryView.getLayoutMode();
         }
@@ -641,6 +698,10 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
             transferService = null;
         }
 
+        flushReadTime();
+        flushReadingSession(true);
+        mCurrentReadingRecordId = -1;
+
         super.onDestroy();
         SimpleHandler.getInstance().removeCallbacks(mHideSliderRunnable);
         //销毁事件
@@ -663,6 +724,7 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
         mReadIdleHandler.removeCallbacks(mReadIdleRunnable);
         mReadIdleHandler.removeCallbacks(mReadHeartbeatRunnable);
         flushReadTime();
+        flushReadingSession(isFinishing());
         mReadIdle = false;
 
         if (mGLRootView != null) {
@@ -930,12 +992,31 @@ public class GalleryActivity extends EhActivity implements SeekBar.OnSeekBarChan
     @Override
     public void onUpdateCurrentIndex(int index) {
         onUserInteraction();
+        if (mSessionStartPage <= 0) {
+            mSessionStartPage = index + 1;
+        }
+        if (mSessionStartTime == 0) {
+            mSessionStartTime = System.currentTimeMillis();
+        }
+        if (mMinPageIndex < 0 || index < mMinPageIndex) {
+            mMinPageIndex = index;
+        }
+        if (mLastObservedIndex >= 0 && index != mLastObservedIndex) {
+            mPagesTurned++;
+        }
+        mLastObservedIndex = index;
+
+        // 如果原本处于后半段或非开头，用户回到了开头（前2页），重置起始页为重读起点，并允许再次触发完成
+        if (mSessionStartPage > 3 && index <= 2) {
+            mSessionStartPage = index + 1;
+            mReadCompleted = false;
+        }
         if (null != mGalleryProvider) {
             mGalleryProvider.putStartPage(index);
         }
 
-        // 检测是否到达最后一页（阅读完成）
-        if (mSize > 0 && index == mSize - 1 && !mReadCompleted) {
+        // 检测是否到达最后一页（阅读完成）：仅在真正翻到了末尾，或者不是一开始就打开在末尾时判定为完成
+        if (mSize > 0 && index == mSize - 1 && !mReadCompleted && (mPagesTurned > 0 || mSessionStartPage < mSize)) {
             mReadCompleted = true;
             com.hippo.ehviewer.stats.StatsManager.getInstance(this).incrementReadCount();
         }

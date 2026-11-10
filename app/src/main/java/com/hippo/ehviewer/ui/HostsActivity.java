@@ -89,7 +89,6 @@ public class HostsActivity extends ToolbarActivity
     decoration.setShowLastDivider(true);
     recyclerView.addItemDecoration(decoration);
     recyclerView.setSelector(Ripple.generateRippleDrawable(this, !AttrResources.getAttrBoolean(this, androidx.appcompat.R.attr.isLightTheme), new ColorDrawable(Color.TRANSPARENT)));
-    recyclerView.setHasFixedSize(true);
     recyclerView.setOnItemClickListener(this);
     recyclerView.setPadding(
         recyclerView.getPaddingLeft(),

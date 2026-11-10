@@ -6,6 +6,8 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
 
+import androidx.annotation.Nullable;
+
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -23,6 +25,10 @@ public class StatsManager {
     private final StatsDatabase mDb;
     private final SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
     private final ExecutorService mExecutor = Executors.newSingleThreadExecutor();
+
+    public interface OnRecordSavedCallback {
+        void onRecordSaved(long recordId);
+    }
 
     private StatsManager(Context context) {
         mDb = new StatsDatabase(context.getApplicationContext());
@@ -208,6 +214,213 @@ public class StatsManager {
         stats.readTimeSeconds = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_READ_TIME_SECONDS));
         stats.updateTime = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_UPDATE_TIME));
         return stats;
+    }
+
+    // ==================== 画廊独立阅读流水记录相关 ====================
+
+    /**
+     * 同步保存或更新阅读记录。
+     * @return 记录 ID（如果是新增则返回新生成的 _id，更新则返回原有 recordId）
+     */
+    public long saveOrUpdateReadingRecordSync(long recordId, long gid, @Nullable String title,
+                                             long startTime, long endTime, int durationSeconds,
+                                             int pageStart, int pageEnd, int totalPages, boolean completed) {
+        try {
+            SQLiteDatabase db = mDb.getWritableDatabase();
+            ContentValues values = new ContentValues();
+            values.put(StatsDatabase.COL_RECORD_GID, gid);
+            values.put(StatsDatabase.COL_RECORD_TITLE, title);
+            values.put(StatsDatabase.COL_RECORD_START_TIME, startTime);
+            values.put(StatsDatabase.COL_RECORD_END_TIME, endTime);
+            values.put(StatsDatabase.COL_RECORD_DURATION, durationSeconds);
+            values.put(StatsDatabase.COL_RECORD_PAGE_START, pageStart);
+            values.put(StatsDatabase.COL_RECORD_PAGE_END, pageEnd);
+            values.put(StatsDatabase.COL_RECORD_TOTAL_PAGES, totalPages);
+            values.put(StatsDatabase.COL_RECORD_COMPLETED, completed ? 1 : 0);
+
+            if (recordId > 0) {
+                db.update(StatsDatabase.TABLE_READING_RECORD, values,
+                        StatsDatabase.COL_RECORD_ID + " = ?", new String[]{String.valueOf(recordId)});
+                return recordId;
+            } else {
+                // 防重检查：如果同 GID 在极短时间（2秒）内有相同 start_time 的记录，复用该记录而不是重复插入
+                Cursor cursor = db.query(StatsDatabase.TABLE_READING_RECORD,
+                        new String[]{StatsDatabase.COL_RECORD_ID},
+                        StatsDatabase.COL_RECORD_GID + " = ? AND ABS(" + StatsDatabase.COL_RECORD_START_TIME + " - ?) < 2000",
+                        new String[]{String.valueOf(gid), String.valueOf(startTime)},
+                        null, null, StatsDatabase.COL_RECORD_ID + " DESC", "1");
+                try {
+                    if (cursor.moveToFirst()) {
+                        long existingId = cursor.getLong(0);
+                        db.update(StatsDatabase.TABLE_READING_RECORD, values,
+                                StatsDatabase.COL_RECORD_ID + " = ?", new String[]{String.valueOf(existingId)});
+                        return existingId;
+                    }
+                } finally {
+                    cursor.close();
+                }
+                return db.insert(StatsDatabase.TABLE_READING_RECORD, null, values);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to save or update reading record for gid=" + gid, e);
+            return recordId;
+        }
+    }
+
+    /**
+     * 异步保存或更新阅读记录。
+     */
+    public void saveOrUpdateReadingRecordAsync(long recordId, long gid, @Nullable String title,
+                                              long startTime, long endTime, int durationSeconds,
+                                              int pageStart, int pageEnd, int totalPages, boolean completed,
+                                              @Nullable OnRecordSavedCallback callback) {
+        mExecutor.execute(() -> {
+            long id = saveOrUpdateReadingRecordSync(recordId, gid, title, startTime, endTime,
+                    durationSeconds, pageStart, pageEnd, totalPages, completed);
+            if (callback != null) {
+                callback.onRecordSaved(id);
+            }
+        });
+    }
+
+    /**
+     * 获取指定画廊的所有阅读记录，按开始时间倒序。
+     */
+    public List<ReadingRecord> getReadingRecords(long gid) {
+        flushSync();
+        SQLiteDatabase db = mDb.getReadableDatabase();
+        Cursor cursor = db.query(
+                StatsDatabase.TABLE_READING_RECORD,
+                null,
+                StatsDatabase.COL_RECORD_GID + " = ?",
+                new String[]{String.valueOf(gid)},
+                null, null,
+                StatsDatabase.COL_RECORD_START_TIME + " DESC, " + StatsDatabase.COL_RECORD_ID + " DESC"
+        );
+        try {
+            List<ReadingRecord> list = new ArrayList<>();
+            List<Long> duplicateIdsToDelete = new ArrayList<>();
+            long lastStartTime = -1;
+            while (cursor.moveToNext()) {
+                ReadingRecord record = cursorToReadingRecord(cursor);
+                // 过滤误点秒关的无效记录（用时<=1秒且未翻页）
+                if (record.durationSeconds <= 1 && record.pageStart == record.pageEnd) {
+                    duplicateIdsToDelete.add(record.id);
+                    continue;
+                }
+                if (lastStartTime > 0 && Math.abs(lastStartTime - record.startTime) < 2000) {
+                    duplicateIdsToDelete.add(record.id);
+                    continue;
+                }
+                lastStartTime = record.startTime;
+                list.add(record);
+            }
+            if (!duplicateIdsToDelete.isEmpty()) {
+                mExecutor.execute(() -> {
+                    try {
+                        SQLiteDatabase writeDb = mDb.getWritableDatabase();
+                        for (Long id : duplicateIdsToDelete) {
+                            writeDb.delete(StatsDatabase.TABLE_READING_RECORD,
+                                    StatsDatabase.COL_RECORD_ID + " = ?", new String[]{String.valueOf(id)});
+                        }
+                    } catch (Exception ignored) {
+                    }
+                });
+            }
+            return list;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * 获取指定画廊的阅读次数。
+     */
+    public int getReadingCount(long gid) {
+        flushSync();
+        SQLiteDatabase db = mDb.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT COUNT(*) FROM " + StatsDatabase.TABLE_READING_RECORD +
+                        " WHERE " + StatsDatabase.COL_RECORD_GID + " = ?",
+                new String[]{String.valueOf(gid)}
+        );
+        try {
+            if (cursor.moveToFirst()) {
+                return cursor.getInt(0);
+            }
+            return 0;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * 获取指定画廊的累计阅读时长（秒）。
+     */
+    public long getTotalReadingDurationForGallery(long gid) {
+        flushSync();
+        SQLiteDatabase db = mDb.getReadableDatabase();
+        Cursor cursor = db.rawQuery(
+                "SELECT SUM(" + StatsDatabase.COL_RECORD_DURATION + ") FROM " +
+                        StatsDatabase.TABLE_READING_RECORD +
+                        " WHERE " + StatsDatabase.COL_RECORD_GID + " = ?",
+                new String[]{String.valueOf(gid)}
+        );
+        try {
+            if (cursor.moveToFirst()) {
+                return cursor.getLong(0);
+            }
+            return 0;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /**
+     * 删除单条阅读记录。
+     */
+    public boolean deleteReadingRecord(long recordId) {
+        flushSync();
+        try {
+            SQLiteDatabase db = mDb.getWritableDatabase();
+            return db.delete(StatsDatabase.TABLE_READING_RECORD,
+                    StatsDatabase.COL_RECORD_ID + " = ?",
+                    new String[]{String.valueOf(recordId)}) > 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to delete reading record id=" + recordId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 清空指定画廊的所有阅读记录。
+     */
+    public boolean clearReadingRecords(long gid) {
+        flushSync();
+        try {
+            SQLiteDatabase db = mDb.getWritableDatabase();
+            return db.delete(StatsDatabase.TABLE_READING_RECORD,
+                    StatsDatabase.COL_RECORD_GID + " = ?",
+                    new String[]{String.valueOf(gid)}) > 0;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to clear reading records for gid=" + gid, e);
+            return false;
+        }
+    }
+
+    private ReadingRecord cursorToReadingRecord(Cursor cursor) {
+        ReadingRecord record = new ReadingRecord();
+        record.id = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_ID));
+        record.gid = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_GID));
+        record.title = cursor.getString(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_TITLE));
+        record.startTime = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_START_TIME));
+        record.endTime = cursor.getLong(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_END_TIME));
+        record.durationSeconds = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_DURATION));
+        record.pageStart = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_PAGE_START));
+        record.pageEnd = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_PAGE_END));
+        record.totalPages = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_TOTAL_PAGES));
+        record.completed = cursor.getInt(cursor.getColumnIndexOrThrow(StatsDatabase.COL_RECORD_COMPLETED)) == 1;
+        return record;
     }
 
     /**
