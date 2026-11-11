@@ -1433,6 +1433,78 @@ public class DownloadManager implements SpiderQueen.OnSpiderListener {
         }
     }
 
+    /**
+     * 将指定的下载项移动到目标标签的最新位置（首位）
+     */
+    public void moveToLatest(@NonNull DownloadInfo info, @Nullable String targetLabel) {
+        if (null != targetLabel && !containLabel(targetLabel)) {
+            Log.e(TAG, "Not exits label: " + targetLabel);
+            return;
+        }
+
+        List<DownloadInfo> dstList = getInfoListForLabel(targetLabel);
+        if (dstList == null) {
+            Log.e(TAG, "Can't find label with label: " + targetLabel);
+            return;
+        }
+
+        long maxTime = System.currentTimeMillis();
+        if (!dstList.isEmpty()) {
+            long firstTime = dstList.get(0).time;
+            if (firstTime >= maxTime) {
+                maxTime = firstTime + 1;
+            }
+        }
+        info.time = maxTime;
+
+        boolean labelChanged = !ObjectUtils.equal(info.label, targetLabel);
+        if (labelChanged) {
+            List<DownloadInfo> srcList = getInfoListForLabel(info.label);
+            if (srcList != null) {
+                srcList.remove(info);
+            }
+            dstList.add(info);
+            String oldLabel = info.label;
+            info.label = targetLabel;
+            GalleryLogManager.getInstance(mContext).logItemLabelChange(info.gid, info.title, oldLabel, targetLabel);
+            GalleryLogManager.getInstance(mContext).logItemReorder(info.gid, info.title, "移动到标签 [" + (targetLabel != null ? targetLabel : "默认") + "] 首位");
+        } else {
+            if (!dstList.contains(info)) {
+                dstList.add(info);
+            }
+            GalleryLogManager.getInstance(mContext).logItemReorder(info.gid, info.title, "置顶到列表首位");
+        }
+
+        Collections.sort(dstList, DATE_DESC_COMPARATOR);
+        Collections.sort(mAllInfoList, DATE_DESC_COMPARATOR);
+        EhDB.putDownloadInfo(info);
+
+        notifyReload();
+    }
+
+    public void sortLabel(@Nullable String label) {
+        List<DownloadInfo> list = getInfoListForLabel(label);
+        if (list != null) {
+            Collections.sort(list, DATE_DESC_COMPARATOR);
+        }
+        Collections.sort(mAllInfoList, DATE_DESC_COMPARATOR);
+        notifyReload();
+    }
+
+    private void notifyReload() {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            for (DownloadInfoListener l : mDownloadInfoListeners) {
+                l.onReload();
+            }
+        } else {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                for (DownloadInfoListener l : mDownloadInfoListeners) {
+                    l.onReload();
+                }
+            });
+        }
+    }
+
     public void addLabel(String label) {
         if (label == null || containLabel(label)) {
             return;

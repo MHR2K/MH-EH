@@ -813,23 +813,26 @@ class DownloadBatchActions(private val mHost: Host?) {
 
         if (targetGidInput.isEmpty()) {
             // 留空，移动到默认下载标签的最前端（最新位置）
-            if (mHost.downloadManager != null) {
+            val dm = mHost.downloadManager
+            if (dm != null) {
                 // 使用用户设置的默认下载标签
                 val defaultLabel = Settings.getDefaultDownloadLabel()
-
-                // 先更新源项目的时间为当前时间，这样 changeLabel 排序后会在最前面
-                sourceInfo.time = System.currentTimeMillis()
-                EhDB.putDownloadInfo(sourceInfo)
-
-                val singleInfoList = mutableListOf(sourceInfo)
-                mHost.downloadManager!!.changeLabel(singleInfoList, defaultLabel)
+                dm.moveToLatest(sourceInfo, defaultLabel)
 
                 // 如果当前不在默认下载标签视图，切换到默认下载标签
                 if (!ObjectUtils.equal(mHost.label, defaultLabel)) {
                     mHost.label = defaultLabel
                     mHost.updateForLabel()
                 } else {
-                    mHost.refreshAfterDataChange()
+                    if (list !== backList) {
+                        val srcIdx = list.indexOfFirst { it.gid == sourceInfo.gid }
+                        if (srcIdx != -1) (list as MutableList).removeAt(srcIdx)
+                        (list as MutableList).add(0, sourceInfo)
+                        mHost.updateAdapter()
+                        mHost.updateView()
+                    } else {
+                        mHost.refreshAfterDataChange()
+                    }
                 }
 
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
@@ -839,17 +842,31 @@ class DownloadBatchActions(private val mHost: Host?) {
             return
         } else if (targetGidInput == "0") {
             // 输入0，移到当前标签列表的最前面（该标签最新的位置）
-            sourceInfo.time = System.currentTimeMillis() + 1
-            EhDB.putDownloadInfo(sourceInfo)
-            GalleryLogManager.getInstance(context).logItemReorder(sourceInfo.gid, sourceInfo.title, "置顶到当前列表首位")
-            backList.sortWith { a, b -> b.time.compareTo(a.time) }
-            if (list !== backList) {
-                val srcIdx = list.indexOfFirst { it.gid == sourceInfo.gid }
-                if (srcIdx != -1) (list as MutableList).removeAt(srcIdx)
-                (list as MutableList).add(0, sourceInfo)
+            val dm = mHost.downloadManager
+            if (dm != null) {
+                dm.moveToLatest(sourceInfo, mHost.label)
+                if (list !== backList) {
+                    val srcIdx = list.indexOfFirst { it.gid == sourceInfo.gid }
+                    if (srcIdx != -1) (list as MutableList).removeAt(srcIdx)
+                    (list as MutableList).add(0, sourceInfo)
+                    mHost.updateAdapter()
+                    mHost.updateView()
+                } else {
+                    mHost.refreshAfterDataChange()
+                }
+            } else {
+                sourceInfo.time = System.currentTimeMillis() + 1
+                EhDB.putDownloadInfo(sourceInfo)
+                GalleryLogManager.getInstance(context).logItemReorder(sourceInfo.gid, sourceInfo.title, "置顶到当前列表首位")
+                backList.sortWith { a, b -> b.time.compareTo(a.time) }
+                if (list !== backList) {
+                    val srcIdx = list.indexOfFirst { it.gid == sourceInfo.gid }
+                    if (srcIdx != -1) (list as MutableList).removeAt(srcIdx)
+                    (list as MutableList).add(0, sourceInfo)
+                }
+                mHost.updateAdapter()
+                mHost.updateView()
             }
-            mHost.updateAdapter()
-            mHost.updateView()
             Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
             return
         } else {
@@ -1081,15 +1098,12 @@ class DownloadBatchActions(private val mHost: Host?) {
             val dm = EhApplication.getDownloadManager(context)
             if (targetGidInput.isEmpty()) {
                 val defaultLabel = Settings.getDefaultDownloadLabel()
-                sourceInfo.time = System.currentTimeMillis()
-                EhDB.putDownloadInfo(sourceInfo)
-                dm?.changeLabel(listOf(sourceInfo), defaultLabel)
+                dm.moveToLatest(sourceInfo, defaultLabel)
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
                 onMoved?.run()
                 return
             } else if (targetGidInput == "0") {
-                sourceInfo.time = System.currentTimeMillis() + 1
-                EhDB.putDownloadInfo(sourceInfo)
+                dm.moveToLatest(sourceInfo, sourceInfo.label)
                 Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
                 onMoved?.run()
                 return
@@ -1122,6 +1136,8 @@ class DownloadBatchActions(private val mHost: Host?) {
 
                     sourceInfo.time = newTime
                     EhDB.putDownloadInfo(sourceInfo)
+                    GalleryLogManager.getInstance(context).logItemReorder(sourceInfo.gid, sourceInfo.title, "移至画廊 GID [${targetGid}] 之后")
+                    dm?.sortLabel(sourceInfo.label)
                     Toast.makeText(context, R.string.move_to_position_success, Toast.LENGTH_SHORT).show()
                     onMoved?.run()
                 } catch (e: NumberFormatException) {
