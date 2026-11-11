@@ -17,7 +17,9 @@
 package com.hippo.ehviewer.ui.scene.download.part;
 
 import android.annotation.SuppressLint;
+import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.recyclerview.widget.StaggeredGridLayoutManager;
 import com.sxj.paginationlib.PaginationIndicator;
 
 /**
@@ -56,6 +58,9 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
         // 如果是初始化页面，重置标志并跳过处理
         if (needInitPage) {
             needInitPage = false;
+            if (mPageChangeCallback != null) {
+                mPageChangeCallback.onNeedInitPageConsumed();
+            }
             // 如果初始化时目标页面就是当前页面，无需任何处理
             if (indexPage == currentPagePos) {
                 return;
@@ -103,13 +108,44 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
         if (mAdapter != null) {
             mAdapter.notifyDataSetChanged();
         }
-        if (mRecyclerView != null) {
-            if (doNotScroll) {
-                doNotScroll = false;
-                return;
+        if (doNotScroll) {
+            doNotScroll = false;
+            if (mPageChangeCallback != null) {
+                mPageChangeCallback.onDoNotScrollConsumed();
             }
-            // 延迟滚动到布局完成后执行，确保滚动位置正确
-            mRecyclerView.post(() -> mRecyclerView.scrollToPosition(0));
+            return;
+        }
+        if (mRecyclerView != null) {
+            scrollToTop();
+        }
+    }
+
+    public void scrollToTop() {
+        if (mRecyclerView == null) {
+            return;
+        }
+        if (mRecyclerView.isComputingLayout()) {
+            mRecyclerView.post(this::performScrollToTop);
+        } else {
+            performScrollToTop();
+            mRecyclerView.post(this::performScrollToTop);
+        }
+    }
+
+    private void performScrollToTop() {
+        if (mRecyclerView == null) {
+            return;
+        }
+        mRecyclerView.stopScroll();
+        RecyclerView.LayoutManager layoutManager = mRecyclerView.getLayoutManager();
+        if (layoutManager instanceof StaggeredGridLayoutManager) {
+            ((StaggeredGridLayoutManager) layoutManager).scrollToPositionWithOffset(0, 0);
+        } else if (layoutManager instanceof LinearLayoutManager) {
+            ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(0, 0);
+        } else if (layoutManager != null) {
+            layoutManager.scrollToPosition(0);
+        } else {
+            mRecyclerView.scrollToPosition(0);
         }
     }
 
@@ -172,5 +208,7 @@ public class MyPageChangeListener implements PaginationIndicator.OnChangedListen
     public interface PageChangeCallback {
         void onPageChanged(int newIndexPage);
         void onPageSizeChanged(int newPageSize);
+        default void onNeedInitPageConsumed() {}
+        default void onDoNotScrollConsumed() {}
     }
 }

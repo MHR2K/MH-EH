@@ -2235,11 +2235,8 @@ public class DownloadsScene extends ToolbarScene
         if (mFilterState.isCombinedFilterActive() && (!savedStatusFilters.isEmpty() || !savedProgressFilters.isEmpty())) {
             mFilterState.setSelectedStatusFilters(savedStatusFilters);
             mFilterState.setSelectedProgressFilters(savedProgressFilters);
-            // 设置标志避免滚动到顶部，保持当前位置
-            mPaginationController.setDoNotScroll(true);
-            if (mPaginationController.getMyPageChangeListener() != null) {
-                mPaginationController.getMyPageChangeListener().setDoNotScroll(true);
-            }
+            // 设置恢复滚动位置以保持当前浏览位置
+            mPaginationController.setRestoreScrollGid(restoreScrollGid);
             // 重新应用组合筛选
             applyCombinedFilterWithScroll(false);
         }

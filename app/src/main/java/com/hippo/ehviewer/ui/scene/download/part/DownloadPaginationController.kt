@@ -61,7 +61,15 @@ class DownloadPaginationController(private val mHost: Host) {
 
     var restoreScrollGid: Long = -1
     var doNotScroll = false
+        set(value) {
+            field = value
+            myPageChangeListener?.setDoNotScroll(value)
+        }
     var needInitPage = false
+        set(value) {
+            field = value
+            myPageChangeListener?.setNeedInitPage(value)
+        }
     private var needInitPageSize = false
 
     fun bindPageChangeListener(adapter: RecyclerView.Adapter<*>?, recyclerView: MyEasyRecyclerView?) {
@@ -74,6 +82,12 @@ class DownloadPaginationController(private val mHost: Host) {
             }
             override fun onPageSizeChanged(newPageSize: Int) {
                 pageSize = newPageSize
+            }
+            override fun onNeedInitPageConsumed() {
+                needInitPage = false
+            }
+            override fun onDoNotScrollConsumed() {
+                doNotScroll = false
             }
         })
     }
@@ -192,7 +206,12 @@ class DownloadPaginationController(private val mHost: Host) {
         }
         doNotScroll = true
         myPageChangeListener?.setDoNotScroll(true)
-        paginationIndicator?.skip2Pos(indexPage)
+        try {
+            paginationIndicator?.skip2Pos(indexPage)
+        } finally {
+            doNotScroll = false
+            myPageChangeListener?.setDoNotScroll(false)
+        }
         val scrollTo = listIndexInPage(position)
         mHost.recyclerView?.let { rv ->
             rv.post {
