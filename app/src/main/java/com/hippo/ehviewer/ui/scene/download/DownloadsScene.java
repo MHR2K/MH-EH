@@ -61,6 +61,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.widget.PopupMenu;
 import androidx.core.content.res.ResourcesCompat;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.recyclerview.widget.StaggeredGridLayoutManager;
@@ -141,6 +142,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -1821,7 +1823,7 @@ public class DownloadsScene extends ToolbarScene
         
         // 创建弹出菜单，如果提供了锚点视图，则使用它；否则使用RecyclerView中的项目视图
         View menuAnchor = (anchorView != null) ? anchorView : mRecyclerView.getChildAt(position);
-        android.widget.PopupMenu popupMenu = new android.widget.PopupMenu(context, menuAnchor);
+        PopupMenu popupMenu = new PopupMenu(context, menuAnchor);
         android.view.MenuInflater inflater = popupMenu.getMenuInflater();
         inflater.inflate(R.menu.download_item_menu, popupMenu.getMenu());
         // 分组模式下隐藏"移动到位置"（搜索结果中排序无意义）
@@ -1835,91 +1837,13 @@ public class DownloadsScene extends ToolbarScene
         popupMenu.setOnMenuItemClickListener(item -> {
             int itemId = item.getItemId();
             if (itemId == R.id.menu_find_same_author) {
-                // 尝试从英文标题和日文标题中提取作者名称
-                String englishAuthor = extractAuthorFromTitle(info.title);
-                String japaneseAuthor = extractAuthorFromTitle(info.titleJpn);
-                
-                if ((englishAuthor != null && !englishAuthor.isEmpty()) || 
-                    (japaneseAuthor != null && !japaneseAuthor.isEmpty())) {
-                    // 保存当前漫画的 GID，用于退出作者搜索时精准恢复其位置
-                    mPaginationController.setRestoreScrollGid(info.gid);
-
-                    // 设置搜索选项：非模糊搜索，不区分大小写
-                    mSearchController.configureAuthorSearchOptions();
-                    
-                    // 分别搜索英文和日文作者名，然后合并结果
-                    List<DownloadInfo> combinedResults = new ArrayList<>();
-                    boolean hasResults = false;
-                    
-                    // 先搜索英文作者名
-                    if (englishAuthor != null && !englishAuthor.isEmpty()) {
-                        searchKey = englishAuthor;
-                        hasResults = searchForAuthorAndCollectResults(combinedResults);
-                    }
-                    
-                    // 再搜索日文作者名（如果与英文不同）
-                    if (japaneseAuthor != null && !japaneseAuthor.isEmpty() && 
-                        (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
-                        searchKey = japaneseAuthor;
-                        boolean japaneseResults = searchForAuthorAndCollectResults(combinedResults);
-                        hasResults = hasResults || japaneseResults;
-                    }
-                    
-                    // 显示合并后的结果
-                    if (hasResults) {
-                        // 构建显示用的作者名字符串
-                        StringBuilder searchBuilder = new StringBuilder();
-                        if (englishAuthor != null && !englishAuthor.isEmpty()) {
-                            searchBuilder.append(englishAuthor);
-                        }
-                        if (japaneseAuthor != null && !japaneseAuthor.isEmpty() && 
-                            (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
-                            if (searchBuilder.length() > 0) {
-                                searchBuilder.append(" 或 "); // 使用更清晰的分隔符
-                            }
-                            searchBuilder.append(japaneseAuthor);
-                        }
-                        
-                        String authorSearch = searchBuilder.toString();
-                        // 保存最后一次搜索关键词
-                        searchKey = authorSearch;
-                        
-                        // 设置搜索状态
-                        searching = true;
-                        
-                        // 直接更新UI显示结果
-                        mList = combinedResults;
-                        
-                        // 更新UI
-                        mProgressView.setVisibility(View.GONE);
-                        if (mRecyclerView != null) {
-                            mRecyclerView.setVisibility(View.VISIBLE);
-                        }
-                        
-                        // 更新适配器
-                        updateAdapter();
-                        updateTitle();
-                        updatePaginationIndicator();
-                        
-                        // 显示搜索成功提示
-                        android.widget.Toast.makeText(context, 
-                            getString(R.string.searching_author, authorSearch), 
-                            Toast.LENGTH_SHORT).show();
-                        
-                        // 查询未读信息
-                        queryUnreadSpiderInfo();
-                        
-                        // 搜索结束
-                        searching = false;
-                    } else {
-                        mPaginationController.setRestoreScrollGid(-1);
-                    }
-                } else {
-                    mPaginationController.setRestoreScrollGid(-1);
-                    android.widget.Toast.makeText(context, 
-                        R.string.author_not_found, 
-                        Toast.LENGTH_SHORT).show();
-                }
+                showAuthorSearchSubMenu(context, menuAnchor, info);
+                return true;
+            } else if (itemId == R.id.menu_find_same_author_current_label) {
+                performAuthorSearch(info, false);
+                return true;
+            } else if (itemId == R.id.menu_find_same_author_all_labels) {
+                performAuthorSearch(info, true);
                 return true;
             } else if (itemId == R.id.menu_move_to_position) {
                 // 显示输入对话框获取目标 gid
@@ -1953,6 +1877,184 @@ public class DownloadsScene extends ToolbarScene
         
         popupMenu.show();
         return true;
+    }
+
+    /**
+     * 弹出"查找相同作者"的二次菜单（当前标签 / 全部标签）
+     */
+    private void showAuthorSearchSubMenu(Context context, View anchorView, DownloadInfo info) {
+        if (context == null || info == null) {
+            return;
+        }
+        View anchor = (anchorView != null) ? anchorView : mRecyclerView;
+        if (anchor == null) {
+            return;
+        }
+
+        anchor.post(() -> {
+            Activity activity = getActivity2();
+            if (activity == null || activity.isFinishing()) {
+                return;
+            }
+            Context currentContext = getEHContext();
+            if (currentContext == null) {
+                return;
+            }
+            PopupMenu subMenu = new PopupMenu(currentContext, anchor);
+            subMenu.getMenuInflater().inflate(R.menu.download_author_search_menu, subMenu.getMenu());
+            subMenu.setOnMenuItemClickListener(subItem -> {
+                int subId = subItem.getItemId();
+                if (subId == R.id.menu_find_same_author_current_label) {
+                    performAuthorSearch(info, false);
+                    return true;
+                } else if (subId == R.id.menu_find_same_author_all_labels) {
+                    performAuthorSearch(info, true);
+                    return true;
+                }
+                return false;
+            });
+            subMenu.show();
+        });
+    }
+
+    /**
+     * 执行按作者搜索
+     * @param info 选中的画廊信息
+     * @param searchAllLabels 是否在全部下载标签中搜索（true: 全标签分组搜索, false: 当前标签搜索）
+     */
+    private void performAuthorSearch(DownloadInfo info, boolean searchAllLabels) {
+        Context context = getEHContext();
+        if (context == null || info == null) {
+            return;
+        }
+
+        // 尝试从英文标题和日文标题中提取作者名称
+        String englishAuthor = extractAuthorFromTitle(info.title);
+        String japaneseAuthor = extractAuthorFromTitle(info.titleJpn);
+
+        if ((englishAuthor == null || englishAuthor.isEmpty()) &&
+                (japaneseAuthor == null || japaneseAuthor.isEmpty())) {
+            mPaginationController.setRestoreScrollGid(-1);
+            Toast.makeText(context,
+                    R.string.author_not_found,
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        // 保存当前漫画的 GID，用于退出作者搜索时精准恢复其位置
+        mPaginationController.setRestoreScrollGid(info.gid);
+
+        // 设置搜索选项：非模糊搜索，不区分大小写
+        mSearchController.configureAuthorSearchOptions();
+
+        // 确定单标签搜索时的源列表（若当前处于分组模式，则使用该画廊自身标签的数据源）
+        List<DownloadInfo> sourceList = null;
+        if (!searchAllLabels && mSearchController.getGroupedSearchResults() != null && !mSearchController.getGroupedSearchResults().isEmpty()) {
+            if (mDownloadManager != null) {
+                sourceList = (info.label == null || info.label.isEmpty())
+                        ? mDownloadManager.getDefaultDownloadInfoList()
+                        : mDownloadManager.getLabelDownloadInfoList(info.label);
+            }
+        }
+
+        // 分别搜索英文和日文作者名，然后合并结果
+        List<DownloadInfo> combinedResults = new ArrayList<>();
+        Map<String, List<DownloadInfo>> combinedGroupedResults = searchAllLabels ? new LinkedHashMap<>() : null;
+        boolean hasResults = false;
+
+        // 先搜索英文作者名
+        if (englishAuthor != null && !englishAuthor.isEmpty()) {
+            searchKey = englishAuthor;
+            hasResults = mSearchController.searchForAuthorAndCollectResults(
+                    combinedResults, searchAllLabels, (Map) combinedGroupedResults, sourceList);
+        }
+
+        // 再搜索日文作者名（如果与英文不同）
+        if (japaneseAuthor != null && !japaneseAuthor.isEmpty() &&
+                (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
+            searchKey = japaneseAuthor;
+            boolean japaneseResults = mSearchController.searchForAuthorAndCollectResults(
+                    combinedResults, searchAllLabels, (Map) combinedGroupedResults, sourceList);
+            hasResults = hasResults || japaneseResults;
+        }
+
+        // 显示合并后的结果
+        if (hasResults) {
+            // 构建显示用的作者名字符串
+            StringBuilder searchBuilder = new StringBuilder();
+            if (englishAuthor != null && !englishAuthor.isEmpty()) {
+                searchBuilder.append(englishAuthor);
+            }
+            if (japaneseAuthor != null && !japaneseAuthor.isEmpty() &&
+                    (englishAuthor == null || !japaneseAuthor.equals(englishAuthor))) {
+                if (searchBuilder.length() > 0) {
+                    searchBuilder.append(" 或 ");
+                }
+                searchBuilder.append(japaneseAuthor);
+            }
+
+            String authorSearch = searchBuilder.toString();
+            searchKey = authorSearch;
+
+            // 设置搜索状态
+            searching = true;
+
+            // 更新数据源列表
+            mList = combinedResults;
+
+            // 更新UI可见性
+            mProgressView.setVisibility(View.GONE);
+            if (mRecyclerView != null) {
+                mRecyclerView.setVisibility(View.VISIBLE);
+            }
+
+            if (searchAllLabels) {
+                mSearchController.setSearchAllLabelsMode(true);
+                Settings.putEnableSearchAllLabels(true);
+                mSearchController.setGroupedSearchResults(combinedGroupedResults);
+                mSearchController.getCollapsedLabels().clear();
+
+                if (mOriginalAdapter == null) {
+                    updateAdapter();
+                }
+                if (mOriginalAdapter != null) {
+                    mOriginalAdapter.setGroupedData(combinedGroupedResults, mSearchController.getCollapsedLabels());
+                }
+                updateTitle();
+                updatePaginationIndicator();
+
+                Toast.makeText(context,
+                        getString(R.string.searching_author_all_labels, authorSearch),
+                        Toast.LENGTH_SHORT).show();
+            } else {
+                mSearchController.setSearchAllLabelsMode(false);
+                Settings.putEnableSearchAllLabels(false);
+                mSearchController.setGroupedSearchResults(null);
+                mSearchController.getCollapsedLabels().clear();
+                if (mOriginalAdapter != null) {
+                    mOriginalAdapter.clearGroupMode();
+                }
+
+                updateAdapter();
+                updateTitle();
+                updatePaginationIndicator();
+
+                Toast.makeText(context,
+                        getString(R.string.searching_author, authorSearch),
+                        Toast.LENGTH_SHORT).show();
+            }
+
+            // 查询未读信息
+            queryUnreadSpiderInfo();
+
+            // 搜索结束
+            searching = false;
+        } else {
+            mPaginationController.setRestoreScrollGid(-1);
+            Toast.makeText(context,
+                    R.string.author_not_found,
+                    Toast.LENGTH_SHORT).show();
+        }
     }
 
     public void showReadingRecordsDialog(DownloadInfo info) {

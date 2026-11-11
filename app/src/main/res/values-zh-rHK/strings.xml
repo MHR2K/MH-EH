@@ -488,6 +488,12 @@
     <string name="rename_label_title">重新命名標籤</string>
     <string name="delete_label_title">刪除標籤</string>
     <string name="delete_label_message">刪除“%s”？</string>
+    <string name="find_same_author">尋找相同作者</string>
+    <string name="find_same_author_current_label">在目前標籤尋找</string>
+    <string name="find_same_author_all_labels">在全部標籤尋找</string>
+    <string name="searching_author">搜尋作者中...</string>
+    <string name="searching_author_all_labels">在全部標籤中尋找作者: %s</string>
+    <string name="author_not_found">未找到作者資訊</string>
     <string name="menu_move_to_position">移動位置</string>
     <string name="move_to_position_title">移動畫廊位置</string>
     <string name="move_to_position_hint">(輸入目標畫廊的GID來移動到它下面。留空則移動到預設標籤最新位置，輸入0則移動到當前標籤最新位置。)</string>

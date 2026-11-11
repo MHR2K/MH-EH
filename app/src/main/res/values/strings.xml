@@ -600,6 +600,8 @@
     <string name="download_searching">Searching please wait</string>
     <string name="download_searching_failed">Searching failed</string>
     <string name="find_same_author">Find same author</string>
+    <string name="find_same_author_current_label">In current label</string>
+    <string name="find_same_author_all_labels">In all labels</string>
     <string name="menu_move_to_position">Move to position</string>
     <string name="move_to_position_title">Move next to target</string>
     <string name="move_to_position_hint">(Enter the target gallery GID to move this item before it. Enter 0 to move to the latest position of default label, leave empty to move to the latest position of current label.)</string>
@@ -613,6 +615,7 @@
     <string name="smb_migration_not_on_smb">This comic is not on SMB</string>
     <string name="smb_migration_to_local_confirm">Are you sure you want to move this comic from SMB to local storage?</string>
     <string name="searching_author">Searching for author: %s</string>
+    <string name="searching_author_all_labels">Searching across all labels: %s</string>
     <string name="author_not_found">Author not found in title</string>
 
     <!-- Download search options -->

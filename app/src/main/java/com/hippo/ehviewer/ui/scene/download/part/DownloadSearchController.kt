@@ -335,9 +335,20 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
      Author search
      ---------------*/
 
-    fun searchForAuthorAndCollectResults(resultsCollection: MutableList<DownloadInfo>): Boolean {
+    @JvmOverloads
+    fun searchForAuthorAndCollectResults(
+        resultsCollection: MutableList<DownloadInfo>,
+        searchAllLabels: Boolean = false,
+        groupedResultsCollection: MutableMap<String, @JvmSuppressWildcards MutableList<DownloadInfo>>? = null,
+        sourceList: List<DownloadInfo>? = null
+    ): Boolean {
         val host = mHost ?: return false
-        val backList = host.backList ?: return false
+        val dm = host.downloadManager
+        val searchTarget = when {
+            searchAllLabels && dm != null -> dm.allDownloadInfoList
+            sourceList != null -> sourceList
+            else -> host.backList ?: host.list
+        } ?: return false
         val searchKey = host.searchKey
         if (searchKey.isNullOrEmpty()) return false
 
@@ -348,8 +359,14 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         val sortByRelevance = fuzzySearch && (mSortByRelevanceCheckbox?.isChecked ?: Settings.getEnableSortByRelevance())
 
         // 执行搜索
-        val executor = DownloadListInfosExecutor(backList, searchKey,
-            fuzzySearch, ignoreCase, enableChineseConversion)
+        val executor = DownloadListInfosExecutor(
+            searchTarget, searchKey,
+            fuzzySearch, ignoreCase, enableChineseConversion
+        )
+
+        if (searchAllLabels) {
+            executor.setGroupByLabel(true)
+        }
 
         if (fuzzySearch && sortByRelevance) {
             executor.enableSortByRelevance(true)
@@ -361,12 +378,18 @@ class DownloadSearchController(private val mHost: Host?) : SearchBar.Helper,
         if (!tempResults.isNullOrEmpty()) {
             // 使用Set来避免重复添加相同的下载项
             val existingGids = resultsCollection.map { it.gid }.toMutableSet()
+            val context = host.getEHContext() ?: com.hippo.ehviewer.EhApplication.getInstance()
+            val defaultLabel = context?.getString(R.string.default_download_label_name) ?: "默认"
 
             // 添加新找到的项（不重复的）
             for (info in tempResults) {
                 if (info.gid !in existingGids) {
                     resultsCollection.add(info)
                     existingGids.add(info.gid)
+                    if (searchAllLabels && groupedResultsCollection != null) {
+                        val label = if (!info.label.isNullOrEmpty()) info.label else defaultLabel
+                        groupedResultsCollection.getOrPut(label) { mutableListOf() }.add(info)
+                    }
                 }
             }
             return true

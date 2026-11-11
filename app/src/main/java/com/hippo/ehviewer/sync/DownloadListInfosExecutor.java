@@ -4,6 +4,7 @@ import android.annotation.SuppressLint;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.EhDB;
 import com.hippo.ehviewer.R;
 import com.hippo.ehviewer.Settings;
@@ -156,6 +157,9 @@ public class DownloadListInfosExecutor {
      * @return 搜索结果列表
      */
     public List<DownloadInfo> executeSearchingSync() {
+        if (mGroupByLabel) {
+            return searchingInBackgroundGrouped();
+        }
         return searchingInBackgroundInternal();
     }
 
@@ -271,8 +275,11 @@ public class DownloadListInfosExecutor {
 
             if (score > 0) {
                 matchedCount++;
+                String defaultLabel = EhApplication.getInstance() != null
+                        ? EhApplication.getInstance().getString(R.string.default_download_label_name)
+                        : "默认";
                 String label = (info.label != null && !info.label.isEmpty())
-                        ? info.label : "默认";
+                        ? info.label : defaultLabel;
                 grouped.computeIfAbsent(label, k -> new ArrayList<>()).add(info);
                 groupScoreMaps.computeIfAbsent(label, k -> new HashMap<>()).put(info, score);
             }
