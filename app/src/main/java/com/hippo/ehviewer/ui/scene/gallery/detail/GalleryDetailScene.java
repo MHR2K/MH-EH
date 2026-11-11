@@ -140,6 +140,7 @@ import com.hippo.widget.ProgressView;
 import com.hippo.widget.SimpleGridAutoSpanLayout;
 
 import com.hippo.ehviewer.spider.SpiderDen;
+import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.util.CbzUtils;
 import okhttp3.OkHttpClient;
 import com.hippo.unifile.UniFile;
@@ -257,6 +258,30 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             ov.isOnSmb = smb;
             ov.storageLocation = smb ? com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.SMB
                     : com.hippo.ehviewer.ui.scene.download.part.StorageDetector.StorageLocation.UNKNOWN;
+        }
+    }
+
+    public static void ensureDownloadInfoPages(@Nullable Context context, @Nullable DownloadInfo di) {
+        if (di == null || di.pages > 0 || context == null) {
+            return;
+        }
+        try {
+            SpiderInfo si = EhApplication.getSpiderInfoRepository(context).getFromDbOnly(di.gid);
+            if (si != null && si.pages > 0) {
+                di.pages = si.pages;
+                return;
+            }
+            UniFile dir = SpiderDen.getGalleryDownloadDir(di);
+            if (dir != null && dir.isDirectory()) {
+                UniFile ehFile = dir.findFile(DownloadManager.DOWNLOAD_INFO_FILENAME);
+                if (ehFile != null && ehFile.isFile()) {
+                    SpiderInfo diskSi = SpiderInfo.readHeader(ehFile);
+                    if (diskSi != null && diskSi.pages > 0) {
+                        di.pages = diskSi.pages;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
         }
     }
     private final List<OldVersion> mOldVersions = new ArrayList<>();
@@ -1108,6 +1133,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                         directParent.downloadInfo = di;
                         directParent.title = EhUtils.getSuitableTitle(di);
                         directParent.posted = di.posted;
+                        ensureDownloadInfoPages(context, di);
                     }
                 }
                 fillOldVersionStorageInfo(directParent);
@@ -2045,6 +2071,10 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
             showTip(R.string.gallery_update_not_downloaded, LENGTH_SHORT);
             return;
         }
+        ensureDownloadInfoPages(context, oldInfo);
+        if (oldInfo.pages <= 0 && mGalleryDetail != null && mGalleryDetail.gid == oldInfo.gid && mGalleryDetail.pages > 0) {
+            oldInfo.pages = mGalleryDetail.pages;
+        }
 
         DownloadManager dm = EhApplication.getDownloadManager(context);
         com.hippo.ehviewer.download.GalleryUpdater updater = new com.hippo.ehviewer.download.GalleryUpdater(context, dm);
@@ -2279,6 +2309,9 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                                 if (current.posted == null || current.posted.isEmpty()) {
                                     current.posted = detail.posted;
                                 }
+                                if (current.downloadInfo != null && current.downloadInfo.pages <= 0 && detail.pages > 0) {
+                                    current.downloadInfo.pages = detail.pages;
+                                }
                                 handler.post(() -> {
                                     if (mGalleryDetail != null && mGalleryDetail.gid == currentGid) {
                                         updateOldVersionButtonUI();
@@ -2331,6 +2364,7 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
                             ancestor.downloadInfo = di;
                             ancestor.title = EhUtils.getSuitableTitle(di);
                             ancestor.posted = di.posted;
+                            ensureDownloadInfoPages(context, di);
                         }
                     }
                     fillOldVersionStorageInfo(ancestor);

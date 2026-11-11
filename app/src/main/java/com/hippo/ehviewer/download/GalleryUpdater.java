@@ -16,6 +16,7 @@ import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.data.GalleryDetail;
 import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.dao.DownloadInfo;
+import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryUpdateDialog;
 import com.hippo.ehviewer.ui.scene.gallery.detail.GalleryUpdateDialog.UpdateRequest;
 import com.hippo.ehviewer.util.CbzUtils;
@@ -123,10 +124,6 @@ public class GalleryUpdater {
         }
         if (cancelled) return "Cancelled";
 
-        int oldPages = oldInfo.pages;
-        int newPages = newDetail.pages;
-        Log.i(TAG, "Pages: old=" + oldPages + ", new=" + newPages);
-
         // 2. 获取旧的下载目录
         UniFile downloadDir = Settings.getDownloadLocation();
         if (downloadDir == null) {
@@ -158,6 +155,10 @@ public class GalleryUpdater {
             Log.i(TAG, "Not CBZ mode, skip extraction");
         }
         if (cancelled) return "Cancelled";
+
+        int oldPages = resolveOldPages(oldInfo, oldDir);
+        int newPages = newDetail.pages;
+        Log.i(TAG, "Pages: old=" + oldPages + ", new=" + newPages);
 
         // 4. 根据模式处理文件操作（页面重编号等）
         Log.i(TAG, "Step 4: Processing mode=" + request.mode);
@@ -290,6 +291,12 @@ public class GalleryUpdater {
      */
     private boolean handleUpdateBack(UniFile dir, int oldPages, int newPages) {
         Log.i(TAG, "Update back: old=" + oldPages + " pages, new=" + newPages + " pages");
+        if (oldPages > newPages) {
+            for (int i = newPages + 1; i <= oldPages; i++) {
+                if (cancelled) return false;
+                deletePageFile(dir, i);
+            }
+        }
         return true;
     }
 
@@ -360,7 +367,7 @@ public class GalleryUpdater {
             Log.e(TAG, "Invalid new range: " + newStart + "-" + newEnd);
             return false;
         }
-        if (oldEnd > oldPages) {
+        if (oldPages > 0 && oldEnd > oldPages) {
             Log.e(TAG, "Old range exceeds pages: " + oldEnd + " > " + oldPages);
             return false;
         }
@@ -384,6 +391,18 @@ public class GalleryUpdater {
             }
         }
 
+        // 删除旧画廊中不在映射范围内的页面文件（例如 oldStart 前和 oldEnd 后的旧页）
+        // 避免新下载时检测到已有旧文件而跳过下载，也防止重命名时目标文件发生冲突
+        for (int i = 1; i < oldStart; i++) {
+            if (cancelled) return false;
+            deletePageFile(dir, i);
+        }
+        int maxOldScan = Math.max(oldPages, countMaxPageFromDir(dir));
+        for (int i = oldEnd + 1; i <= maxOldScan; i++) {
+            if (cancelled) return false;
+            deletePageFile(dir, i);
+        }
+
         if (offset != 0) {
             if (offset > 0) {
                 for (int i = oldEnd; i >= oldStart; i--) {
@@ -404,6 +423,118 @@ public class GalleryUpdater {
             }
         }
         return true;
+    }
+
+    /**
+     * 删除指定的页面文件
+     */
+    private boolean deletePageFile(UniFile dir, int pageIndex) {
+        String ext = findPageFileExt(dir, pageIndex);
+        if (ext == null) return true;
+        String name = String.format("%08d", pageIndex) + ext;
+        UniFile oldFile = dir.findFile(name);
+        if (oldFile != null && oldFile.isFile()) {
+            if (!oldFile.delete()) {
+                Log.w(TAG, "Failed to delete unmapped page file: " + name);
+                return false;
+            }
+            Log.i(TAG, "Deleted unmapped page file: " + name);
+        }
+        return true;
+    }
+
+    /**
+     * 扫描目录中现存页面文件的最大页码
+     */
+    private int countMaxPageFromDir(UniFile dir) {
+        if (dir == null || !dir.isDirectory()) return 0;
+        int maxPage = 0;
+        try {
+            UniFile[] files = dir.listFiles();
+            if (files != null) {
+                for (UniFile f : files) {
+                    if (f != null && f.isFile()) {
+                        String name = f.getName();
+                        if (name != null && name.length() > 8 && name.charAt(8) == '.') {
+                            try {
+                                int page = Integer.parseInt(name.substring(0, 8));
+                                if (page > maxPage) {
+                                    maxPage = page;
+                                }
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to count pages from dir", t);
+        }
+        return maxPage;
+    }
+
+    /**
+     * 解析旧画廊的真实页数
+     */
+    private int resolveOldPages(@NonNull DownloadInfo oldInfo, @Nullable UniFile oldDir) {
+        if (oldInfo.pages > 0) {
+            return oldInfo.pages;
+        }
+
+        // 1. 尝试从 SpiderInfo 获取
+        try {
+            SpiderInfo spiderInfo = SpiderInfo.getSpiderInfo(oldInfo);
+            if (spiderInfo != null && spiderInfo.pages > 0) {
+                oldInfo.pages = spiderInfo.pages;
+                Log.i(TAG, "Resolved oldPages from SpiderInfo: " + spiderInfo.pages);
+                return spiderInfo.pages;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to get SpiderInfo for old gallery", t);
+        }
+
+        // 2. 尝试从旧目录下的 .ehviewer 文件读取
+        if (oldDir != null && oldDir.isDirectory()) {
+            try {
+                UniFile ehFile = oldDir.findFile(DownloadManager.DOWNLOAD_INFO_FILENAME);
+                if (ehFile != null && ehFile.isFile()) {
+                    SpiderInfo si = SpiderInfo.readHeader(ehFile);
+                    if (si != null && si.pages > 0) {
+                        oldInfo.pages = si.pages;
+                        Log.i(TAG, "Resolved oldPages from .ehviewer: " + si.pages);
+                        return si.pages;
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to read .ehviewer from oldDir", t);
+            }
+        }
+
+        // 3. 尝试从网络拉取旧版本 GalleryDetail
+        if (oldInfo.gid > 0 && oldInfo.token != null) {
+            try {
+                GalleryDetail oldDetail = fetchGalleryDetail(oldInfo.gid, oldInfo.token);
+                if (oldDetail != null && oldDetail.pages > 0) {
+                    oldInfo.pages = oldDetail.pages;
+                    Log.i(TAG, "Resolved oldPages from network detail: " + oldDetail.pages);
+                    return oldDetail.pages;
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "Failed to fetch old gallery detail from network", t);
+            }
+        }
+
+        // 4. 兜底：扫描目录中的页面文件计算最大页码
+        if (oldDir != null && oldDir.isDirectory()) {
+            int maxPage = countMaxPageFromDir(oldDir);
+            if (maxPage > 0) {
+                oldInfo.pages = maxPage;
+                Log.i(TAG, "Resolved oldPages from disk files: " + maxPage);
+                return maxPage;
+            }
+        }
+
+        return oldInfo.pages;
     }
 
     /**

@@ -35,6 +35,7 @@ import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.smb.SmbStorageTracker;
+import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.MainActivity;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
@@ -241,6 +242,7 @@ public class GalleryUpdateDialog {
                 DownloadInfo di = dm.getDownloadInfo(ov.gid);
                 if (di != null) {
                     ov.downloadInfo = di;
+                    GalleryDetailScene.ensureDownloadInfoPages(context, di);
                     if (ov.posted == null || ov.posted.isEmpty()) {
                         ov.posted = di.posted;
                     }
@@ -428,6 +430,24 @@ public class GalleryUpdateDialog {
             oldDetail.posted = oldVersion.downloadInfo.posted;
         }
 
+        if (oldDetail != null && oldDetail.pages <= 0) {
+            if (oldVersion.downloadInfo != null) {
+                GalleryDetailScene.ensureDownloadInfoPages(context, oldVersion.downloadInfo);
+                if (oldVersion.downloadInfo.pages > 0) {
+                    oldDetail.pages = oldVersion.downloadInfo.pages;
+                }
+            }
+            if (oldDetail.pages <= 0) {
+                SpiderInfo si = SpiderInfo.getSpiderInfo(oldDetail);
+                if (si != null && si.pages > 0) {
+                    oldDetail.pages = si.pages;
+                    if (oldVersion.downloadInfo != null) {
+                        oldVersion.downloadInfo.pages = si.pages;
+                    }
+                }
+            }
+        }
+
         NewVersion newVersion = new NewVersion();
         newVersion.versionUrl = EhUrl.getGalleryDetailUrl(currentDetail.gid, currentDetail.token);
         newVersion.versionName = EhUtils.getSuitableTitle(currentDetail);
@@ -518,7 +538,15 @@ public class GalleryUpdateDialog {
      * 显示更新模式选择对话框
      */
     private void showUpdateModeDialog(NewVersion newVersion) {
-        showUpdateModeDialog(this.galleryDetail, newVersion, null, null);
+        DownloadManager dm = EhApplication.getDownloadManager(context.getApplicationContext());
+        DownloadInfo di = dm != null && this.galleryDetail != null ? dm.getDownloadInfo(this.galleryDetail.gid) : null;
+        if (di != null) {
+            GalleryDetailScene.ensureDownloadInfoPages(context, di);
+            if (di.pages <= 0 && this.galleryDetail != null && this.galleryDetail.pages > 0) {
+                di.pages = this.galleryDetail.pages;
+            }
+        }
+        showUpdateModeDialog(this.galleryDetail, newVersion, di, null);
     }
 
     private void showUpdateModeDialog(GalleryDetail targetOldDetail,
@@ -529,6 +557,25 @@ public class GalleryUpdateDialog {
             currentDialog.dismiss();
         }
 
+        DownloadManager dm = EhApplication.getDownloadManager(context);
+        DownloadInfo resolvedOldInfo = targetOldInfo != null ? targetOldInfo :
+                (dm != null && targetOldDetail != null ? dm.getDownloadInfo(targetOldDetail.gid) : null);
+        if (resolvedOldInfo != null) {
+            GalleryDetailScene.ensureDownloadInfoPages(context, resolvedOldInfo);
+            if (targetOldDetail != null && targetOldDetail.pages <= 0 && resolvedOldInfo.pages > 0) {
+                targetOldDetail.pages = resolvedOldInfo.pages;
+            }
+        }
+        if (targetOldDetail != null && targetOldDetail.pages <= 0) {
+            SpiderInfo si = SpiderInfo.getSpiderInfo(targetOldDetail);
+            if (si != null && si.pages > 0) {
+                targetOldDetail.pages = si.pages;
+                if (resolvedOldInfo != null) {
+                    resolvedOldInfo.pages = si.pages;
+                }
+            }
+        }
+
         View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_gallery_update_mode, null);
         RadioGroup modeGroup = dialogView.findViewById(R.id.update_mode_group);
         View customLayout = dialogView.findViewById(R.id.custom_mode_layout);
@@ -536,6 +583,10 @@ public class GalleryUpdateDialog {
         EditText etOldEnd = dialogView.findViewById(R.id.et_old_end);
         EditText etNewStart = dialogView.findViewById(R.id.et_new_start);
         EditText etNewEnd = dialogView.findViewById(R.id.et_new_end);
+
+        if (targetOldDetail != null && targetOldDetail.pages > 0) {
+            etOldEnd.setHint(String.valueOf(targetOldDetail.pages));
+        }
 
         // 默认选中"更新后方"
         modeGroup.check(R.id.mode_update_back);
@@ -568,9 +619,6 @@ public class GalleryUpdateDialog {
         if (btnComparePreviews != null) {
             btnComparePreviews.setOnClickListener(v -> {
                 if (targetOldDetail == null) return;
-                DownloadManager dm = EhApplication.getDownloadManager(context);
-                DownloadInfo resolvedOldInfo = targetOldInfo != null ? targetOldInfo :
-                        (dm != null ? dm.getDownloadInfo(targetOldDetail.gid) : null);
                 if (resolvedOldInfo != null) {
                     if (targetOldDetail.pages <= 0 && resolvedOldInfo.pages > 0) {
                         targetOldDetail.pages = resolvedOldInfo.pages;
@@ -585,6 +633,9 @@ public class GalleryUpdateDialog {
                     etOldEnd.setText(String.valueOf(oldEnd));
                     etNewStart.setText(String.valueOf(newStart));
                     etNewEnd.setText(String.valueOf(newEnd));
+                    if (resolvedOldInfo != null && targetOldDetail != null && targetOldDetail.pages > 0) {
+                        resolvedOldInfo.pages = targetOldDetail.pages;
+                    }
                 });
                 compareDialog.show();
             });
@@ -596,7 +647,10 @@ public class GalleryUpdateDialog {
                 .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
                 .setPositiveButton(R.string.gallery_update_next, (dialog, which) -> {
                     int mode = getSelectedMode(modeGroup);
-                    UpdateRequest request = new UpdateRequest(mode, newVersion, targetOldInfo);
+                    if (resolvedOldInfo != null && resolvedOldInfo.pages <= 0 && targetOldDetail != null && targetOldDetail.pages > 0) {
+                        resolvedOldInfo.pages = targetOldDetail.pages;
+                    }
+                    UpdateRequest request = new UpdateRequest(mode, newVersion, resolvedOldInfo);
                     if (mode == MODE_CUSTOM) {
                         request.customOldStart = parseIntSafe(etOldStart.getText().toString(), 1);
                         request.customOldEnd = parseIntSafe(etOldEnd.getText().toString(), 1);
@@ -637,6 +691,9 @@ public class GalleryUpdateDialog {
             currentDialog.dismiss();
         }
         if (oldDetail == null) return;
+        if (oldDetail.pages <= 0 && request.targetOldInfo != null && request.targetOldInfo.pages > 0) {
+            oldDetail.pages = request.targetOldInfo.pages;
+        }
 
         int oldPages = oldDetail.pages;
         String modeName = getModeName(request.mode);
