@@ -44,6 +44,7 @@ import android.widget.ArrayAdapter;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.RatingBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -2078,28 +2079,89 @@ public class GalleryDetailScene extends BaseScene implements View.OnClickListene
 
         DownloadManager dm = EhApplication.getDownloadManager(context);
         com.hippo.ehviewer.download.GalleryUpdater updater = new com.hippo.ehviewer.download.GalleryUpdater(context, dm);
+
+        float density = context.getResources().getDisplayMetrics().density;
+        int pad = (int) (20 * density);
+        LinearLayout progressLayout = new LinearLayout(context);
+        progressLayout.setOrientation(LinearLayout.HORIZONTAL);
+        progressLayout.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        progressLayout.setPadding(pad, pad, pad, pad);
+
+        ProgressBar progressBar = new ProgressBar(context);
+        progressLayout.addView(progressBar);
+
+        TextView progressText = new TextView(context);
+        LinearLayout.LayoutParams tvLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        tvLp.setMarginStart((int) (16 * density));
+        progressText.setLayoutParams(tvLp);
+        progressText.setText(R.string.gallery_update_in_progress);
+        progressLayout.addView(progressText);
+
+        AlertDialog progressDialog = new AlertDialog.Builder(context)
+                .setTitle(R.string.gallery_update_progress_title)
+                .setView(progressLayout)
+                .setCancelable(false)
+                .setNegativeButton(R.string.cancel, (d, w) -> {
+                    updater.cancel();
+                    d.dismiss();
+                })
+                .create();
+
         updater.executeUpdate(oldInfo, request, new com.hippo.ehviewer.download.GalleryUpdater.UpdateCallback() {
             @Override
             public void onUpdateStart() {
-                showTip(R.string.gallery_update_in_progress, LENGTH_SHORT);
+                if (getEHContext() != null) {
+                    progressDialog.show();
+                }
             }
 
             @Override
             public void onUpdateProgress(String message) {
-                // 可选：显示进度
+                if (progressDialog.isShowing() && message != null) {
+                    progressText.setText(message);
+                }
             }
 
             @Override
             public void onUpdateQueued() {
+                if (progressDialog.isShowing()) {
+                    progressDialog.dismiss();
+                }
                 showTip(R.string.gallery_update_queued, LENGTH_SHORT);
-                // 刷新 UI
                 updateDownloadState();
                 bindViewSecond();
+                // DownloadService 异步处理 ACTION_DELETE 与 ACTION_START，延迟再次刷新以确保状态同步
+                View root = getView();
+                if (root != null) {
+                    root.postDelayed(() -> {
+                        if (getEHContext() != null) {
+                            updateDownloadState();
+                            bindViewSecond();
+                        }
+                    }, 350);
+                }
             }
 
             @Override
             public void onUpdateFailed(String error) {
-                showTip(R.string.gallery_update_failed, LENGTH_LONG);
+                if (progressDialog.isShowing()) {
+                    progressDialog.dismiss();
+                }
+                if ("Cancelled".equals(error)) {
+                    return;
+                }
+                Context ctx = getEHContext();
+                if (ctx != null && error != null && !error.isEmpty()) {
+                    new AlertDialog.Builder(ctx)
+                            .setTitle(R.string.gallery_update_failed)
+                            .setMessage(ctx.getString(R.string.gallery_update_failed_detail, error))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                } else {
+                    showTip(R.string.gallery_update_failed, LENGTH_LONG);
+                }
             }
         });
     }

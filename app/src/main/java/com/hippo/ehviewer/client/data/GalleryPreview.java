@@ -36,6 +36,34 @@ public class GalleryPreview implements Parcelable {
         return position;
     }
 
+    public String getImageKey() {
+        return imageKey;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public String getPageUrl() {
+        return pageUrl;
+    }
+
+    public int getOffsetX() {
+        return offsetX;
+    }
+
+    public int getOffsetY() {
+        return offsetY;
+    }
+
+    public int getClipWidth() {
+        return clipWidth;
+    }
+
+    public int getClipHeight() {
+        return clipHeight;
+    }
+
     public void load(LoadImageView view) {
         view.setClip(offsetX, offsetY, clipWidth, clipHeight);
         view.load(imageKey, imageUrl);

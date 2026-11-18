@@ -1236,11 +1236,28 @@
     <string name="gallery_update_old_version_header">旧版本：%1$s（共 %2$d 页）</string>
     <string name="gallery_update_new_version_label">新版本（共 %1$d 页）</string>
     <string name="gallery_update_old_version_label">旧版本（共 %1$d 页）</string>
-    <string name="gallery_update_lock_sync">🔒 已锁定同步滑动</string>
-    <string name="gallery_update_unlock_sync">🔓 已解锁独立调整</string>
+    <string name="gallery_update_lock_sync">已锁定同步滑动</string>
+    <string name="gallery_update_unlock_sync">已解锁独立调整</string>
     <string name="gallery_update_lock_hint">提示：解锁后可滑动任意一行对齐相同内容，锁定后将同步滑动检查</string>
-    <string name="gallery_update_align_status">旧版 P.%1$d ↔ 新版 P.%2$d (新版偏移 %+d)</string>
+    <string name="gallery_update_align_status">旧版 P.%1$d ↔ 新版 P.%2$d (新版偏移 %3$+d)</string>
     <string name="gallery_update_align_selected">对齐选中页</string>
+    <string name="gallery_update_auto_align">自动比对</string>
+    <string name="gallery_update_auto_aligning">正在自动比对新旧版本缩略图…</string>
+    <string name="gallery_update_auto_align_success">自动比对成功：新版本相对旧版偏移 %1$+d 页</string>
+    <string name="gallery_update_auto_align_failed">未能自动识别对齐偏移，请手动滑动微调</string>
+    <string name="gallery_update_full_compare">全本逐页比对</string>
+    <string name="gallery_update_full_comparing">比对中 (%1$d/%2$d)…</string>
+    <string name="gallery_update_full_compare_summary_all_same">全本 %1$d 对页面完全一致</string>
+    <string name="gallery_update_full_compare_summary_diff">%1$d 同 ｜ %2$d 改 ｜ %3$d 异 (点击跳至差异)</string>
+    <string name="gallery_update_badge_identical">同</string>
+    <string name="gallery_update_badge_modified">改</string>
+    <string name="gallery_update_badge_different">异</string>
+    <string name="gallery_update_mode_smart_incremental">智能增量更新（按逐页比对结果）</string>
+    <string name="gallery_update_desc_smart_incremental">直接复用本地 %1$d 页完全相同的图片，仅下载 %2$d 页修改/新增图片。</string>
+    <string name="gallery_update_apply_choice_title">应用全本比对结果</string>
+    <string name="gallery_update_apply_choice_message">全本比对已完成：共 %1$d 页完全一致可本地复用，需重新下载 %2$d 页修改/新增图片。</string>
+    <string name="gallery_update_apply_smart_incremental">一键智能增量更新</string>
+    <string name="gallery_update_apply_range_only">仅按区间平移填入</string>
     <string name="gallery_update_jump_first">首页</string>
     <string name="gallery_update_jump_last">末页</string>
     <string name="gallery_update_jump_page">跳转</string>
@@ -1249,6 +1266,17 @@
     <string name="gallery_update_apply_mapping">应用当前对齐并填入</string>
     <string name="gallery_update_loading_preview">正在加载新版本预览…</string>
     <string name="gallery_update_loading_failed">加载新版本失败</string>
+    <string name="gallery_update_page_summary_loading">旧版 %1$d 页 → 正在获取新版页数…</string>
+    <string name="gallery_update_page_summary">旧版 %1$d 页 → 新版 %2$d 页</string>
+    <string name="gallery_update_page_summary_fewer_warning">旧版 %1$d 页 → 新版 %2$d 页（新版页数减少，建议先对比缩略图）</string>
+    <string name="gallery_update_cbz_notice">注意：检测到本地为 CBZ 压缩包，更新时将自动解压为图片目录。</string>
+    <string name="gallery_update_progress_title">正在更新画廊</string>
+    <string name="gallery_update_progress_fetching">正在获取新版本信息…</string>
+    <string name="gallery_update_progress_extracting_cbz">正在解压原 CBZ 文件…</string>
+    <string name="gallery_update_progress_processing_pages">正在处理并重编号页面文件…</string>
+    <string name="gallery_update_progress_renaming_dir">正在重命名目录并加入下载队列…</string>
+    <string name="gallery_update_error_already_finished">新版本（gid=%1$d）已下载完成，无需从旧版本更新。</string>
+    <string name="gallery_update_failed_detail">更新失败：%1$s</string>
 
     <!-- Gallery Log -->
     <string name="settings_advanced_export_gallery_log">导出漫画操作日志</string>

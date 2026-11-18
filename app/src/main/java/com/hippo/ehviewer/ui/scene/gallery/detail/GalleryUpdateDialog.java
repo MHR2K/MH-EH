@@ -27,23 +27,31 @@ import androidx.annotation.Nullable;
 import com.hippo.android.resource.AttrResources;
 import com.hippo.ehviewer.EhApplication;
 import com.hippo.ehviewer.R;
+import com.hippo.ehviewer.client.EhEngine;
 import com.hippo.ehviewer.client.EhUrl;
 import com.hippo.ehviewer.client.EhUtils;
 import com.hippo.ehviewer.client.data.GalleryDetail;
+import com.hippo.ehviewer.client.data.GalleryInfo;
 import com.hippo.ehviewer.client.data.NewVersion;
 import com.hippo.ehviewer.client.parser.GalleryDetailUrlParser;
 import com.hippo.ehviewer.dao.DownloadInfo;
 import com.hippo.ehviewer.download.DownloadManager;
 import com.hippo.ehviewer.smb.SmbStorageTracker;
+import com.hippo.ehviewer.spider.SpiderDen;
 import com.hippo.ehviewer.spider.SpiderInfo;
 import com.hippo.ehviewer.ui.CommonOperations;
 import com.hippo.ehviewer.ui.MainActivity;
 import com.hippo.ehviewer.ui.scene.download.DownloadsScene;
 import com.hippo.ehviewer.ui.scene.download.part.StorageDetector;
+import com.hippo.ehviewer.util.CbzUtils;
 import com.hippo.scene.Announcer;
+import com.hippo.unifile.UniFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import okhttp3.OkHttpClient;
 
 public class GalleryUpdateDialog {
 
@@ -54,6 +62,7 @@ public class GalleryUpdateDialog {
     public static final int MODE_UPDATE_FRONT = 1;     // 更新前方：新版前面多了页，重编号旧页
     public static final int MODE_FULL_REPLACE = 2;     // 全部替换：删旧目录，全量重下
     public static final int MODE_CUSTOM = 3;           // 自定义：用户指定页数映射
+    public static final int MODE_SMART_INCREMENTAL = 4; // 智能增量：按逐页比对结果精准复用
 
     /**
      * 更新请求数据
@@ -67,6 +76,13 @@ public class GalleryUpdateDialog {
         public int customOldEnd = 1;
         public int customNewStart = 1;
         public int customNewEnd = 1;
+        // 智能增量模式的精准映射表 (key: 旧版页码 1-indexed, value: 新版页码 1-indexed)
+        @Nullable
+        public Map<Integer, Integer> smartPageMapping;
+        public int smartNewTotalPages = 0;
+        // 缓存已拉取的新版 GalleryDetail，避免 GalleryUpdater 重复联网
+        @Nullable
+        public GalleryDetail cachedNewDetail;
 
         public UpdateRequest(int mode, NewVersion newVersion) {
             this(mode, newVersion, null);
@@ -456,82 +472,76 @@ public class GalleryUpdateDialog {
     }
 
     /**
-     * 显示操作选择对话框：查看新版本详情 / 更新下载
+     * 显示操作选择对话框：已下载直接校验存储并进入更新模式选择（精简层级），未下载则直接查看新版本详情
      */
     private void showActionChoiceDialog(NewVersion newVersion, boolean isDownloaded) {
         if (currentDialog != null) {
             currentDialog.dismiss();
         }
-        // 如果未下载，只显示"查看详情"选项
-        String[] items;
         if (isDownloaded) {
-            items = new String[]{
-                    context.getString(R.string.gallery_update_view_detail),
-                    context.getString(R.string.gallery_update_download)
-            };
-        } else {
-            items = new String[]{
-                    context.getString(R.string.gallery_update_view_detail)
-            };
+            proceedToUpdateAfterSmbCheck(newVersion);
+            return;
         }
+        String[] items = new String[]{
+                context.getString(R.string.gallery_update_view_detail)
+        };
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.new_version)
                 .setItems(items, (dialog, which) -> {
                     dialog.dismiss();
-                    if (which == 0) {
-                        // 查看新版本详情 — 跳转到新版本页面
-                        Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
-                        detailScene.startScene(announcer);
-                    } else if (which == 1 && isDownloaded) {
-                        // 检查当前画廊（即待更新的旧版本）是否在 SMB 上
-                        boolean isOnSmb = SmbStorageTracker.INSTANCE.isOnSmb(galleryDetail.gid);
-                        StorageDetector.StorageLocation loc = StorageDetector.StorageLocation.UNKNOWN;
-                        DownloadManager dm = EhApplication.getDownloadManager(context.getApplicationContext());
-                        DownloadInfo di = dm != null ? dm.getDownloadInfo(galleryDetail.gid) : null;
-                        if (di != null) {
-                            loc = StorageDetector.detectCached(di);
-                        }
-                        boolean isPureSmb = (loc == StorageDetector.StorageLocation.SMB)
-                                || (loc == StorageDetector.StorageLocation.UNKNOWN && isOnSmb);
-                        if (isPureSmb) {
-                            new AlertDialog.Builder(context)
-                                    .setTitle(R.string.gallery_update_smb_dialog_title)
-                                    .setMessage(R.string.gallery_update_smb_dialog_message)
-                                    .setPositiveButton(R.string.gallery_update_smb_view_new, (d, w) -> {
-                                        d.dismiss();
-                                        Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
-                                        if (announcer != null) {
-                                            detailScene.startScene(announcer);
-                                        }
-                                    })
-                                    .setNeutralButton(R.string.gallery_old_version_view_in_download, (d, w) -> {
-                                        d.dismiss();
-                                        Bundle args = new Bundle();
-                                        args.putLong(DownloadsScene.KEY_GID, galleryDetail.gid);
-                                        detailScene.startScene(new Announcer(DownloadsScene.class).setArgs(args));
-                                    })
-                                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
-                                    .show();
-                            return;
-                        }
-                        if (loc == StorageDetector.StorageLocation.BOTH) {
-                            new AlertDialog.Builder(context)
-                                    .setTitle(R.string.gallery_update_smb_both_title)
-                                    .setMessage(R.string.gallery_update_smb_both_message)
-                                    .setPositiveButton(R.string.gallery_update_continue, (d, w) -> {
-                                        d.dismiss();
-                                        showUpdateModeDialog(newVersion);
-                                    })
-                                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
-                                    .show();
-                            return;
-                        }
-                        // 更新下载 — 显示更新模式选择
-                        showUpdateModeDialog(newVersion);
-                    }
+                    Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
+                    detailScene.startScene(announcer);
                 });
         currentDialog = builder.create();
         currentDialog.show();
+    }
+
+    private void proceedToUpdateAfterSmbCheck(NewVersion newVersion) {
+        // 检查当前画廊（即待更新的旧版本）是否在 SMB 上
+        boolean isOnSmb = SmbStorageTracker.INSTANCE.isOnSmb(galleryDetail.gid);
+        StorageDetector.StorageLocation loc = StorageDetector.StorageLocation.UNKNOWN;
+        DownloadManager dm = EhApplication.getDownloadManager(context.getApplicationContext());
+        DownloadInfo di = dm != null ? dm.getDownloadInfo(galleryDetail.gid) : null;
+        if (di != null) {
+            loc = StorageDetector.detectCached(di);
+        }
+        boolean isPureSmb = (loc == StorageDetector.StorageLocation.SMB)
+                || (loc == StorageDetector.StorageLocation.UNKNOWN && isOnSmb);
+        if (isPureSmb) {
+            new AlertDialog.Builder(context)
+                    .setTitle(R.string.gallery_update_smb_dialog_title)
+                    .setMessage(R.string.gallery_update_smb_dialog_message)
+                    .setPositiveButton(R.string.gallery_update_smb_view_new, (d, w) -> {
+                        d.dismiss();
+                        Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
+                        if (announcer != null) {
+                            detailScene.startScene(announcer);
+                        }
+                    })
+                    .setNeutralButton(R.string.gallery_old_version_view_in_download, (d, w) -> {
+                        d.dismiss();
+                        Bundle args = new Bundle();
+                        args.putLong(DownloadsScene.KEY_GID, galleryDetail.gid);
+                        detailScene.startScene(new Announcer(DownloadsScene.class).setArgs(args));
+                    })
+                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
+                    .show();
+            return;
+        }
+        if (loc == StorageDetector.StorageLocation.BOTH) {
+            new AlertDialog.Builder(context)
+                    .setTitle(R.string.gallery_update_smb_both_title)
+                    .setMessage(R.string.gallery_update_smb_both_message)
+                    .setPositiveButton(R.string.gallery_update_continue, (d, w) -> {
+                        d.dismiss();
+                        showUpdateModeDialog(newVersion);
+                    })
+                    .setNegativeButton(R.string.cancel, (d, w) -> d.dismiss())
+                    .show();
+            return;
+        }
+        // 更新下载 — 显示更新模式选择
+        showUpdateModeDialog(newVersion);
     }
 
     /**
@@ -577,12 +587,37 @@ public class GalleryUpdateDialog {
         }
 
         View dialogView = LayoutInflater.from(context).inflate(R.layout.dialog_gallery_update_mode, null);
+        TextView tvPageSummary = dialogView.findViewById(R.id.tv_update_page_summary);
         RadioGroup modeGroup = dialogView.findViewById(R.id.update_mode_group);
         View customLayout = dialogView.findViewById(R.id.custom_mode_layout);
         EditText etOldStart = dialogView.findViewById(R.id.et_old_start);
         EditText etOldEnd = dialogView.findViewById(R.id.et_old_end);
         EditText etNewStart = dialogView.findViewById(R.id.et_new_start);
         EditText etNewEnd = dialogView.findViewById(R.id.et_new_end);
+
+        final GalleryDetail[] loadedNewDetail = new GalleryDetail[]{ newDetail };
+        final int oldPagesCount = targetOldDetail != null ? targetOldDetail.pages : 0;
+        if (tvPageSummary != null && oldPagesCount > 0) {
+            tvPageSummary.setVisibility(View.VISIBLE);
+            updatePageSummaryView(tvPageSummary, oldPagesCount, loadedNewDetail[0]);
+            if (loadedNewDetail[0] == null && newVersion != null && newVersion.versionUrl != null) {
+                new Thread(() -> {
+                    try {
+                        OkHttpClient client = EhApplication.getOkHttpClient(context.getApplicationContext());
+                        GalleryDetail fetched = EhEngine.getGalleryDetail(null, client, newVersion.versionUrl);
+                        if (fetched != null) {
+                            tvPageSummary.post(() -> {
+                                if (loadedNewDetail[0] == null) {
+                                    loadedNewDetail[0] = fetched;
+                                }
+                                updatePageSummaryView(tvPageSummary, oldPagesCount, loadedNewDetail[0]);
+                            });
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }).start();
+            }
+        }
 
         if (targetOldDetail != null && targetOldDetail.pages > 0) {
             etOldEnd.setHint(String.valueOf(targetOldDetail.pages));
@@ -627,23 +662,63 @@ public class GalleryUpdateDialog {
                         targetOldDetail.token = resolvedOldInfo.token;
                     }
                 }
-                GalleryUpdatePreviewCompareDialog compareDialog = new GalleryUpdatePreviewCompareDialog(
-                        context, targetOldDetail, newVersion, newDetail, resolvedOldInfo, (oldStart, oldEnd, newStart, newEnd) -> {
-                    etOldStart.setText(String.valueOf(oldStart));
-                    etOldEnd.setText(String.valueOf(oldEnd));
-                    etNewStart.setText(String.valueOf(newStart));
-                    etNewEnd.setText(String.valueOf(newEnd));
-                    if (resolvedOldInfo != null && targetOldDetail != null && targetOldDetail.pages > 0) {
-                        resolvedOldInfo.pages = targetOldDetail.pages;
-                    }
-                });
-                compareDialog.show();
+                final GalleryUpdatePreviewCompareDialog[] compareDialogRef = new GalleryUpdatePreviewCompareDialog[1];
+                compareDialogRef[0] = new GalleryUpdatePreviewCompareDialog(
+                        context, targetOldDetail, newVersion, loadedNewDetail[0], resolvedOldInfo,
+                        new GalleryUpdatePreviewCompareDialog.OnMappingSelectedListener() {
+                            @Override
+                            public void onMappingSelected(int oldStart, int oldEnd, int newStart, int newEnd) {
+                                if (loadedNewDetail[0] == null && compareDialogRef[0] != null && compareDialogRef[0].getNewDetail() != null) {
+                                    loadedNewDetail[0] = compareDialogRef[0].getNewDetail();
+                                    if (tvPageSummary != null && oldPagesCount > 0) {
+                                        updatePageSummaryView(tvPageSummary, oldPagesCount, loadedNewDetail[0]);
+                                    }
+                                }
+                                modeGroup.check(R.id.mode_custom);
+                                etOldStart.setText(String.valueOf(oldStart));
+                                etOldEnd.setText(String.valueOf(oldEnd));
+                                etNewStart.setText(String.valueOf(newStart));
+                                etNewEnd.setText(String.valueOf(newEnd));
+                                if (resolvedOldInfo != null && targetOldDetail != null && targetOldDetail.pages > 0) {
+                                    resolvedOldInfo.pages = targetOldDetail.pages;
+                                }
+                            }
+
+                            @Override
+                            public void onSmartIncrementalSelected(@NonNull Map<Integer, Integer> pageMapping, int newTotalPages) {
+                                if (loadedNewDetail[0] == null && compareDialogRef[0] != null && compareDialogRef[0].getNewDetail() != null) {
+                                    loadedNewDetail[0] = compareDialogRef[0].getNewDetail();
+                                }
+                                if (resolvedOldInfo != null && resolvedOldInfo.pages <= 0 && targetOldDetail != null && targetOldDetail.pages > 0) {
+                                    resolvedOldInfo.pages = targetOldDetail.pages;
+                                }
+                                UpdateRequest request = new UpdateRequest(MODE_SMART_INCREMENTAL, newVersion, resolvedOldInfo);
+                                request.smartPageMapping = pageMapping;
+                                request.smartNewTotalPages = newTotalPages;
+                                request.cachedNewDetail = loadedNewDetail[0];
+                                if (currentDialog != null && currentDialog.isShowing()) {
+                                    currentDialog.dismiss();
+                                }
+                                // 对比弹窗内已展示复用/下载数量并经过用户确认，直接触发更新，减少冗余弹窗
+                                if (updateConfirmListener != null) {
+                                    updateConfirmListener.onUpdateConfirm(request);
+                                }
+                            }
+                        });
+                compareDialogRef[0].show();
             });
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.gallery_update_mode_title)
                 .setView(dialogView)
+                .setNeutralButton(R.string.gallery_update_view_detail, (dialog, which) -> {
+                    dialog.dismiss();
+                    Announcer announcer = createAnnouncerFromClipboardUrl(newVersion.versionUrl);
+                    if (announcer != null) {
+                        detailScene.startScene(announcer);
+                    }
+                })
                 .setNegativeButton(R.string.cancel, (dialog, which) -> dialog.dismiss())
                 .setPositiveButton(R.string.gallery_update_next, (dialog, which) -> {
                     int mode = getSelectedMode(modeGroup);
@@ -651,6 +726,7 @@ public class GalleryUpdateDialog {
                         resolvedOldInfo.pages = targetOldDetail.pages;
                     }
                     UpdateRequest request = new UpdateRequest(mode, newVersion, resolvedOldInfo);
+                    request.cachedNewDetail = loadedNewDetail[0];
                     if (mode == MODE_CUSTOM) {
                         request.customOldStart = parseIntSafe(etOldStart.getText().toString(), 1);
                         request.customOldEnd = parseIntSafe(etOldEnd.getText().toString(), 1);
@@ -672,6 +748,19 @@ public class GalleryUpdateDialog {
                 });
         currentDialog = builder.create();
         currentDialog.show();
+    }
+
+    private void updatePageSummaryView(@NonNull TextView tv, int oldPages, @Nullable GalleryDetail newDetail) {
+        if (newDetail == null || newDetail.pages <= 0) {
+            tv.setText(context.getString(R.string.gallery_update_page_summary_loading, oldPages));
+            tv.setTextColor(AttrResources.getAttrColor(context, android.R.attr.textColorSecondary));
+        } else if (newDetail.pages < oldPages) {
+            tv.setText(context.getString(R.string.gallery_update_page_summary_fewer_warning, oldPages, newDetail.pages));
+            tv.setTextColor(0xFFFF9800);
+        } else {
+            tv.setText(context.getString(R.string.gallery_update_page_summary, oldPages, newDetail.pages));
+            tv.setTextColor(AttrResources.getAttrColor(context, androidx.appcompat.R.attr.colorPrimary));
+        }
     }
 
     private int getSelectedMode(RadioGroup group) {
@@ -703,6 +792,12 @@ public class GalleryUpdateDialog {
                 oldDetail.gid, EhUtils.getSuitableTitle(oldDetail), oldPages,
                 request.newVersion.versionName, modeName, desc);
 
+        GalleryInfo infoForDir = request.targetOldInfo != null ? request.targetOldInfo : oldDetail;
+        UniFile oldDir = SpiderDen.getGalleryDownloadDir(infoForDir);
+        if (oldDir != null && CbzUtils.isCbzMode(oldDir)) {
+            message = message + "\n\n" + context.getString(R.string.gallery_update_cbz_notice);
+        }
+
         AlertDialog.Builder builder = new AlertDialog.Builder(context);
         builder.setTitle(R.string.gallery_update_confirm_title)
                 .setMessage(message)
@@ -732,6 +827,10 @@ public class GalleryUpdateDialog {
                 return context.getString(R.string.gallery_update_desc_custom,
                         request.customOldStart, request.customOldEnd,
                         request.customNewStart, request.customNewEnd);
+            case MODE_SMART_INCREMENTAL:
+                int reuseCount = request.smartPageMapping != null ? request.smartPageMapping.size() : 0;
+                int downloadCount = Math.max(0, request.smartNewTotalPages - reuseCount);
+                return context.getString(R.string.gallery_update_desc_smart_incremental, reuseCount, downloadCount);
             default:
                 return "";
         }
@@ -743,6 +842,7 @@ public class GalleryUpdateDialog {
             case MODE_UPDATE_FRONT: return context.getString(R.string.gallery_update_mode_front);
             case MODE_FULL_REPLACE: return context.getString(R.string.gallery_update_mode_full);
             case MODE_CUSTOM: return context.getString(R.string.gallery_update_mode_custom);
+            case MODE_SMART_INCREMENTAL: return context.getString(R.string.gallery_update_mode_smart_incremental);
             default: return "";
         }
     }
