@@ -216,12 +216,12 @@ public class EhApplication extends RecordingApplication {
         GetText.initialize(this);
         StatusCodeException.initialize(this);
         Settings.initialize(this);
+        AppConfig.initialize(this);
         com.hippo.ehviewer.util.FavCountStore.init(this);
         com.hippo.ehviewer.util.NewVersionStore.init(this);
         ArchiverDownloader.resumePending(this);
         ReadableTime.initialize(this);
         Html.initialize(this);
-        AppConfig.initialize(this);
 
         // Best-effort Firebase init (will no-op if config is absent)
         try {

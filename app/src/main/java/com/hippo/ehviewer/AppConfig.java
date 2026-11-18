@@ -155,6 +155,9 @@ public class AppConfig {
 
     @Nullable
     public static File getTempDir() {
+        if (sContext == null) {
+            return null;
+        }
         File dir = sContext.getCacheDir();
         File file;
         if (null != dir && FileUtils.ensureDirectory(file = new File(dir, TEMP))) {
@@ -166,6 +169,9 @@ public class AppConfig {
 
     @Nullable
     public static File getArchiverDir() {
+        if (sContext == null) {
+            return null;
+        }
         File dir = sContext.getCacheDir();
         File file;
         if (null != dir && FileUtils.ensureDirectory(file = new File(dir, ARCHIVER))) {
@@ -246,6 +252,9 @@ public class AppConfig {
 
     @Nullable
     public static File getFilesDir(String name) {
+        if (sContext == null) {
+            return null;
+        }
         File dir = sContext.getFilesDir();
         if (dir == null) {
             return null;
