@@ -50,6 +50,12 @@ public abstract class GalleryInfoContentHelper extends ContentLayout.ContentHelp
     EhApplication.getFavouriteStatusRouter().removeListener(listener);
   }
 
+  public void reInit() {
+    FavouriteStatusRouter router = EhApplication.getFavouriteStatusRouter();
+    router.removeListener(listener);
+    router.addListener(listener);
+  }
+
   @Override
   protected void onAddData(GalleryInfo data) {
     map.put(data.gid, data);

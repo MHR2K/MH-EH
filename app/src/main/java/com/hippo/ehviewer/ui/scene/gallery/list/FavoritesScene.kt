@@ -245,6 +245,10 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
         mFavCountArray = null
         mFavCountSum = 0
         mUrlBuilder = null
+        if (mHelper != null) {
+            mHelper!!.destroy()
+            mHelper = null
+        }
     }
 
     override fun onCreateView2(
@@ -267,7 +271,11 @@ class FavoritesScene : BaseScene(), EasyRecyclerView.OnItemClickListener,
         val resources = context!!.getResources()
         val paddingTopSB = resources.getDimensionPixelOffset(R.dimen.gallery_padding_top_search_bar)
 
-        mHelper = FavoritesHelper()
+        if (mHelper == null) {
+            mHelper = FavoritesHelper()
+        } else {
+            mHelper!!.reInit()
+        }
         mHelper!!.setEmptyString(resources.getString(R.string.gallery_list_empty_hit))
         contentLayout.setHelper(mHelper)
         contentLayout.getFastScroller().setOnDragHandlerListener(this)

@@ -514,6 +514,10 @@ public final class GalleryListScene extends BaseScene
             mDownloadManager.removeDownloadInfoListener(mDownloadInfoListener);
         }
         mFavouriteStatusRouter.removeListener(mFavouriteStatusRouterListener);
+        if (mHelper != null) {
+            mHelper.destroy();
+            mHelper = null;
+        }
         EventBus.getDefault().unregister(this);
     }
 
@@ -715,7 +719,11 @@ public final class GalleryListScene extends BaseScene
 
         mViewTransition = new ViewTransition(contentLayout, mSearchLayout);
 
-        mHelper = new GalleryListHelper();
+        if (mHelper == null) {
+            mHelper = new GalleryListHelper();
+        } else {
+            mHelper.reInit();
+        }
         contentLayout.setHelper(mHelper);
         contentLayout.getFastScroller().setOnDragHandlerListener(this);
 
